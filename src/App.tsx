@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { MapPin, Upload, Download, Clock, Car, ParkingSquare } from 'lucide-react';
+import { Upload, Download, Car, Flag, ParkingSquare, MapPinned } from 'lucide-react';
 
 // INTERFACES PARA ESTRUCTURAR LOS DATOS
 interface TripEvent {
@@ -25,7 +25,7 @@ interface ProcessedTrip {
     type: 'start' | 'stop' | 'end';
     time: string;
     description: string;
-    duration?: number; // en minutos
+    duration?: number;
     stopNumber?: number;
   }>;
 }
@@ -37,7 +37,6 @@ export default function VehicleTracker() {
   const [minStopDuration, setMinStopDuration] = useState<number>(5); // Valor predeterminado: 5 minutos
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // IMPORTANTE: Reemplaza con tu propia clave de API de Google Maps
   const googleMapsApiKey = 'AIzaSyBb7rJA438WYzdA3js2zJcMYOotPn-FR6s';
 
   // --- FUNCIONES DE PROCESAMIENTO DE DATOS ---
@@ -70,20 +69,26 @@ export default function VehicleTracker() {
       return null;
     };
 
-    // Obtener el nombre de la columna de tiempo del primer registro válido
-    const timeColumn = data.length > 0 ? findTimeColumn(data[0]) : null;
-    if (!timeColumn) {
-      throw new Error("No se encontró una columna con datos de tiempo válidos en el archivo.");
+    const timeColumnKey = data.length > 0 ? findTimeColumn(data[0]) : null;
+    if (!timeColumnKey) {
+      throw new Error("No se encontró una columna con formato de tiempo (HH:MM:SS) en el archivo.");
     }
+    
+    // Mapeo de nombres de columna flexibles
+    const descriptionKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('descripción')) || 'Descripción de Evento:';
+    const speedKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('velocidad')) || 'Velocidad(km)';
+    const latKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('latitud')) || 'Latitud';
+    const lonKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('longitud')) || 'Longitud';
+
 
     let stopCounter = 0;
     const events: TripEvent[] = data.map((row, index) => ({
       id: index + 1,
-      time: row[timeColumn] || '00:00:00',
-      description: row['Descripción de Evento:'] || 'Sin descripción',
-      speed: Number(row['Velocidad(km)']) || 0,
-      lat: Number(row['Latitud']),
-      lng: Number(row['Longitud']),
+      time: row[timeColumnKey] || '00:00:00',
+      description: row[descriptionKey] || 'Sin descripción',
+      speed: Number(row[speedKey]) || 0,
+      lat: Number(row[latKey]),
+      lng: Number(row[lonKey]),
     })).filter(event => event.lat && event.lng);
 
     if (events.length === 0) {
@@ -91,89 +96,63 @@ export default function VehicleTracker() {
     }
 
     const flags: ProcessedTrip['flags'] = [];
-    const routes: ProcessedTrip['routes'] = [];
-    const currentPath: Array<{ lat: number; lng: number }> = [];
-
-    // 1. Buscar el PRIMER evento de "Inicio de Viaje"
-    const startEvents = events.filter(event => 
-      event.description.toLowerCase().includes('inicio de viaje')
-    );
-    const startEvent = startEvents.length > 0 ? startEvents[0] : events[0];
-
+    const routes: ProcessedTrip['routes'] = [{ path: [] }];
+    
+    // El primer evento siempre es el inicio
+    const startEvent = events[0];
     flags.push({
       lat: startEvent.lat,
       lng: startEvent.lng,
       type: 'start',
       time: startEvent.time,
-      description: `Inicio del Viaje: ${startEvent.description}`,
+      description: `Inicio del Recorrido: ${startEvent.description}`,
     });
 
-    // 2. Buscar el ÚLTIMO evento de "Fin de Viaje"
-    const endEvents = events.filter(event => 
-      event.description.toLowerCase().includes('fin de viaje')
-    );
-    const endEvent = endEvents.length > 0 ? endEvents[endEvents.length - 1] : events[events.length - 1];
+    let stopStartTime: string | null = null;
+    
+    for (let i = 0; i < events.length; i++) {
+        const event = events[i];
+        routes[0].path.push({ lat: event.lat, lng: event.lng });
+        
+        const isStopped = event.speed === 0;
+        const nextEvent = events[i + 1];
 
-    // Filtrar eventos que estén entre el inicio y fin de viaje
-    const startIndex = events.findIndex(e => e.id === startEvent.id);
-    const endIndex = events.findIndex(e => e.id === endEvent.id);
-    const relevantEvents = events.slice(startIndex, endIndex + 1);
-
-    let lastStopTime = parseTimeToMinutes(startEvent.time);
-    let wasStopped = true;
-
-    for (let i = 0; i < relevantEvents.length; i++) {
-      const event = relevantEvents[i];
-      const isStopped = event.speed < 5; // Umbral de velocidad para considerar una parada
-
-      // Agrega todos los puntos al path para el trazado de ruta
-      currentPath.push({ lat: event.lat, lng: event.lng });
-
-      if (isStopped && !wasStopped) {
-        // El vehículo se acaba de detener
-        lastStopTime = parseTimeToMinutes(event.time);
-      }
-
-      if (!isStopped && wasStopped && i > 0) {
-        // El vehículo acaba de empezar a moverse después de una parada
-        const stopStartTime = lastStopTime;
-        const moveStartTime = parseTimeToMinutes(event.time);
-        let duration = moveStartTime - stopStartTime;
-
-        if (duration < 0) { // Manejo de cruce de medianoche
-          duration += 24 * 60;
+        if (isStopped && !stopStartTime) {
+            // Inicia una nueva parada
+            stopStartTime = event.time;
         }
 
-        // Solo marcar paradas que cumplan con el filtro de duración mínima
-        if (duration >= minStopDuration) {
-          stopCounter++;
-          const stopEvent = relevantEvents[i - 1]; // El último punto donde estaba detenido
-          flags.push({
-            lat: stopEvent.lat,
-            lng: stopEvent.lng,
-            type: 'stop',
-            time: stopEvent.time,
-            description: `Parada ${stopCounter}: ${stopEvent.description}`,
-            duration: duration,
-            stopNumber: stopCounter,
-          });
+        if (!isStopped && stopStartTime) {
+            // El vehículo se movió, fin de la parada
+            const stopEndTime = event.time;
+            const duration = parseTimeToMinutes(stopEndTime) - parseTimeToMinutes(stopStartTime);
+
+            if (duration >= minStopDuration) {
+                stopCounter++;
+                const stopEvent = events[i - 1]; // El último punto donde estaba detenido
+                flags.push({
+                    lat: stopEvent.lat,
+                    lng: stopEvent.lng,
+                    type: 'stop',
+                    time: stopStartTime,
+                    description: stopEvent.description,
+                    duration: duration,
+                    stopNumber: stopCounter,
+                });
+            }
+            stopStartTime = null; // Reiniciar para la próxima parada
         }
-      }
-      wasStopped = isStopped;
     }
 
-    // Agrega la ruta completa
-    if (currentPath.length > 0) {
-      routes.push({ path: currentPath });
-    }
 
-    // 3. Agregar el ÚLTIMO evento de fin de viaje
+    // El último evento siempre es el fin
+    const endEvent = events[events.length - 1];
     flags.push({
       lat: endEvent.lat,
       lng: endEvent.lng,
       type: 'end',
       time: endEvent.time,
-      description: `Fin del Viaje: ${endEvent.description}`,
+      description: `Fin del Recorrido: ${endEvent.description}`,
     });
 
     return { events, routes, flags };
@@ -194,7 +173,6 @@ export default function VehicleTracker() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        // Inicia la lectura desde la fila 5 (A5), que corresponde al índice 4 en base cero.
         const data = XLSX.utils.sheet_to_json(ws, { range: 3, defval: "" });
         
         if (!Array.isArray(data) || data.length === 0) {
@@ -210,7 +188,6 @@ export default function VehicleTracker() {
     };
     reader.readAsBinaryString(file);
 
-    // FIX: Limpiar el valor del input para permitir cargar el mismo archivo de nuevo
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -219,7 +196,6 @@ export default function VehicleTracker() {
   const generateMapHTML = (): string => {
     if (!tripData) return '';
 
-    // Filtrar las paradas según la duración mínima
     const filteredFlags = tripData.flags.filter(flag => 
       flag.type !== 'stop' || (flag.duration && flag.duration >= minStopDuration)
     );
@@ -231,21 +207,25 @@ export default function VehicleTracker() {
 
     const flagMarkers = filteredFlags.map(flag => {
       let icon, title, content;
+      // SVG Paths for custom icons
+      const flagIconPath = `'M14.4,6L14,4H5V21H7V14H12.6L13,16H20V6H14.4Z'`;
+      const parkingIconPath = `'M13 3H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4h3a4 4 0 0 0 4-4V7a4 4 0 0 0-4-4h-3zm0 2h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3V5z'`;
+
       switch (flag.type) {
         case 'start':
-          icon = `{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 2, strokeColor: 'white' }`;
-          title = `'Inicio del Viaje'`;
-          content = `'<h3><span style="color: #22c55e;">&#127968;</span> Inicio del Viaje</h3><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace('Inicio del Viaje: ', '')}</p>'`;
+          icon = `{ path: ${flagIconPath}, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(5, 21) }`;
+          title = `'Inicio del Recorrido'`;
+          content = `'<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace('Inicio del Recorrido: ', '')}</p>'`;
           break;
         case 'end':
-          icon = `{ path: google.maps.SymbolPath.CIRCLE, scale: 8, fillColor: '#ef4444', fillOpacity: 1, strokeWeight: 2, strokeColor: 'white' }`;
-          title = `'Fin del Viaje'`;
-          content = `'<h3><span style="color: #ef4444;">&#127937;</span> Fin del Viaje</h3><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace('Fin del Viaje: ', '')}</p>'`;
+          icon = `{ path: ${flagIconPath}, fillColor: '#ef4444', fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(5, 21) }`;
+          title = `'Fin del Recorrido'`;
+          content = `'<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace('Fin del Recorrido: ', '')}</p>'`;
           break;
         case 'stop':
-          icon = `{ path: google.maps.SymbolPath.CIRCLE, scale: 7, fillColor: '#f1c40f', fillOpacity: 1, strokeWeight: 2, strokeColor: 'white' }`;
+          icon = `{ path: ${parkingIconPath}, fillColor: '#3b82f6', fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 12) }`;
           title = `'Parada ${flag.stopNumber}'`;
-          content = `'<h3><span style="color: #f1c40f;">&#9209;</span> Parada ${flag.stopNumber}</h3><p><strong>Duración:</strong> ${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace(`Parada ${flag.stopNumber}: `, '')}</p>'`;
+          content = `'<h3><span style="color: #3b82f6;">&#127359;</span> Parada ${flag.stopNumber}</h3><p><strong>Duración:</strong> ${formatDuration(flag.duration || 0)}</p><p><strong>Desde:</strong> ${flag.time}</p><p>${flag.description}</p>'`;
           break;
       }
       return `
@@ -273,10 +253,11 @@ export default function VehicleTracker() {
             #map { height: 100%; width: 100%; }
             body, html { height: 100%; margin: 0; padding: 0; }
             .gm-style-iw-d { overflow: hidden !important; }
-            .gm-style-iw-c { padding: 12px !important; }
-            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; }
-            h3 span { font-size: 20px; margin-right: 8px; }
-            p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
+            .gm-style-iw-c { padding: 12px !important; border-radius: 8px !important; }
+            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; font-weight: 600; }
+            h3 span { font-size: 24px; margin-right: 8px; line-height: 1; }
+            p { margin: 4px 0; font-family: sans-serif; font-size: 14px; color: #333; }
+            p strong { color: #000; }
           </style>
         </head>
         <body>
@@ -284,92 +265,54 @@ export default function VehicleTracker() {
           <script>
             function initMap() {
               const map = new google.maps.Map(document.getElementById('map'), {
-                center: ${mapCenter},
                 zoom: 12,
                 mapTypeControl: false,
                 streetViewControl: false,
+                fullscreenControl: false,
               });
 
               const bounds = new google.maps.LatLngBounds();
-              const directionsService = new google.maps.DirectionsService();
-
+              
               ${flagMarkers}
 
               const routePath = ${JSON.stringify(routes[0]?.path || [])};
-              let animatedPolyline;
-
-              if (routePath.length > 1) {
-                  // Configuración para la animación de la ruta
-                  const animationInterval = 50; // ms entre frames
-                  const animationStep = 2; // puntos a agregar por frame
-                  let currentAnimationStep = 0;
-                  
-                  // Crear el polyline que se animará
-                  animatedPolyline = new google.maps.Polyline({
+              if (routePath.length > 0) {
+                  const animatedPolyline = new google.maps.Polyline({
                     path: [],
-                    strokeColor: '#3b82f6',
+                    strokeColor: '#4f46e5',
                     strokeOpacity: 0.8,
                     strokeWeight: 5,
-                    icons: [{
-                      icon: {
-                        path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                        strokeColor: '#3b82f6',
-                        fillColor: '#3b82f6',
-                        fillOpacity: 1,
-                        scale: 3,
-                        strokeWeight: 2
-                      },
-                      offset: '100%',
-                      repeat: '100px'
-                    }],
                     map: map
                   });
 
-                  // Función para animar la ruta
-                  function animateRoute() {
-                    const end = Math.min(currentAnimationStep + animationStep, routePath.length);
-                    const newPath = routePath.slice(0, end);
-                    animatedPolyline.setPath(newPath);
-                    
-                    // Extender los límites con cada nuevo punto
-                    if (newPath.length > 0) {
-                      bounds.extend(new google.maps.LatLng(newPath[newPath.length-1].lat, newPath[newPath.length-1].lng));
-                      map.fitBounds(bounds);
-                    }
-                    
-                    currentAnimationStep += animationStep;
-                    
-                    if (currentAnimationStep < routePath.length) {
-                      setTimeout(animateRoute, animationInterval);
-                    } else {
-                      // Cuando termina la animación, ajustar el zoom final
-                      setTimeout(() => {
-                        map.fitBounds(bounds);
-                        // Opcional: cambiar el estilo de la línea cuando termina la animación
-                        animatedPolyline.setOptions({
-                          strokeOpacity: 1,
-                          icons: [{
-                            icon: {
-                              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                              strokeColor: '#3b82f6',
-                              fillColor: '#3b82f6',
-                              fillOpacity: 1,
-                              scale: 3,
-                              strokeWeight: 2
-                            },
-                            offset: '0%',
-                            repeat: '100px'
-                          }]
-                        });
-                      }, 500);
-                    }
-                  }
-
-                  // Iniciar la animación después de un breve retraso
-                  setTimeout(animateRoute, 1000);
-              } else {
-                  map.fitBounds(bounds);
+                  // Animar la ruta
+                  let step = 0;
+                  const animationInterval = setInterval(() => {
+                      if (step >= routePath.length) {
+                          clearInterval(animationInterval);
+                          // Añadir flechas después de la animación para mejor rendimiento
+                          animatedPolyline.setOptions({
+                              icons: [{
+                                  icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3, strokeColor: '#4f46e5' },
+                                  offset: '0',
+                                  repeat: '100px'
+                              }]
+                          });
+                          return;
+                      }
+                      const currentPath = animatedPolyline.getPath();
+                      currentPath.push(new google.maps.LatLng(routePath[step].lat, routePath[step].lng));
+                      step++;
+                  }, 10); // Intervalo de animación
               }
+              
+              map.fitBounds(bounds);
+              // Añadir un pequeño padding al hacer zoom para que los marcadores no queden en el borde
+              google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
+                  if (this.getZoom() > 16) {
+                      this.setZoom(16);
+                  }
+              });
             }
           </script>
           <script async defer src="https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap"></script>
@@ -379,12 +322,13 @@ export default function VehicleTracker() {
   };
   
   const downloadMap = () => {
+    if (!tripData) return;
     const htmlContent = generateMapHTML();
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mapa_viaje_${fileName?.replace(/\.xlsx?$/, '') || 'reporte'}.html`;
+    a.download = `mapa_recorrido_${fileName?.replace(/\.xlsx?$/, '') || 'reporte'}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -392,15 +336,15 @@ export default function VehicleTracker() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4 font-sans">
-      <div className="w-full max-w-2xl bg-white rounded-xl shadow-lg p-8 space-y-6">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4 font-sans">
+      <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl shadow-blue-100 p-8 space-y-6">
         <div className="text-center">
           <div className="flex justify-center items-center mb-4">
-              <Car className="w-12 h-12 text-blue-600" />
+              <MapPinned className="w-16 h-16 text-blue-600" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-800">Visualizador de Rutas</h1>
+          <h1 className="text-3xl font-bold text-gray-800">Visualizador de Recorridos</h1>
           <p className="text-gray-500 mt-2">
-            Sube tu archivo de eventos de vehículo (XLSX, XLS, CSV) para generar un mapa interactivo del viaje.
+            Sube tu archivo de eventos (XLSX o CSV) para generar un mapa interactivo del recorrido.
           </p>
         </div>
 
@@ -424,9 +368,9 @@ export default function VehicleTracker() {
                     ) : (
                         <>
                             <p className="mb-2 text-sm text-gray-600">
-                                <span className="font-semibold">Haz clic para subir</span> o arrastra y suelta tu archivo
+                                <span className="font-semibold">Haz clic para subir</span> o arrastra tu archivo
                             </p>
-                            <p className="text-xs text-gray-500">XLSX, XLS o CSV</p>
+                            <p className="text-xs text-gray-500">Formatos soportados: XLSX, XLS, CSV</p>
                         </>
                     )}
                 </div>
@@ -443,15 +387,15 @@ export default function VehicleTracker() {
         
         {error && (
             <div className="text-center p-4 bg-red-100 text-red-700 rounded-lg">
-                <p><strong>Error:</strong> {error}</p>
+                <p><strong>Error al procesar:</strong> {error}</p>
             </div>
         )}
 
         {tripData && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-5 pt-4">
+            <div className="relative flex items-center justify-between">
               <label htmlFor="stop-duration" className="text-sm font-medium text-gray-700">
-                Mostrar paradas mayores a:
+                Filtrar paradas de más de:
               </label>
               <div className="flex items-center space-x-2">
                 <input
@@ -469,10 +413,10 @@ export default function VehicleTracker() {
 
             <button
               onClick={downloadMap}
-              className="flex items-center justify-center w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
+              className="flex items-center justify-center w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-transform transform hover:scale-105 shadow-lg shadow-green-200"
             >
               <Download className="h-5 w-5 mr-2" />
-              Descargar Mapa HTML
+              Descargar Mapa Interactivo (HTML)
             </button>
           </div>
         )}
@@ -480,12 +424,14 @@ export default function VehicleTracker() {
 
       {tripData && (
           <div className="w-full max-w-6xl mt-8">
-              <h2 className="text-2xl font-bold text-center mb-4">Vista Previa del Mapa</h2>
-              <iframe
-                  srcDoc={generateMapHTML()}
-                  className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
-                  title="Vista Previa del Mapa"
-              />
+              <h2 className="text-2xl font-bold text-center mb-4 text-gray-700">Vista Previa del Mapa</h2>
+              <div className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-lg overflow-hidden">
+                <iframe
+                    srcDoc={generateMapHTML()}
+                    className="w-full h-full border-0"
+                    title="Vista Previa del Mapa"
+                />
+              </div>
           </div>
         )}
     </div>
