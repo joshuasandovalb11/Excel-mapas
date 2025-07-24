@@ -91,6 +91,7 @@ export default function VehicleTracker() {
     const flags: ProcessedTrip['flags'] = [];
     const routes: ProcessedTrip['routes'] = [{ path: [] }];
     let stopCounter = 0;
+    const coordCounts = new Map<string, number>(); // Para contar paradas en el mismo lugar
 
     // 1. Encontrar el primer "Inicio de Viaje" para marcar el comienzo de todo el recorrido.
     const firstStartEvent = events.find(event => event.description.toLowerCase().includes('inicio de viaje'));
@@ -98,6 +99,9 @@ export default function VehicleTracker() {
         throw new Error("No se encontró ningún evento de 'Inicio de Viaje' para comenzar el recorrido.");
     }
     
+    // Se obtiene el índice del primer inicio para ignorar cualquier evento anterior.
+    const startIndex = events.findIndex(e => e.id === firstStartEvent.id);
+
     flags.push({
       lat: firstStartEvent.lat,
       lng: firstStartEvent.lng,
@@ -114,16 +118,33 @@ export default function VehicleTracker() {
         throw new Error("No se encontró ningún evento de 'Fin de Viaje' para finalizar el recorrido.");
     }
 
-    // 3. Procesar todas las paradas ("Fin de Viaje") y calcular sus duraciones.
-    for (let i = 0; i < events.length; i++) {
+    // 3. Procesar todas las paradas, COMENZANDO DESDE el primer "inicio de viaje".
+    for (let i = startIndex; i < events.length; i++) {
         const currentEvent = events[i];
 
         // Una "parada" es cualquier evento de "Fin de Viaje", excepto el último (que será el final del recorrido).
         if (currentEvent.description.toLowerCase().includes('fin de viaje') && currentEvent.id !== lastEndEvent.id) {
             stopCounter++;
+
+            // --- INICIO: Lógica de desplazamiento para iconos superpuestos ---
+            const coordKey = `${currentEvent.lat.toFixed(5)},${currentEvent.lng.toFixed(5)}`;
+            const count = coordCounts.get(coordKey) || 0;
+            
+            let displayLat = currentEvent.lat;
+            let displayLng = currentEvent.lng;
+
+            if (count > 0) {
+                const offsetDistance = 0.004 * Math.sqrt(count);
+                const angle = count * 137.5;
+                displayLat += offsetDistance * Math.cos(angle * (Math.PI / 180));
+                displayLng += offsetDistance * Math.sin(angle * (Math.PI / 180));
+            }
+            coordCounts.set(coordKey, count + 1);
+            // --- FIN: Lógica de desplazamiento ---
+            
             const stopFlag: ProcessedTrip['flags'][0] = {
-                lat: currentEvent.lat,
-                lng: currentEvent.lng,
+                lat: displayLat, // Usar latitud de visualización
+                lng: displayLng, // Usar longitud de visualización
                 type: 'stop',
                 time: currentEvent.time,
                 description: `Parada ${stopCounter}: ${currentEvent.description}`,
@@ -139,7 +160,7 @@ export default function VehicleTracker() {
                 const moveStartTime = parseTimeToMinutes(nextStartEvent.time);
                 let duration = moveStartTime - stopEndTime;
 
-                if (duration < 0) { // Manejo de cruce de medianoche
+                if (duration < 0) {
                     duration += 24 * 60;
                 }
                 stopFlag.duration = duration;
@@ -158,7 +179,6 @@ export default function VehicleTracker() {
     });
     
     // 5. Generar la ruta completa para el mapa, desde el primer inicio hasta el último fin.
-    const startIndex = events.findIndex(e => e.id === firstStartEvent.id);
     const endIndex = events.findIndex(e => e.id === lastEndEvent.id);
     if(startIndex !== -1 && endIndex !== -1) {
         const relevantEvents = events.slice(startIndex, endIndex + 1);
@@ -250,7 +270,7 @@ export default function VehicleTracker() {
       }
       return `
         (function() {
-          if(!${icon}) return; // No renderizar si no hay ícono (p.ej. parada filtrada)
+          if(!${icon}) return;
           const marker = new google.maps.Marker({
             position: {lat: ${flag.lat}, lng: ${flag.lng}},
             map: map,
