@@ -34,7 +34,7 @@ export default function VehicleTracker() {
   const [tripData, setTripData] = useState<ProcessedTrip | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [minStopDuration, setMinStopDuration] = useState<number>(5); // Valor predeterminado: 5 minutos
+  const [minStopDuration, setMinStopDuration] = useState<number>(5); // 5 minutos por defecto
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const googleMapsApiKey = 'AIzaSyBb7rJA438WYzdA3js2zJcMYOotPn-FR6s';
@@ -58,9 +58,8 @@ export default function VehicleTracker() {
   };
 
   const processTripData = (data: any[]): ProcessedTrip => {
-    // Buscar dinámicamente la columna que contiene los datos de tiempo
     const findTimeColumn = (row: any): string | null => {
-      const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/; // Patrón para formato de hora (HH:MM o HH:MM:SS)
+      const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
       for (const key in row) {
         if (typeof row[key] === 'string' && timePattern.test(row[key].trim())) {
           return key;
@@ -69,7 +68,6 @@ export default function VehicleTracker() {
       return null;
     };
 
-    // Obtener el nombre de la columna de tiempo del primer registro válido
     const timeColumn = data.length > 0 ? findTimeColumn(data[0]) : null;
     if (!timeColumn) {
       throw new Error("No se encontró una columna con datos de tiempo válidos en el archivo.");
@@ -91,15 +89,13 @@ export default function VehicleTracker() {
     const flags: ProcessedTrip['flags'] = [];
     const routes: ProcessedTrip['routes'] = [{ path: [] }];
     let stopCounter = 0;
-    const coordCounts = new Map<string, number>(); // Para contar paradas en el mismo lugar
+    const coordCounts = new Map<string, number>();
 
-    // 1. Encontrar el primer "Inicio de Viaje" para marcar el comienzo de todo el recorrido.
     const firstStartEvent = events.find(event => event.description.toLowerCase().includes('inicio de viaje'));
     if (!firstStartEvent) {
         throw new Error("No se encontró ningún evento de 'Inicio de Viaje' para comenzar el recorrido.");
     }
     
-    // Se obtiene el índice del primer inicio para ignorar cualquier evento anterior.
     const startIndex = events.findIndex(e => e.id === firstStartEvent.id);
 
     flags.push({
@@ -110,7 +106,6 @@ export default function VehicleTracker() {
       description: `Inicio del Recorrido`,
     });
 
-    // 2. Encontrar el último "Fin de Viaje" para marcar el final de todo el recorrido.
     const lastEndEventIndex = events.map(e => e.description.toLowerCase().includes('fin de viaje')).lastIndexOf(true);
     const lastEndEvent = lastEndEventIndex !== -1 ? events[lastEndEventIndex] : null;
 
@@ -118,15 +113,12 @@ export default function VehicleTracker() {
         throw new Error("No se encontró ningún evento de 'Fin de Viaje' para finalizar el recorrido.");
     }
 
-    // 3. Procesar todas las paradas, COMENZANDO DESDE el primer "inicio de viaje".
     for (let i = startIndex; i < events.length; i++) {
         const currentEvent = events[i];
 
-        // Una "parada" es cualquier evento de "Fin de Viaje", excepto el último (que será el final del recorrido).
         if (currentEvent.description.toLowerCase().includes('fin de viaje') && currentEvent.id !== lastEndEvent.id) {
             stopCounter++;
-
-            // --- INICIO: Lógica de desplazamiento para iconos superpuestos ---
+            
             const coordKey = `${currentEvent.lat.toFixed(5)},${currentEvent.lng.toFixed(5)}`;
             const count = coordCounts.get(coordKey) || 0;
             
@@ -135,16 +127,15 @@ export default function VehicleTracker() {
 
             if (count > 0) {
                 const offsetDistance = 0.004 * Math.sqrt(count);
-                const angle = count * 137.5;
+                const angle = count * 137.5; 
                 displayLat += offsetDistance * Math.cos(angle * (Math.PI / 180));
                 displayLng += offsetDistance * Math.sin(angle * (Math.PI / 180));
             }
             coordCounts.set(coordKey, count + 1);
-            // --- FIN: Lógica de desplazamiento ---
             
             const stopFlag: ProcessedTrip['flags'][0] = {
-                lat: displayLat, // Usar latitud de visualización
-                lng: displayLng, // Usar longitud de visualización
+                lat: displayLat,
+                lng: displayLng,
                 type: 'stop',
                 time: currentEvent.time,
                 description: `Parada ${stopCounter}: ${currentEvent.description}`,
@@ -152,7 +143,6 @@ export default function VehicleTracker() {
                 stopNumber: stopCounter,
             };
 
-            // Buscar el siguiente "Inicio de Viaje" para calcular la duración de la parada.
             const nextStartEvent = events.find((event, j) => j > i && event.description.toLowerCase().includes('inicio de viaje'));
 
             if (nextStartEvent) {
@@ -160,7 +150,7 @@ export default function VehicleTracker() {
                 const moveStartTime = parseTimeToMinutes(nextStartEvent.time);
                 let duration = moveStartTime - stopEndTime;
 
-                if (duration < 0) {
+                if (duration < 0) { 
                     duration += 24 * 60;
                 }
                 stopFlag.duration = duration;
@@ -169,7 +159,6 @@ export default function VehicleTracker() {
         }
     }
 
-    // 4. Agregar la bandera del fin de viaje definitivo.
     flags.push({
       lat: lastEndEvent.lat,
       lng: lastEndEvent.lng,
@@ -178,7 +167,6 @@ export default function VehicleTracker() {
       description: `Fin del Recorrido`,
     });
     
-    // 5. Generar la ruta completa para el mapa, desde el primer inicio hasta el último fin.
     const endIndex = events.findIndex(e => e.id === lastEndEvent.id);
     if(startIndex !== -1 && endIndex !== -1) {
         const relevantEvents = events.slice(startIndex, endIndex + 1);
@@ -203,7 +191,6 @@ export default function VehicleTracker() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        // Inicia la lectura desde la fila 5 (A5), que corresponde al índice 4 en base cero.
         const data = XLSX.utils.sheet_to_json(ws, { range: 3, defval: "" });
         
         if (!Array.isArray(data) || data.length === 0) {
@@ -219,7 +206,6 @@ export default function VehicleTracker() {
     };
     reader.readAsBinaryString(file);
 
-    // FIX: Limpiar el valor del input para permitir cargar el mismo archivo de nuevo
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -228,7 +214,6 @@ export default function VehicleTracker() {
   const generateMapHTML = (): string => {
     if (!tripData) return '';
 
-    // Filtrar las paradas según la duración mínima establecida en la UI
     const filteredFlags = tripData.flags.filter(flag => 
       flag.type !== 'stop' || (flag.duration && flag.duration >= minStopDuration)
     );
@@ -237,54 +222,6 @@ export default function VehicleTracker() {
     const mapCenter = filteredFlags.length > 0 ? 
       `{lat: ${filteredFlags[0].lat}, lng: ${filteredFlags[0].lng}}` : 
       '{lat: 25.0, lng: -100.0}';
-
-    const flagMarkers = filteredFlags.map(flag => {
-      let icon, title, content;
-
-      // Función para generar un ícono de marcador de mapa con un color específico
-      const createMarkerIcon = (color: string) => `{
-        path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-        fillColor: '${color}',
-        fillOpacity: 1,
-        strokeWeight: 0,
-        scale: 1.5,
-        anchor: new google.maps.Point(12, 24)
-      }`;
-
-      switch (flag.type) {
-        case 'start':
-          icon = createMarkerIcon('#22c55e');
-          title = `'Inicio del Recorrido'`;
-          content = `'<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p>'`;
-          break;
-        case 'end':
-          icon = createMarkerIcon('#ef4444');
-          title = `'Fin del Recorrido'`;
-          content = `'<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p>'`;
-          break;
-        case 'stop':
-          icon = createMarkerIcon('#f1c40f');
-          title = `'Parada ${flag.stopNumber}'`;
-          content = `'<h3><span style="color: #f1c40f;">&#9209;</span> Parada ${flag.stopNumber}</h3><p><strong>Duración:</strong> ${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace(`Parada ${flag.stopNumber}: `, '')}</p>'`;
-          break;
-      }
-      return `
-        (function() {
-          if(!${icon}) return;
-          const marker = new google.maps.Marker({
-            position: {lat: ${flag.lat}, lng: ${flag.lng}},
-            map: map,
-            icon: ${icon},
-            title: ${title}
-          });
-          const infowindow = new google.maps.InfoWindow({ content: ${content} });
-          marker.addListener('click', () => {
-            infowindow.open(map, marker);
-          });
-          bounds.extend(marker.getPosition());
-        })();
-      `;
-    }).join('\n');
 
     return `
       <!DOCTYPE html>
@@ -298,77 +235,223 @@ export default function VehicleTracker() {
             h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; }
             h3 span { font-size: 20px; margin-right: 8px; }
             p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
+            #controls { 
+                position: absolute; 
+                top: 10px; 
+                left: 50%;
+                transform: translateX(-220%);
+                z-index: 10; 
+                background: white; 
+                padding: 8px; 
+                border: 1px solid #ccc; 
+                border-radius: 8px;
+                display: flex;
+                gap: 8px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            }
+            #controls button {
+                font-family: sans-serif;
+                font-size: 14px;
+                padding: 8px 12px;
+                cursor: pointer;
+                border-radius: 5px;
+                border: 1px solid #aaa;
+            }
+            #controls button:disabled {
+                cursor: not-allowed;
+                background-color: #f0f0f0;
+                color: #aaa;
+            }
           </style>
         </head>
         <body>
           <div id="map"></div>
+          <div id="controls">
+              <button id="playPauseBtn">Reproducir</button>
+              <button id="nextStopBtn">Siguiente Parada</button>
+          </div>
           <script>
+            let map;
+            let markers = [];
+            let infowindows = [];
+            let openInfoWindow = null;
+            let stopInfo = []; // {markerIndex, pathIndex}
+            const routePath = ${JSON.stringify(routes[0]?.path || [])};
+            const allFlags = ${JSON.stringify(filteredFlags)};
+            const formatDuration = ${formatDuration.toString()};
+
+            let animatedPolyline;
+            let currentPathIndex = 0;
+            let animationFrameId;
+            let isAnimating = false;
+            let currentStopIndex = 0;
+
             function initMap() {
-              const map = new google.maps.Map(document.getElementById('map'), {
-                center: ${mapCenter},
-                zoom: 12,
-                mapTypeControl: false,
-                streetViewControl: false,
-              });
+                map = new google.maps.Map(document.getElementById('map'), {
+                    center: ${mapCenter},
+                    zoom: 12,
+                    mapTypeControl: false,
+                    streetViewControl: false,
+                });
 
-              const bounds = new google.maps.LatLngBounds();
+                const bounds = new google.maps.LatLngBounds();
 
-              ${flagMarkers}
+                allFlags.forEach((flag, index) => {
+                    if (!flag) return;
+                    
+                    const marker = createMarker(flag);
+                    const infowindow = createInfoWindow(flag);
+                    
+                    markers.push(marker);
+                    infowindows.push(infowindow);
 
-              const routePath = ${JSON.stringify(routes[0]?.path || [])};
-              let animatedPolyline;
+                    marker.addListener('click', () => {
+                        if (openInfoWindow) openInfoWindow.close();
+                        infowindow.open(map, marker);
+                        openInfoWindow = infowindow;
+                    });
 
-              if (routePath.length > 1) {
-                  const animationInterval = 50; // ms entre frames
-                  const animationStep = 2; // puntos a agregar por frame
-                  let currentAnimationStep = 0;
-                  
-                  animatedPolyline = new google.maps.Polyline({
+                    if (flag.type === 'stop' || flag.type === 'end') {
+                        const flagLatLng = new google.maps.LatLng(flag.lat, flag.lng);
+                        let closestPathIndex = -1;
+                        let minDistance = Infinity;
+
+                        routePath.forEach((pathPoint, i) => {
+                            const pathLatLng = new google.maps.LatLng(pathPoint.lat, pathPoint.lng);
+                            const distance = google.maps.geometry.spherical.computeDistanceBetween(flagLatLng, pathLatLng);
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                closestPathIndex = i;
+                            }
+                        });
+                        stopInfo.push({ markerIndex: index, pathIndex: closestPathIndex, type: flag.type });
+                    }
+                    
+                    bounds.extend(marker.getPosition());
+                });
+
+                map.fitBounds(bounds);
+                
+                animatedPolyline = new google.maps.Polyline({
                     path: [],
                     strokeColor: '#3b82f6',
                     strokeOpacity: 0.8,
                     strokeWeight: 5,
                     map: map
-                  });
+                });
 
-                  function animateRoute() {
-                    const end = Math.min(currentAnimationStep + animationStep, routePath.length);
-                    const newPath = routePath.slice(0, end);
-                    animatedPolyline.setPath(newPath);
-                    
-                    if (newPath.length > 0) {
-                      bounds.extend(new google.maps.LatLng(newPath[newPath.length-1].lat, newPath[newPath.length-1].lng));
-                    }
-                    
-                    currentAnimationStep += animationStep;
-                    
-                    if (currentAnimationStep < routePath.length) {
-                      setTimeout(animateRoute, animationInterval);
-                    } else {
-                        map.fitBounds(bounds);
-                        animatedPolyline.setOptions({
-                          icons: [{
-                            icon: {
-                              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                              strokeColor: '#3b82f6',
-                              fillColor: '#3b82f6',
-                              fillOpacity: 1,
-                              scale: 3
-                            },
-                            offset: '0',
-                            repeat: '100px'
-                          }]
-                        });
-                    }
-                  }
-                  map.fitBounds(bounds);
-                  setTimeout(animateRoute, 1000);
-              } else if (bounds.getNorthEast() && !bounds.getNorthEast().equals(bounds.getSouthWest())) {
-                  map.fitBounds(bounds);
-              }
+                document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
+                document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
             }
+
+            function createMarker(flag) {
+                const colors = { start: '#22c55e', stop: '#f1c40f', end: '#ef4444' };
+                const icon = {
+                    path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+                    fillColor: colors[flag.type],
+                    fillOpacity: 1,
+                    strokeWeight: 0,
+                    scale: 1.5,
+                    anchor: new google.maps.Point(12, 24)
+                };
+                return new google.maps.Marker({
+                    position: { lat: flag.lat, lng: flag.lng },
+                    map,
+                    icon,
+                    title: flag.description
+                });
+            }
+
+            function createInfoWindow(flag) {
+                let content = '';
+                switch (flag.type) {
+                    case 'start':
+                        content = \`<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`;
+                        break;
+                    case 'end':
+                        content = \`<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`;
+                        break;
+                    case 'stop':
+                        content = \`<h3><span style="color: #f1c40f;">&#9209;</span> Parada \${flag.stopNumber}</h3><p><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> \${flag.time}</p><p>\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>\`;
+                        break;
+                }
+                return new google.maps.InfoWindow({ content });
+            }
+
+            function togglePlayPause() {
+                const btn = document.getElementById('playPauseBtn');
+                isAnimating = !isAnimating;
+                if (isAnimating) {
+                    btn.textContent = 'Pausa';
+                    document.getElementById('nextStopBtn').disabled = true;
+                    if (openInfoWindow) openInfoWindow.close();
+                    animate(routePath.length); // Animar hasta el final
+                } else {
+                    btn.textContent = 'Reproducir';
+                    document.getElementById('nextStopBtn').disabled = false;
+                    cancelAnimationFrame(animationFrameId);
+                }
+            }
+
+            function animateToNextStop() {
+                if (currentStopIndex >= stopInfo.length) return;
+                
+                isAnimating = true;
+                if (openInfoWindow) openInfoWindow.close();
+                document.getElementById('playPauseBtn').disabled = true;
+                document.getElementById('nextStopBtn').disabled = true;
+
+                const nextStop = stopInfo[currentStopIndex];
+                animate(nextStop.pathIndex, () => {
+                    const marker = markers[nextStop.markerIndex];
+                    const infowindow = infowindows[nextStop.markerIndex];
+                    
+                    marker.setAnimation(google.maps.Animation.BOUNCE);
+                    setTimeout(() => marker.setAnimation(null), 1400);
+
+                    if (openInfoWindow) openInfoWindow.close();
+                    infowindow.open(map, marker);
+                    openInfoWindow = infowindow;
+
+                    currentStopIndex++;
+                    isAnimating = false;
+                    document.getElementById('playPauseBtn').disabled = false;
+                    
+                    if (currentStopIndex >= stopInfo.length) {
+                       document.getElementById('nextStopBtn').disabled = true;
+                    } else {
+                       document.getElementById('nextStopBtn').disabled = false;
+                    }
+                });
+            }
+
+            function animate(targetPathIndex, onComplete = () => {}) {
+                const animationStep = 2; 
+                function step() {
+                    if (!isAnimating || currentPathIndex >= targetPathIndex) {
+                        onComplete();
+                        if (currentPathIndex >= routePath.length) {
+                            isAnimating = false;
+                            document.getElementById('playPauseBtn').textContent = 'Reproducir';
+                            document.getElementById('playPauseBtn').disabled = false;
+                            document.getElementById('nextStopBtn').disabled = true;
+                        }
+                        return;
+                    }
+                    
+                    const end = Math.min(currentPathIndex + animationStep, targetPathIndex);
+                    const newPathSegment = routePath.slice(currentPathIndex, end);
+                    const newFullPath = animatedPolyline.getPath().getArray().concat(newPathSegment);
+                    animatedPolyline.setPath(newFullPath);
+                    currentPathIndex = end;
+
+                    animationFrameId = requestAnimationFrame(step);
+                }
+                animationFrameId = requestAnimationFrame(step);
+            }
+
           </script>
-          <script async defer src="https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap"></script>
+          <script async defer src="https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap&libraries=geometry"></script>
         </body>
       </html>
     `;
