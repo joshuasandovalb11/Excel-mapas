@@ -30,14 +30,85 @@ interface ProcessedTrip {
   }>;
 }
 
+// --- AÑADIDO: Interfaz para la información del vehículo ---
+interface VehicleInfo {
+  descripcion: string;
+  vehiculo: string;
+  placa: string;
+  fecha: string;
+}
+
 export default function VehicleTracker() {
   const [tripData, setTripData] = useState<ProcessedTrip | null>(null);
+  // --- AÑADIDO: Estado para la información del vehículo ---
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [minStopDuration, setMinStopDuration] = useState<number>(5); // 5 minutos por defecto
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const googleMapsApiKey = 'AIzaSyBb7rJA438WYzdA3js2zJcMYOotPn-FR6s';
+
+  // --- AÑADIDO: Función para extraer datos de la cabecera del Excel ---
+  const parseVehicleInfo = (worksheet: XLSX.WorkSheet): VehicleInfo => {
+    const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+    const info: Partial<VehicleInfo> = {
+        descripcion: "No encontrado",
+        vehiculo: "No encontrado",
+        placa: "No encontrada",
+        fecha: "No encontrada",
+    };
+
+    // Itera sobre las primeras 10 filas, donde suele estar la cabecera
+    for (const row of data.slice(0, 10)) {
+        if (!Array.isArray(row)) continue;
+
+        // Busca "Descripción de Vehículo:" y "Vehículo Placa:" en la misma fila
+        const descIndex = row.findIndex((cell: any) => typeof cell === 'string' && cell.trim().startsWith('Descripción de Vehículo:'));
+        const placaIndex = row.findIndex((cell: any) => typeof cell === 'string' && cell.trim().startsWith('Vehículo Placa:'));
+        
+        if (descIndex !== -1) {
+            for (let i = descIndex + 1; i < (placaIndex !== -1 ? placaIndex : row.length); i++) {
+                if (row[i]) {
+                    info.descripcion = row[i];
+                    break;
+                }
+            }
+        }
+        if (placaIndex !== -1) {
+             for (let i = placaIndex + 1; i < row.length; i++) {
+                if (row[i]) {
+                    info.placa = row[i];
+                    break;
+                }
+            }
+        }
+
+        // Busca "Tipo de Vehículo:"
+        const vehicleIndex = row.findIndex((cell: any) => typeof cell === 'string' && cell.trim().startsWith('Tipo de Vehículo:'));
+        if (vehicleIndex !== -1) {
+            for (let i = vehicleIndex + 1; i < row.length; i++) {
+                if (row[i]) {
+                    info.vehiculo = row[i];
+                    break;
+                }
+            }
+        }
+
+        // Busca "Período:" y extrae la fecha
+        const periodIndex = row.findIndex((cell: any) => typeof cell === 'string' && cell.trim().startsWith('Período:'));
+        if (periodIndex !== -1) {
+             for (let i = periodIndex + 1; i < row.length; i++) {
+                if (row[i]) {
+                    info.fecha = String(row[i]).split(' ')[0]; // Obtiene solo la fecha (ej. "2025-07-23")
+                    break;
+                }
+            }
+        }
+    }
+
+    return info as VehicleInfo;
+  };
 
   // --- FUNCIONES DE PROCESAMIENTO DE DATOS ---
 
@@ -183,6 +254,7 @@ export default function VehicleTracker() {
 
     setTripData(null);
     setError(null);
+    setVehicleInfo(null); // --- MODIFICADO: Limpiar la info del vehículo anterior ---
     setFileName(file.name);
 
     const reader = new FileReader();
@@ -192,6 +264,10 @@ export default function VehicleTracker() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
+
+        // --- AÑADIDO: Llamada para extraer la info del vehículo ---
+        const vehicleData = parseVehicleInfo(ws);
+        setVehicleInfo(vehicleData);
 
         const expectedHeaders = ['Latitud', 'Longitud', 'Descripción de Evento:'];
         
@@ -233,7 +309,7 @@ export default function VehicleTracker() {
     }
   };
   
-  const generateMapHTML = (): string => {
+  const generateMapHTML = (vehicleInfo: VehicleInfo | null): string => {
     if (!tripData) return '';
 
     const filteredFlags = tripData.flags.filter(flag => 
@@ -244,6 +320,16 @@ export default function VehicleTracker() {
     const mapCenter = filteredFlags.length > 0 ? 
       `{lat: ${filteredFlags[0].lat}, lng: ${filteredFlags[0].lng}}` : 
       '{lat: 25.0, lng: -100.0}';
+
+    const infoBoxHTML = vehicleInfo ? `
+        <div id="info-box">
+            <h4>Información del Viaje</h4>
+            <p><strong>Descripción:</strong> ${vehicleInfo.descripcion}</p>
+            <p><strong>Vehículo:</strong> ${vehicleInfo.vehiculo}</p>
+            <p><strong>Placa:</strong> ${vehicleInfo.placa}</p>
+            <p><strong>Fecha:</strong> ${vehicleInfo.fecha}</p>
+        </div>
+    ` : '';
 
     return `
       <!DOCTYPE html>
@@ -284,10 +370,37 @@ export default function VehicleTracker() {
                 background-color: #f0f0f0;
                 color: #aaa;
             }
+            #info-box {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                transform: translateX(-30%);
+                z-index: 10;
+                background: white;
+                padding: 8px;
+                border-radius: 6px;
+                border: 1px solid #ccc;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+                font-family: sans-serif;
+                font-size: 12px;
+                width: 220px;
+            }
+            #info-box h4 {
+                font-size: 14px;
+                font-weight: bold;
+                margin: 0 0 5px 0;
+                padding-bottom: 4px;
+                border-bottom: 1px solid #ddd;
+            }
+            #info-box p {
+                margin: 3px 0;
+                font-size: 12px;
+            }
           </style>
         </head>
         <body>
           <div id="map"></div>
+          ${infoBoxHTML}
           <div id="controls">
               <button id="playPauseBtn">Reproducir</button>
               <button id="nextStopBtn">Siguiente Parada</button>
@@ -407,7 +520,7 @@ export default function VehicleTracker() {
                     btn.textContent = 'Pausa';
                     document.getElementById('nextStopBtn').disabled = true;
                     if (openInfoWindow) openInfoWindow.close();
-                    animate(routePath.length); // Animar hasta el final
+                    animate(routePath.length);
                 } else {
                     btn.textContent = 'Reproducir';
                     document.getElementById('nextStopBtn').disabled = false;
@@ -483,7 +596,7 @@ export default function VehicleTracker() {
   };
   
   const downloadMap = () => {
-    const htmlContent = generateMapHTML();
+    const htmlContent = generateMapHTML(vehicleInfo);
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -586,7 +699,8 @@ export default function VehicleTracker() {
           <div className="w-full max-w-6xl mt-8">
               <h2 className="text-2xl font-bold text-center mb-4">Vista Previa del Mapa</h2>
               <iframe
-                  srcDoc={generateMapHTML()}
+                  // --- MODIFICADO: Pasa la información del vehículo a la función ---
+                  srcDoc={generateMapHTML(vehicleInfo)}
                   className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
                   title="Vista Previa del Mapa"
               />
