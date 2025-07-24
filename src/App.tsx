@@ -58,6 +58,7 @@ export default function VehicleTracker() {
   };
 
   const processTripData = (data: any[]): ProcessedTrip => {
+    
     const findTimeColumn = (row: any): string | null => {
       const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
       for (const key in row) {
@@ -191,7 +192,28 @@ export default function VehicleTracker() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws, { range: 3, defval: "" });
+
+        const expectedHeaders = ['Latitud', 'Longitud', 'Descripción de Evento:'];
+        
+        const sheetAsArray: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+
+        let headerRowIndex = -1;
+
+        for (let i = 0; i < 20 && i < sheetAsArray.length; i++) {
+          const row = sheetAsArray[i];
+          const matchCount = expectedHeaders.filter(header => row.includes(header)).length;
+
+          if (matchCount >= 2) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+        
+        if (headerRowIndex === -1) {
+            throw new Error("No se pudo encontrar la fila de encabezados en el archivo. Verifique que las columnas 'Latitud', 'Longitud', etc., existan.");
+        }
+
+        const data = XLSX.utils.sheet_to_json(ws, { range: headerRowIndex, defval: "" });
         
         if (!Array.isArray(data) || data.length === 0) {
             throw new Error("No se encontraron datos en el archivo o el formato es incorrecto.");
@@ -345,7 +367,7 @@ export default function VehicleTracker() {
             }
 
             function createMarker(flag) {
-                const colors = { start: '#22c55e', stop: '#f1c40f', end: '#ef4444' };
+                const colors = { start: '#22c55e', stop: '#4F4E4E', end: '#ef4444' };
                 const icon = {
                     path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
                     fillColor: colors[flag.type],
@@ -372,7 +394,7 @@ export default function VehicleTracker() {
                         content = \`<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`;
                         break;
                     case 'stop':
-                        content = \`<h3><span style="color: #f1c40f;">&#9209;</span> Parada \${flag.stopNumber}</h3><p><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> \${flag.time}</p><p>\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>\`;
+                        content = \`<h3><span style="color: #4F4E4E;">&#9209;</span> Parada \${flag.stopNumber}</h3><p><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> \${flag.time}</p><p>\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>\`;
                         break;
                 }
                 return new google.maps.InfoWindow({ content });
@@ -423,6 +445,9 @@ export default function VehicleTracker() {
                        document.getElementById('nextStopBtn').disabled = false;
                     }
                 });
+            }
+
+            function vehicleInformation(marker, infowindow) {
             }
 
             function animate(targetPathIndex, onComplete = () => {}) {
@@ -497,7 +522,7 @@ export default function VehicleTracker() {
               }}
             >
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <Upload className="w-10 h-10 mb-3 text-blue-500" />
+                    <Upload className="w-10 h-10 mb-3 text-blue-500 motion-safe:animate-bounce" />
                     {fileName ? (
                         <p className="font-semibold text-blue-700">{fileName}</p>
                     ) : (
