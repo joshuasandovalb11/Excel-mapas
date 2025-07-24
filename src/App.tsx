@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Download, Car, Flag, ParkingSquare, MapPinned } from 'lucide-react';
+import { MapPin, Upload, Download, Clock, Car, ParkingSquare } from 'lucide-react';
 
 // INTERFACES PARA ESTRUCTURAR LOS DATOS
 interface TripEvent {
@@ -69,91 +69,101 @@ export default function VehicleTracker() {
       return null;
     };
 
-    const timeColumnKey = data.length > 0 ? findTimeColumn(data[0]) : null;
-    if (!timeColumnKey) {
-      throw new Error("No se encontró una columna con formato de tiempo (HH:MM:SS) en el archivo.");
+    // Obtener el nombre de la columna de tiempo del primer registro válido
+    const timeColumn = data.length > 0 ? findTimeColumn(data[0]) : null;
+    if (!timeColumn) {
+      throw new Error("No se encontró una columna con datos de tiempo válidos en el archivo.");
     }
-    
-    // Mapeo de nombres de columna flexibles
-    const descriptionKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('descripción')) || 'Descripción de Evento:';
-    const speedKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('velocidad')) || 'Velocidad(km)';
-    const latKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('latitud')) || 'Latitud';
-    const lonKey = Object.keys(data[0]).find(k => k.toLowerCase().includes('longitud')) || 'Longitud';
 
-
-    let stopCounter = 0;
     const events: TripEvent[] = data.map((row, index) => ({
       id: index + 1,
-      time: row[timeColumnKey] || '00:00:00',
-      description: row[descriptionKey] || 'Sin descripción',
-      speed: Number(row[speedKey]) || 0,
-      lat: Number(row[latKey]),
-      lng: Number(row[lonKey]),
+      time: row[timeColumn] || '00:00:00',
+      description: row['Descripción de Evento:'] || 'Sin descripción',
+      speed: Number(row['Velocidad(km)']) || 0,
+      lat: Number(row['Latitud']),
+      lng: Number(row['Longitud']),
     })).filter(event => event.lat && event.lng);
 
     if (events.length === 0) {
       throw new Error("El archivo no contiene datos de eventos válidos con coordenadas.");
     }
-
+    
     const flags: ProcessedTrip['flags'] = [];
     const routes: ProcessedTrip['routes'] = [{ path: [] }];
+    let stopCounter = 0;
+
+    // 1. Encontrar el primer "Inicio de Viaje" para marcar el comienzo de todo el recorrido.
+    const firstStartEvent = events.find(event => event.description.toLowerCase().includes('inicio de viaje'));
+    if (!firstStartEvent) {
+        throw new Error("No se encontró ningún evento de 'Inicio de Viaje' para comenzar el recorrido.");
+    }
     
-    // El primer evento siempre es el inicio
-    const startEvent = events[0];
     flags.push({
-      lat: startEvent.lat,
-      lng: startEvent.lng,
+      lat: firstStartEvent.lat,
+      lng: firstStartEvent.lng,
       type: 'start',
-      time: startEvent.time,
-      description: `Inicio del Recorrido: ${startEvent.description}`,
+      time: firstStartEvent.time,
+      description: `Inicio del Recorrido`,
     });
 
-    let stopStartTime: string | null = null;
-    
+    // 2. Encontrar el último "Fin de Viaje" para marcar el final de todo el recorrido.
+    const lastEndEventIndex = events.map(e => e.description.toLowerCase().includes('fin de viaje')).lastIndexOf(true);
+    const lastEndEvent = lastEndEventIndex !== -1 ? events[lastEndEventIndex] : null;
+
+    if (!lastEndEvent) {
+        throw new Error("No se encontró ningún evento de 'Fin de Viaje' para finalizar el recorrido.");
+    }
+
+    // 3. Procesar todas las paradas ("Fin de Viaje") y calcular sus duraciones.
     for (let i = 0; i < events.length; i++) {
-        const event = events[i];
-        routes[0].path.push({ lat: event.lat, lng: event.lng });
-        
-        const isStopped = event.speed === 0;
-        const nextEvent = events[i + 1];
+        const currentEvent = events[i];
 
-        if (isStopped && !stopStartTime) {
-            // Inicia una nueva parada
-            stopStartTime = event.time;
-        }
+        // Una "parada" es cualquier evento de "Fin de Viaje", excepto el último (que será el final del recorrido).
+        if (currentEvent.description.toLowerCase().includes('fin de viaje') && currentEvent.id !== lastEndEvent.id) {
+            stopCounter++;
+            const stopFlag: ProcessedTrip['flags'][0] = {
+                lat: currentEvent.lat,
+                lng: currentEvent.lng,
+                type: 'stop',
+                time: currentEvent.time,
+                description: `Parada ${stopCounter}: ${currentEvent.description}`,
+                duration: 0,
+                stopNumber: stopCounter,
+            };
 
-        if (!isStopped && stopStartTime) {
-            // El vehículo se movió, fin de la parada
-            const stopEndTime = event.time;
-            const duration = parseTimeToMinutes(stopEndTime) - parseTimeToMinutes(stopStartTime);
+            // Buscar el siguiente "Inicio de Viaje" para calcular la duración de la parada.
+            const nextStartEvent = events.find((event, j) => j > i && event.description.toLowerCase().includes('inicio de viaje'));
 
-            if (duration >= minStopDuration) {
-                stopCounter++;
-                const stopEvent = events[i - 1]; // El último punto donde estaba detenido
-                flags.push({
-                    lat: stopEvent.lat,
-                    lng: stopEvent.lng,
-                    type: 'stop',
-                    time: stopStartTime,
-                    description: stopEvent.description,
-                    duration: duration,
-                    stopNumber: stopCounter,
-                });
+            if (nextStartEvent) {
+                const stopEndTime = parseTimeToMinutes(currentEvent.time);
+                const moveStartTime = parseTimeToMinutes(nextStartEvent.time);
+                let duration = moveStartTime - stopEndTime;
+
+                if (duration < 0) { // Manejo de cruce de medianoche
+                    duration += 24 * 60;
+                }
+                stopFlag.duration = duration;
             }
-            stopStartTime = null; // Reiniciar para la próxima parada
+            flags.push(stopFlag);
         }
     }
 
-
-    // El último evento siempre es el fin
-    const endEvent = events[events.length - 1];
+    // 4. Agregar la bandera del fin de viaje definitivo.
     flags.push({
-      lat: endEvent.lat,
-      lng: endEvent.lng,
+      lat: lastEndEvent.lat,
+      lng: lastEndEvent.lng,
       type: 'end',
-      time: endEvent.time,
-      description: `Fin del Recorrido: ${endEvent.description}`,
+      time: lastEndEvent.time,
+      description: `Fin del Recorrido`,
     });
+    
+    // 5. Generar la ruta completa para el mapa, desde el primer inicio hasta el último fin.
+    const startIndex = events.findIndex(e => e.id === firstStartEvent.id);
+    const endIndex = events.findIndex(e => e.id === lastEndEvent.id);
+    if(startIndex !== -1 && endIndex !== -1) {
+        const relevantEvents = events.slice(startIndex, endIndex + 1);
+        routes[0].path = relevantEvents.map(e => ({ lat: e.lat, lng: e.lng }));
+    }
 
     return { events, routes, flags };
   };
@@ -173,6 +183,7 @@ export default function VehicleTracker() {
         const wb = XLSX.read(bstr, { type: 'binary' });
         const wsname = wb.SheetNames[0];
         const ws = wb.Sheets[wsname];
+        // Inicia la lectura desde la fila 5 (A5), que corresponde al índice 4 en base cero.
         const data = XLSX.utils.sheet_to_json(ws, { range: 3, defval: "" });
         
         if (!Array.isArray(data) || data.length === 0) {
@@ -188,6 +199,7 @@ export default function VehicleTracker() {
     };
     reader.readAsBinaryString(file);
 
+    // FIX: Limpiar el valor del input para permitir cargar el mismo archivo de nuevo
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -196,6 +208,7 @@ export default function VehicleTracker() {
   const generateMapHTML = (): string => {
     if (!tripData) return '';
 
+    // Filtrar las paradas según la duración mínima establecida en la UI
     const filteredFlags = tripData.flags.filter(flag => 
       flag.type !== 'stop' || (flag.duration && flag.duration >= minStopDuration)
     );
@@ -207,29 +220,37 @@ export default function VehicleTracker() {
 
     const flagMarkers = filteredFlags.map(flag => {
       let icon, title, content;
-      // SVG Paths for custom icons
-      const flagIconPath = `'M14.4,6L14,4H5V21H7V14H12.6L13,16H20V6H14.4Z'`;
-      const parkingIconPath = `'M13 3H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4h3a4 4 0 0 0 4-4V7a4 4 0 0 0-4-4h-3zm0 2h3a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2h-3V5z'`;
+
+      // Función para generar un ícono de marcador de mapa con un color específico
+      const createMarkerIcon = (color: string) => `{
+        path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+        fillColor: '${color}',
+        fillOpacity: 1,
+        strokeWeight: 0,
+        scale: 1.5,
+        anchor: new google.maps.Point(12, 24)
+      }`;
 
       switch (flag.type) {
         case 'start':
-          icon = `{ path: ${flagIconPath}, fillColor: '#22c55e', fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(5, 21) }`;
+          icon = createMarkerIcon('#22c55e');
           title = `'Inicio del Recorrido'`;
-          content = `'<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace('Inicio del Recorrido: ', '')}</p>'`;
+          content = `'<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p>'`;
           break;
         case 'end':
-          icon = `{ path: ${flagIconPath}, fillColor: '#ef4444', fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(5, 21) }`;
+          icon = createMarkerIcon('#ef4444');
           title = `'Fin del Recorrido'`;
-          content = `'<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace('Fin del Recorrido: ', '')}</p>'`;
+          content = `'<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> ${flag.time}</p>'`;
           break;
         case 'stop':
-          icon = `{ path: ${parkingIconPath}, fillColor: '#3b82f6', fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 12) }`;
+          icon = createMarkerIcon('#f1c40f');
           title = `'Parada ${flag.stopNumber}'`;
-          content = `'<h3><span style="color: #3b82f6;">&#127359;</span> Parada ${flag.stopNumber}</h3><p><strong>Duración:</strong> ${formatDuration(flag.duration || 0)}</p><p><strong>Desde:</strong> ${flag.time}</p><p>${flag.description}</p>'`;
+          content = `'<h3><span style="color: #f1c40f;">&#9209;</span> Parada ${flag.stopNumber}</h3><p><strong>Duración:</strong> ${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> ${flag.time}</p><p>${flag.description.replace(`Parada ${flag.stopNumber}: `, '')}</p>'`;
           break;
       }
       return `
         (function() {
+          if(!${icon}) return; // No renderizar si no hay ícono (p.ej. parada filtrada)
           const marker = new google.maps.Marker({
             position: {lat: ${flag.lat}, lng: ${flag.lng}},
             map: map,
@@ -253,11 +274,10 @@ export default function VehicleTracker() {
             #map { height: 100%; width: 100%; }
             body, html { height: 100%; margin: 0; padding: 0; }
             .gm-style-iw-d { overflow: hidden !important; }
-            .gm-style-iw-c { padding: 12px !important; border-radius: 8px !important; }
-            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; font-weight: 600; }
-            h3 span { font-size: 24px; margin-right: 8px; line-height: 1; }
-            p { margin: 4px 0; font-family: sans-serif; font-size: 14px; color: #333; }
-            p strong { color: #000; }
+            .gm-style-iw-c { padding: 12px !important; }
+            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; }
+            h3 span { font-size: 20px; margin-right: 8px; }
+            p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
           </style>
         </head>
         <body>
@@ -265,54 +285,67 @@ export default function VehicleTracker() {
           <script>
             function initMap() {
               const map = new google.maps.Map(document.getElementById('map'), {
+                center: ${mapCenter},
                 zoom: 12,
                 mapTypeControl: false,
                 streetViewControl: false,
-                fullscreenControl: false,
               });
 
               const bounds = new google.maps.LatLngBounds();
-              
+
               ${flagMarkers}
 
               const routePath = ${JSON.stringify(routes[0]?.path || [])};
-              if (routePath.length > 0) {
-                  const animatedPolyline = new google.maps.Polyline({
+              let animatedPolyline;
+
+              if (routePath.length > 1) {
+                  const animationInterval = 50; // ms entre frames
+                  const animationStep = 2; // puntos a agregar por frame
+                  let currentAnimationStep = 0;
+                  
+                  animatedPolyline = new google.maps.Polyline({
                     path: [],
-                    strokeColor: '#4f46e5',
+                    strokeColor: '#3b82f6',
                     strokeOpacity: 0.8,
                     strokeWeight: 5,
                     map: map
                   });
 
-                  // Animar la ruta
-                  let step = 0;
-                  const animationInterval = setInterval(() => {
-                      if (step >= routePath.length) {
-                          clearInterval(animationInterval);
-                          // Añadir flechas después de la animación para mejor rendimiento
-                          animatedPolyline.setOptions({
-                              icons: [{
-                                  icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, scale: 3, strokeColor: '#4f46e5' },
-                                  offset: '0',
-                                  repeat: '100px'
-                              }]
-                          });
-                          return;
-                      }
-                      const currentPath = animatedPolyline.getPath();
-                      currentPath.push(new google.maps.LatLng(routePath[step].lat, routePath[step].lng));
-                      step++;
-                  }, 10); // Intervalo de animación
-              }
-              
-              map.fitBounds(bounds);
-              // Añadir un pequeño padding al hacer zoom para que los marcadores no queden en el borde
-              google.maps.event.addListenerOnce(map, 'bounds_changed', function() {
-                  if (this.getZoom() > 16) {
-                      this.setZoom(16);
+                  function animateRoute() {
+                    const end = Math.min(currentAnimationStep + animationStep, routePath.length);
+                    const newPath = routePath.slice(0, end);
+                    animatedPolyline.setPath(newPath);
+                    
+                    if (newPath.length > 0) {
+                      bounds.extend(new google.maps.LatLng(newPath[newPath.length-1].lat, newPath[newPath.length-1].lng));
+                    }
+                    
+                    currentAnimationStep += animationStep;
+                    
+                    if (currentAnimationStep < routePath.length) {
+                      setTimeout(animateRoute, animationInterval);
+                    } else {
+                        map.fitBounds(bounds);
+                        animatedPolyline.setOptions({
+                          icons: [{
+                            icon: {
+                              path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                              strokeColor: '#3b82f6',
+                              fillColor: '#3b82f6',
+                              fillOpacity: 1,
+                              scale: 3
+                            },
+                            offset: '0',
+                            repeat: '100px'
+                          }]
+                        });
+                    }
                   }
-              });
+                  map.fitBounds(bounds);
+                  setTimeout(animateRoute, 1000);
+              } else if (bounds.getNorthEast() && !bounds.getNorthEast().equals(bounds.getSouthWest())) {
+                  map.fitBounds(bounds);
+              }
             }
           </script>
           <script async defer src="https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap"></script>
@@ -322,13 +355,12 @@ export default function VehicleTracker() {
   };
   
   const downloadMap = () => {
-    if (!tripData) return;
     const htmlContent = generateMapHTML();
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mapa_recorrido_${fileName?.replace(/\.xlsx?$/, '') || 'reporte'}.html`;
+    a.download = `mapa_viaje_${fileName?.replace(/\.xlsx?$/, '') || 'reporte'}.html`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -336,15 +368,15 @@ export default function VehicleTracker() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4 font-sans">
-      <div className="w-full max-w-2xl bg-white rounded-xl shadow-2xl shadow-blue-100 p-8 space-y-6">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4 font-sans">
+      <div className="w-full max-w-2xl bg-white rounded-xl shadow-lg p-8 space-y-6">
         <div className="text-center">
           <div className="flex justify-center items-center mb-4">
-              <MapPinned className="w-16 h-16 text-blue-600" />
+              <Car className="w-12 h-12 text-blue-600" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-800">Visualizador de Recorridos</h1>
+          <h1 className="text-3xl font-bold text-gray-800">Visualizador de Rutas</h1>
           <p className="text-gray-500 mt-2">
-            Sube tu archivo de eventos (XLSX o CSV) para generar un mapa interactivo del recorrido.
+            Sube tu archivo de eventos de vehículo (XLSX, XLS, CSV) para generar un mapa interactivo del viaje.
           </p>
         </div>
 
@@ -368,9 +400,9 @@ export default function VehicleTracker() {
                     ) : (
                         <>
                             <p className="mb-2 text-sm text-gray-600">
-                                <span className="font-semibold">Haz clic para subir</span> o arrastra tu archivo
+                                <span className="font-semibold">Haz clic para subir</span> o arrastra y suelta tu archivo
                             </p>
-                            <p className="text-xs text-gray-500">Formatos soportados: XLSX, XLS, CSV</p>
+                            <p className="text-xs text-gray-500">XLSX, XLS o CSV</p>
                         </>
                     )}
                 </div>
@@ -387,15 +419,15 @@ export default function VehicleTracker() {
         
         {error && (
             <div className="text-center p-4 bg-red-100 text-red-700 rounded-lg">
-                <p><strong>Error al procesar:</strong> {error}</p>
+                <p><strong>Error:</strong> {error}</p>
             </div>
         )}
 
         {tripData && (
-          <div className="space-y-5 pt-4">
-            <div className="relative flex items-center justify-between">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
               <label htmlFor="stop-duration" className="text-sm font-medium text-gray-700">
-                Filtrar paradas de más de:
+                Mostrar paradas mayores a:
               </label>
               <div className="flex items-center space-x-2">
                 <input
@@ -413,10 +445,10 @@ export default function VehicleTracker() {
 
             <button
               onClick={downloadMap}
-              className="flex items-center justify-center w-full px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition-transform transform hover:scale-105 shadow-lg shadow-green-200"
+              className="flex items-center justify-center w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
             >
               <Download className="h-5 w-5 mr-2" />
-              Descargar Mapa Interactivo (HTML)
+              Descargar Mapa HTML
             </button>
           </div>
         )}
@@ -424,14 +456,12 @@ export default function VehicleTracker() {
 
       {tripData && (
           <div className="w-full max-w-6xl mt-8">
-              <h2 className="text-2xl font-bold text-center mb-4 text-gray-700">Vista Previa del Mapa</h2>
-              <div className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-lg overflow-hidden">
-                <iframe
-                    srcDoc={generateMapHTML()}
-                    className="w-full h-full border-0"
-                    title="Vista Previa del Mapa"
-                />
-              </div>
+              <h2 className="text-2xl font-bold text-center mb-4">Vista Previa del Mapa</h2>
+              <iframe
+                  srcDoc={generateMapHTML()}
+                  className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
+                  title="Vista Previa del Mapa"
+              />
           </div>
         )}
     </div>
