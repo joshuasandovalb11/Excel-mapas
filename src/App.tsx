@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { MapPin, Upload, Download, Clock, Car, ParkingSquare } from 'lucide-react';
 
-// Interfaces para estructurar los datos
+// INTERFACES PARA ESTRUCTURAR LOS DATOS
 interface TripEvent {
   id: number;
   time: string;
@@ -27,6 +27,7 @@ interface ProcessedTrip {
     description: string;
     duration?: number;
     stopNumber?: number;
+    clientKey?: string;
     clientName?: string;
   }>;
 }
@@ -39,6 +40,7 @@ interface VehicleInfo {
 }
 
 interface Client {
+  key: string;
   name: string;
   lat: number;
   lng: number;
@@ -56,7 +58,11 @@ export default function VehicleTracker() {
 
   const googleMapsApiKey = 'AIzaSyBb7rJA438WYzdA3js2zJcMYOotPn-FR6s';
 
-  // Parsear la información del vehículo desde la hoja de Excel
+  const toTitleCase = (str: string): string => {
+    if (!str) return '';
+    return str.toLowerCase().replace(/\b\w/g, char => char.toUpperCase());
+  };
+
   const parseVehicleInfo = (worksheet: XLSX.WorkSheet): VehicleInfo => {
     const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
     const info: Partial<VehicleInfo> = {
@@ -95,7 +101,6 @@ export default function VehicleTracker() {
     return info as VehicleInfo;
   };
   
-  // Calcular la distancia entre dos puntos
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371e3;
     const p1 = lat1 * Math.PI / 180;
@@ -107,21 +112,24 @@ export default function VehicleTracker() {
     return R * c;
   };
 
-  // Actualizar los nombres de clientes en las paradas
   useEffect(() => {
     if (tripData && clientData) {
       const updatedFlags = tripData.flags.map(flag => {
         if (flag.type === 'stop') {
-          let matchedClient: string | null = null;
+          let matchedClient: Client | null = null;
           let minDistance = Infinity;
           for (const client of clientData) {
             const distance = calculateDistance(flag.lat, flag.lng, client.lat, client.lng);
             if (distance < 150 && distance < minDistance) {
               minDistance = distance;
-              matchedClient = client.name;
+              matchedClient = client;
             }
           }
-          return { ...flag, clientName: matchedClient || "Sin coincidencia" };
+          return {
+            ...flag,
+            clientName: matchedClient?.name || "Sin coincidencia",
+            clientKey: matchedClient?.key 
+          };
         }
         return flag;
       });
@@ -130,7 +138,6 @@ export default function VehicleTracker() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientData]);
 
-  // Parsear el tiempo a minutos
   const parseTimeToMinutes = (timeStr: string): number => {
     if (!timeStr || !timeStr.includes(':')) return 0;
     const parts = timeStr.split(':').map(Number);
@@ -139,7 +146,6 @@ export default function VehicleTracker() {
     return hours * 60 + minutes;
   };
 
-  // Formatear duracion a texto
   const formatDuration = (minutes: number): string => {
     if (minutes < 1) return "Menos de 1 min";
     if (minutes < 60) return `${Math.round(minutes)} min`;
@@ -148,7 +154,6 @@ export default function VehicleTracker() {
     return `${hours} h ${mins} min`;
   };
 
-  // Peocesar los datos del viaje
   const processTripData = (data: any[]): ProcessedTrip => {
     const findTimeColumn = (row: any): string | null => {
       const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
@@ -245,7 +250,6 @@ export default function VehicleTracker() {
     return { events, routes, flags };
   };
 
-  // Manejador de carga de archivos Excel de la ruta del vehículo
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -290,7 +294,6 @@ export default function VehicleTracker() {
     if (fileInputRef.current) { fileInputRef.current.value = ''; }
   };
 
-  // Manejador de carga de archivos Excel de clientes
   const handleClientFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -313,12 +316,12 @@ export default function VehicleTracker() {
 
             for (let i = 0; i < 10 && i < sheetAsArray.length; i++) {
                 const row = sheetAsArray[i];
-                if (row.includes('RAZON') && row.includes('GPS')) {
+                if (row.includes('CLAVE') && row.includes('RAZON') && row.includes('GPS')) {
                     headerRowIndex = i;
                     isGpsFormat = true;
                     break;
                 }
-                if (row.includes('Cliente') && row.includes('Latitud') && row.includes('Longitud')) {
+                if (row.includes('CLAVE') && row.includes('Cliente') && row.includes('Latitud') && row.includes('Longitud')) {
                     headerRowIndex = i;
                     isGpsFormat = false;
                     break;
@@ -326,7 +329,7 @@ export default function VehicleTracker() {
             }
 
             if (headerRowIndex === -1) {
-                setError("No se encontraron encabezados compatibles. Verifique que el archivo contenga las columnas ('RAZON' y 'GPS') o ('Cliente', 'Latitud' y 'Longitud').");
+                setError("No se encontraron encabezados compatibles. Verifique que el archivo contenga las columnas necesarias (ej: 'CLAVE', 'RAZON', 'GPS').");
                 return;
             }
 
@@ -338,30 +341,37 @@ export default function VehicleTracker() {
                 clients = data.map(row => {
                     let gpsString = String(row['GPS'] || '');
                     if (!gpsString) return null;
-
                     gpsString = gpsString.replace('&', ',');
-
                     const coords = gpsString.split(',');
                     if (coords.length !== 2) return null;
-                    
                     const lat = Number(coords[0]?.trim());
                     const lng = Number(coords[1]?.trim());
                     if (isNaN(lat) || isNaN(lng)) return null;
                     
-                    return { name: row['RAZON'], lat, lng };
+                    return {
+                        key: String(row['CLAVE'] || 'N/A'),
+                        name: toTitleCase(row['RAZON']),
+                        lat: lat,
+                        lng: lng
+                    };
                 }).filter((c): c is Client => c !== null);
-
             } else {
                 clients = data.map(row => {
                     const lat = Number(row['Latitud']);
                     const lng = Number(row['Longitud']);
                     if (isNaN(lat) || isNaN(lng)) return null;
-                    return { name: row['Cliente'], lat, lng };
+                    
+                    return {
+                        key: String(row['CLAVE'] || 'N/A'),
+                        name: toTitleCase(row['Cliente']),
+                        lat: lat,
+                        lng: lng
+                    };
                 }).filter((c): c is Client => c !== null);
             }
 
             if (clients.length === 0) {
-               setError("Se encontraron los encabezados, pero no se pudo extraer ningún dato de cliente válido.");
+               setError("Se encontraron los encabezados, pero no se pudo extraer ningún dato de cliente válido. Verifique los datos debajo de los encabezados.");
                return;
             }
             
@@ -375,7 +385,6 @@ export default function VehicleTracker() {
     reader.readAsBinaryString(file);
   };
   
-  // Generar el HTML del mapa
   const generateMapHTML = (vehicleInfo: VehicleInfo | null): string => {
     if (!tripData) return '';
     const filteredFlags = tripData.flags.filter(flag => 
@@ -444,7 +453,12 @@ export default function VehicleTracker() {
                     case 'start': content = \`<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
                     case 'end': content = \`<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
                     case 'stop':
-                        const clientInfo = flag.clientName ? (flag.clientName !== 'Sin coincidencia' ? \`<p style="color:#059669; font-weight: 500;"><strong>Cliente:</strong> \${flag.clientName}</p>\` : \`<p style="color:#D97706;"><strong>Cliente:</strong> Sin coincidencia</p>\`) : '';
+                        const clientInfo = flag.clientName && flag.clientName !== 'Sin coincidencia'
+                            ? \`<div style="color:#059669;">
+                                 <p style="margin: 2px 0; font-weight: 500;"><strong>#</strong> \${flag.clientKey || 'N/A'}</p>
+                                 <p style="margin: 2px 0; font-weight: 500;"><strong> \${flag.clientName} </strong></p>
+                               </div>\`
+                            : \`<p style="color:#FF2800; font-weight: 500;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
                         content = \`<h3><span style="color: #4F4E4E;">&#9209;</span> Parada \${flag.stopNumber}</h3><p><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> \${flag.time}</p>\${clientInfo}<p>\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>\`;
                         break;
                 }
@@ -490,7 +504,6 @@ export default function VehicleTracker() {
     `;
   };
   
-  // Descarga el mapa generado como archivo HTML
   const downloadMap = () => {
     const htmlContent = generateMapHTML(vehicleInfo);
     const blob = new Blob([htmlContent], { type: 'text/html' });
@@ -535,7 +548,7 @@ export default function VehicleTracker() {
                 <p className="text-center text-gray-600 mb-2">Paso 2: Sube el archivo de clientes para identificar las paradas.</p>
                 <label htmlFor="clients-file" className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors">
                     <div className="flex flex-col items-center justify-center">
-                        <ParkingSquare className="w-8 h-8 mb-2 text-green-500 motion-safe:animate-bounce" />
+                        <ParkingSquare className="w-8 h-8 mb-2 text-green-500" />
                         {clientFileName ? (<p className="font-semibold text-green-700">{clientFileName}</p>) : (<>
                             <p className="text-sm text-gray-600"><span className="font-semibold">Subir archivo de Clientes</span></p>
                             <p className="text-xs text-gray-500">XLSX, XLS o CSV</p>
