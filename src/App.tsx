@@ -55,7 +55,7 @@ export default function VehicleTracker() {
   const [minStopDuration, setMinStopDuration] = useState<number>(5);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const googleMapsApiKey = 'AIzaSyBb7rJA438WYzdA3js2zJcMYOotPn-FR6s';
+  const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
   const toTitleCase = (str: string): string => {
     if (!str) return '';
