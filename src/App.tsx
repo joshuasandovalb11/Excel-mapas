@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { MapPin, Upload, Download, Clock, Car, ParkingSquare } from 'lucide-react';
+import { Upload, Download, Car, ParkingSquare } from 'lucide-react';
 
 // INTERFACES PARA ESTRUCTURAR LOS DATOS
 interface TripEvent {
