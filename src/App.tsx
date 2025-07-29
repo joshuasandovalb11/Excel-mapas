@@ -54,6 +54,7 @@ export default function VehicleTracker() {
   const [error, setError] = useState<string | null>(null);
   const [minStopDuration, setMinStopDuration] = useState<number>(5);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0);
 
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
@@ -132,6 +133,12 @@ export default function VehicleTracker() {
         }
         return flag;
       });
+      const matchedStops = updatedFlags.filter(
+        flag => flag.type === 'stop' && flag.clientName !== "Sin coincidencia"
+      );
+      const uniqueClientKeys = new Set(matchedStops.map(stop => stop.clientKey));
+      setMatchedStopsCount(uniqueClientKeys.size);
+
       setTripData(prevData => ({ ...prevData!, flags: updatedFlags }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -384,7 +391,7 @@ export default function VehicleTracker() {
     reader.readAsBinaryString(file);
   };
   
-  const generateMapHTML = (vehicleInfo: VehicleInfo | null): string => {
+  const generateMapHTML = (vehicleInfo: VehicleInfo | null, clientData: Client[] | null, totalMatchedStops: number): string => {
     if (!tripData) return '';
     const filteredFlags = tripData.flags.filter(flag => 
       flag.type !== 'stop' || (flag.duration && flag.duration >= minStopDuration)
@@ -394,7 +401,7 @@ export default function VehicleTracker() {
       `{lat: ${filteredFlags[0].lat}, lng: ${filteredFlags[0].lng}}` : 
       '{lat: 25.0, lng: -100.0}';
     const infoBoxHTML = vehicleInfo ? `
-        <div id="info-box">
+        <div id="info-box" class="info-card">
             <h4>Información del Viaje</h4>
             <p><strong>Descripción:</strong> ${vehicleInfo.descripcion}</p>
             <p><strong>Vehículo:</strong> ${vehicleInfo.vehiculo}</p>
@@ -402,6 +409,7 @@ export default function VehicleTracker() {
             <p><strong>Fecha:</strong> ${vehicleInfo.fecha}</p>
         </div>
     ` : '';
+
     return `
       <!DOCTYPE html>
       <html>
@@ -410,37 +418,130 @@ export default function VehicleTracker() {
             #map { height: 100%; width: 100%; } body, html { height: 100%; margin: 0; padding: 0; } .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 12px !important; } h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } h3 span { font-size: 20px; margin-right: 8px; } p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
             #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-220%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
             #controls button { font-family: sans-serif; font-size: 14px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
-            #info-box { position: absolute; top: 10px; right: 10px; transform: translateX(-25%); z-index: 10; background: rgba(255, 255, 255, 0.9); padding: 8px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 220px; }
-            #info-box h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; } #info-box p { margin: 3px 0; font-size: 12px; }
+            #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
+            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 220px; }
+            .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
+            .info-card p { margin: 3px 0; font-size: 12px; }
           </style>
         </head>
         <body>
           <div id="map"></div>
-          ${infoBoxHTML}
+          <div id="info-container">
+            ${infoBoxHTML}
+            <div id="distance-box" class="info-card">
+              <h4>Kilometraje</h4>
+              <p><strong>Recorrido del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
+              <p><strong>Recorrido Total:</strong> <span id="total-distance">0.00 km</span></p>
+            </div>
+
+            <div id="clients-box" class="info-card">
+              <h4>Clientes Visitados</h4>
+              <p style="font-size: 16px; text-align: center; font-weight: bold; margin-top: 8px;">
+                <span id="visited-clients-count">0</span> / ${totalMatchedStops}
+              </p>
+            </div>
+          </div>
+
           <div id="controls"><button id="playPauseBtn">Reproducir</button><button id="nextStopBtn">Siguiente Parada</button></div>
           <script>
             let map, markers = [], infowindows = [], openInfoWindow = null, stopInfo = [];
-            const routePath = ${JSON.stringify(routes[0]?.path || [])}; const allFlags = ${JSON.stringify(filteredFlags)}; const formatDuration = ${formatDuration.toString()};
+            const routePath = ${JSON.stringify(routes[0]?.path || [])};
+            const allFlags = ${JSON.stringify(filteredFlags)};
+            const allClients = ${JSON.stringify(clientData || [])};
+            const formatDuration = ${formatDuration.toString()};
             let animatedPolyline, currentPathIndex = 0, animationFrameId, isAnimating = false, currentStopIndex = 0;
+            let segmentDistances = [];
+            let cumulativeDistance = 0;
+            let visitedClientsCounter = 0;
+            const countedClientKeys = new Set();
+
+            function formatDistance(meters) {
+              if (meters < 1000) return meters.toFixed(0) + ' m';
+              return (meters / 1000).toFixed(2) + ' km';
+            }
+
+            function updateDistanceCard(segmentMeters, totalMeters) {
+              document.getElementById('segment-distance').textContent = formatDistance(segmentMeters);
+              document.getElementById('total-distance').textContent = formatDistance(totalMeters);
+            }
+
+            function createClientMarker(client) {
+              const icon = {
+                path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+                fillColor: '#A12323',
+                fillOpacity: 1,
+                strokeWeight: 0,
+                scale: 1.3,
+                anchor: new google.maps.Point(12, 24)
+              };
+              return new google.maps.Marker({
+                position: { lat: client.lat, lng: client.lng },
+                map,
+                icon,
+                title: client.name
+              });
+            }
+
+            function createClientInfoWindow(client) {
+              const content = \`
+                <div>
+                  <h3 style="display:flex; align-items:center;">
+                    <span style="margin-right: 8px;">
+                       <svg fill="#000000" width="20" height="20" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg>
+                    </span>
+                    Cliente
+                  </h3>
+                  <p style="margin: 2px 0 0 0; color: #059669;"><strong>#</strong> <strong> \${client.key} </strong></p>
+                  <p style="margin: 2px 0 0 0; color: #059669;"><strong> \${client.name} </strong></p>
+                </div>\`;
+              return new google.maps.InfoWindow({ content });
+            }
+
             function initMap() {
                 map = new google.maps.Map(document.getElementById('map'), { center: ${mapCenter}, zoom: 12, mapTypeControl: false, streetViewControl: false });
                 const bounds = new google.maps.LatLngBounds();
+
                 allFlags.forEach((flag, index) => {
                     if (!flag) return;
                     const marker = createMarker(flag); const infowindow = createInfoWindow(flag);
                     markers.push(marker); infowindows.push(infowindow);
                     marker.addListener('click', () => { if (openInfoWindow) openInfoWindow.close(); infowindow.open(map, marker); openInfoWindow = infowindow; });
-                    if (flag.type === 'stop' || flag.type === 'end') {
-                        const flagLatLng = new google.maps.LatLng(flag.lat, flag.lng); let closestPathIndex = -1; let minDistance = Infinity;
+                    if (flag.type === 'start' || flag.type === 'stop' || flag.type === 'end') {
+                        const flagLatLng = new google.maps.LatLng(flag.lat, flag.lng);
+                        let closestPathIndex = -1; let minDistance = Infinity;
                         routePath.forEach((pathPoint, i) => { const pathLatLng = new google.maps.LatLng(pathPoint.lat, pathPoint.lng); const distance = google.maps.geometry.spherical.computeDistanceBetween(flagLatLng, pathLatLng); if (distance < minDistance) { minDistance = distance; closestPathIndex = i; } });
                         stopInfo.push({ markerIndex: index, pathIndex: closestPathIndex, type: flag.type });
                     }
                     bounds.extend(marker.getPosition());
                 });
+
+                allClients.forEach(client => {
+                  const clientMarker = createClientMarker(client);
+                  const clientInfoWindow = createClientInfoWindow(client);
+                  clientMarker.addListener('click', () => {
+                    if (openInfoWindow) openInfoWindow.close();
+                    clientInfoWindow.open(map, clientMarker);
+                    openInfoWindow = clientInfoWindow;
+                  });
+                  bounds.extend(clientMarker.getPosition());
+                });
+
+                let lastPathIndex = 0;
+                for (let i = 0; i < stopInfo.length; i++) {
+                  const stop = stopInfo[i];
+                  if (stop.type === 'start') continue;
+                  const segmentPath = routePath.slice(lastPathIndex, stop.pathIndex + 1);
+                  const segmentLength = google.maps.geometry.spherical.computeLength(segmentPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+                  segmentDistances.push(segmentLength);
+                  lastPathIndex = stop.pathIndex;
+                }
+
                 map.fitBounds(bounds);
                 animatedPolyline = new google.maps.Polyline({ path: [], strokeColor: '#3b82f6', strokeOpacity: 0.8, strokeWeight: 5, map: map });
-                document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause); document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
+                document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
+                document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
             }
+
             function createMarker(flag) {
                 const colors = { start: '#22c55e', stop: '#4F4E4E', end: '#ef4444' };
                 const icon = { path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z', fillColor: colors[flag.type], fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 24) };
@@ -454,10 +555,10 @@ export default function VehicleTracker() {
                     case 'stop':
                         const clientInfo = flag.clientName && flag.clientName !== 'Sin coincidencia'
                             ? \`<div style="color:#059669;">
-                                 <p style="margin: 2px 0; font-weight: 500;"><strong>#</strong> \${flag.clientKey || 'N/A'}</p>
+                                 <p style="margin: 2px 0; font-weight: 500;"><strong>#</strong> <strong>\${flag.clientKey || 'N/A'}</strong></p>
                                  <p style="margin: 2px 0; font-weight: 500;"><strong> \${flag.clientName} </strong></p>
                                </div>\`
-                            : \`<p style="color:#FF2800; font-weight: 500;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
+                            : \`<p style="color:#FC2121; font-weight: 500;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
                         content = \`<h3><span style="color: #4F4E4E;">&#9209;</span> Parada \${flag.stopNumber}</h3><p><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> \${flag.time}</p>\${clientInfo}<p>\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>\`;
                         break;
                 }
@@ -469,15 +570,27 @@ export default function VehicleTracker() {
                 else { btn.textContent = 'Reproducir'; document.getElementById('nextStopBtn').disabled = false; cancelAnimationFrame(animationFrameId); }
             }
             function animateToNextStop() {
-                if (currentStopIndex >= stopInfo.length) return;
+                if (currentStopIndex >= stopInfo.length -1) return;
                 isAnimating = true; if (openInfoWindow) openInfoWindow.close(); document.getElementById('playPauseBtn').disabled = true; document.getElementById('nextStopBtn').disabled = true;
-                const nextStop = stopInfo[currentStopIndex];
+                const nextStop = stopInfo[currentStopIndex + 1];
                 animate(nextStop.pathIndex, () => {
                     const marker = markers[nextStop.markerIndex]; const infowindow = infowindows[nextStop.markerIndex];
                     marker.setAnimation(google.maps.Animation.BOUNCE); setTimeout(() => marker.setAnimation(null), 1400);
                     if (openInfoWindow) openInfoWindow.close(); infowindow.open(map, marker); openInfoWindow = infowindow;
-                    currentStopIndex++; isAnimating = false; document.getElementById('playPauseBtn').disabled = false;
-                    if (currentStopIndex >= stopInfo.length) { document.getElementById('nextStopBtn').disabled = true; } else { document.getElementById('nextStopBtn').disabled = false; }
+                    const segmentMeters = segmentDistances[currentStopIndex] || 0;
+                    cumulativeDistance += segmentMeters;
+                    updateDistanceCard(segmentMeters, cumulativeDistance);
+
+                    const currentFlag = allFlags[nextStop.markerIndex];
+                    if (currentFlag && currentFlag.type === 'stop' && currentFlag.clientKey && !countedClientKeys.has(currentFlag.clientKey)) {
+                        countedClientKeys.add(currentFlag.clientKey);
+                        document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
+                    }
+
+                    currentStopIndex++;
+                    isAnimating = false; document.getElementById('playPauseBtn').disabled = false;
+                    if (currentStopIndex >= stopInfo.length - 1) { document.getElementById('nextStopBtn').disabled = true; } 
+                    else { document.getElementById('nextStopBtn').disabled = false; }
                 });
             }
             function animate(targetPathIndex, onComplete = () => {}) {
@@ -504,7 +617,7 @@ export default function VehicleTracker() {
   };
   
   const downloadMap = () => {
-    const htmlContent = generateMapHTML(vehicleInfo);
+    const htmlContent = generateMapHTML(vehicleInfo, clientData, matchedStopsCount);
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -579,7 +692,7 @@ export default function VehicleTracker() {
       {tripData && (
           <div className="relative w-full max-w-6xl mt-8">
               <h2 className="text-2xl font-bold text-center mb-4">Vista Previa del Mapa</h2>
-              <iframe srcDoc={generateMapHTML(vehicleInfo)} className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md" title="Vista Previa del Mapa" />
+              <iframe srcDoc={generateMapHTML(vehicleInfo, clientData, matchedStopsCount)} className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md" title="Vista Previa del Mapa" />
           </div>
       )}
     </div>
