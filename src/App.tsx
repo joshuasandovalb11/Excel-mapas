@@ -4,6 +4,8 @@ import * as XLSX from 'xlsx';
 import { Upload, Download, Car, ParkingSquare } from 'lucide-react';
 
 // INTERFACES PARA ESTRUCTURAR LOS DATOS
+
+// Interfaz para la estructura de los tipo de eventos
 interface TripEvent {
   id: number;
   time: string;
@@ -12,7 +14,7 @@ interface TripEvent {
   lat: number;
   lng: number;
 }
-
+// Interfaz para la estructura del viaje
 interface ProcessedTrip {
   events: TripEvent[];
   routes: Array<{
@@ -30,14 +32,14 @@ interface ProcessedTrip {
     clientName?: string;
   }>;
 }
-
+// Interfaz para la esstrcutura de la informacion del vehiculo
 interface VehicleInfo {
   descripcion: string;
   vehiculo: string;
   placa: string;
   fecha: string;
 }
-
+// Interfaz para la estructura del cliente
 interface Client {
   key: string;
   name: string;
@@ -46,23 +48,26 @@ interface Client {
 }
 
 export default function VehicleTracker() {
-  const [tripData, setTripData] = useState<ProcessedTrip | null>(null);
-  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
-  const [clientData, setClientData] = useState<Client[] | null>(null);
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [clientFileName, setClientFileName] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [minStopDuration, setMinStopDuration] = useState<number>(5);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0);
+  const [tripData, setTripData] = useState<ProcessedTrip | null>(null); // Datos del viaje
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null); // Informacon del vehiculo
+  const [clientData, setClientData] = useState<Client[] | null>(null); // Datos del cliente
+  const [fileName, setFileName] = useState<string | null>(null); // Nombre del archivo
+  const [clientFileName, setClientFileName] = useState<string | null>(null); // Nombre del archivp de clientes
+  const [error, setError] = useState<string | null>(null); // Errores
+  const [minStopDuration, setMinStopDuration] = useState<number>(5); // Minutos minimos
+  const [clientRadius, setClientRadius] = useState<number>(150); // Radio del cliente
+  const fileInputRef = useRef<HTMLInputElement>(null); // Input para el arhivo
+  const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0); // Contador de paradas con clientes
 
-  const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
+  const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY; // API de Google Maps
 
+  // Funcion para formato del nombre del cliente
   const toTitleCase = (str: string): string => {
     if (!str) return '';
     return str.toLowerCase().replace(/\b\w/g, char => char.toUpperCase());
   };
 
+  // Funcion para obtener la informacion del vehiculo
   const parseVehicleInfo = (worksheet: XLSX.WorkSheet): VehicleInfo => {
     const data: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
     const info: Partial<VehicleInfo> = {
@@ -101,6 +106,7 @@ export default function VehicleTracker() {
     return info as VehicleInfo;
   };
   
+  // Funcion para calcular la distancia
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371e3;
     const p1 = lat1 * Math.PI / 180;
@@ -112,6 +118,7 @@ export default function VehicleTracker() {
     return R * c;
   };
 
+  // Efecto para establecer si hay match con respecto a la ubicacion y al cliente
   useEffect(() => {
     if (tripData && clientData) {
       const updatedFlags = tripData.flags.map(flag => {
@@ -120,7 +127,7 @@ export default function VehicleTracker() {
           let minDistance = Infinity;
           for (const client of clientData) {
             const distance = calculateDistance(flag.lat, flag.lng, client.lat, client.lng);
-            if (distance < 150 && distance < minDistance) {
+            if (distance < clientRadius && distance < minDistance) {
               minDistance = distance;
               matchedClient = client;
             }
@@ -142,8 +149,9 @@ export default function VehicleTracker() {
       setTripData(prevData => ({ ...prevData!, flags: updatedFlags }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clientData]);
+  }, [clientData, clientRadius]);
 
+  // Funcion para convertir el tiempo a minutos
   const parseTimeToMinutes = (timeStr: string): number => {
     if (!timeStr || !timeStr.includes(':')) return 0;
     const parts = timeStr.split(':').map(Number);
@@ -152,6 +160,7 @@ export default function VehicleTracker() {
     return hours * 60 + minutes;
   };
 
+  // Funcion para establecer el formato de duracion en las paradas
   const formatDuration = (minutes: number): string => {
     if (minutes < 1) return "Menos de 1 min";
     if (minutes < 60) return `${Math.round(minutes)} min`;
@@ -160,6 +169,7 @@ export default function VehicleTracker() {
     return `${hours} h ${mins} min`;
   };
 
+  // Funcion para procesar la informacion del viaje 
   const processTripData = (data: any[]): ProcessedTrip => {
     const findTimeColumn = (row: any): string | null => {
       const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
@@ -256,6 +266,7 @@ export default function VehicleTracker() {
     return { events, routes, flags };
   };
 
+  // Funcion para leer el archivo EXCEL para las rutas
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -300,6 +311,7 @@ export default function VehicleTracker() {
     if (fileInputRef.current) { fileInputRef.current.value = ''; }
   };
 
+  // Funcion para leer el archivo EXCEL para los clientes
   const handleClientFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -391,6 +403,7 @@ export default function VehicleTracker() {
     reader.readAsBinaryString(file);
   };
   
+  // Funcion que genera el mapa HTML
   const generateMapHTML = (vehicleInfo: VehicleInfo | null, clientData: Client[] | null, totalMatchedStops: number): string => {
     if (!tripData) return '';
     const filteredFlags = tripData.flags.filter(flag => 
@@ -616,6 +629,7 @@ export default function VehicleTracker() {
     `;
   };
   
+  // Funcion para descargar el mapa con formato HTML
   const downloadMap = () => {
     const htmlContent = generateMapHTML(vehicleInfo, clientData, matchedStopsCount);
     const blob = new Blob([htmlContent], { type: 'text/html' });
@@ -660,7 +674,7 @@ export default function VehicleTracker() {
                 <p className="text-center text-gray-600 mb-2">Paso 2: Sube el archivo de clientes para identificar las paradas.</p>
                 <label htmlFor="clients-file" className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors">
                     <div className="flex flex-col items-center justify-center">
-                        <ParkingSquare className="w-8 h-8 mb-2 text-green-500" />
+                        <ParkingSquare className="w-8 h-8 mb-2 text-green-500 motion-safe:animate-bounce" />
                         {clientFileName ? (<p className="font-semibold text-green-700">{clientFileName}</p>) : (<>
                             <p className="text-sm text-gray-600"><span className="font-semibold">Subir archivo de Clientes</span></p>
                             <p className="text-xs text-gray-500">XLSX, XLS o CSV</p>
@@ -675,11 +689,20 @@ export default function VehicleTracker() {
 
         {tripData && (
           <div className="space-y-4 pt-4">
+            {/* Input para determinar las paradas mayor a que minutos */}
             <div className="flex items-center justify-between">
               <label htmlFor="stop-duration" className="text-sm font-medium text-gray-700">Mostrar paradas mayores a:</label>
               <div className="flex items-center space-x-2">
                 <input type="number" id="stop-duration" min="1" max="120" value={minStopDuration} onChange={(e) => setMinStopDuration(Number(e.target.value))} className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
                 <span className="text-sm text-gray-500">minutos</span>
+              </div>
+            </div>
+            {/* Input para el radio de coincidencia del cliente */}
+            <div className="flex items-center justify-between">
+              <label htmlFor="client-radius" className="text-sm font-medium text-gray-700">Radio de detección de cliente:</label>
+              <div className="flex items-center space-x-2">
+                <input type="number" id="client-radius" min="10" max="1000" step="10" value={clientRadius} onChange={(e) => setClientRadius(Number(e.target.value))} className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+                <span className="text-sm text-gray-500">metros</span>
               </div>
             </div>
             <button onClick={downloadMap} className="flex items-center justify-center w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105">
