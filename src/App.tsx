@@ -31,6 +31,7 @@ interface ProcessedTrip {
     clientKey?: string;
     clientName?: string;
   }>;
+  processingMethod: 'event-based' | 'speed-based';
 }
 // Interfaz para la esstrcutura de la informacion del vehiculo
 interface VehicleInfo {
@@ -59,7 +60,7 @@ export default function VehicleTracker() {
   const fileInputRef = useRef<HTMLInputElement>(null); // Input para el arhivo
   const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0); // Contador de paradas con clientes
 
-  const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY; // API de Google Maps
+  const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
   // Funcion para formato del nombre del cliente
   const toTitleCase = (str: string): string => {
@@ -105,8 +106,8 @@ export default function VehicleTracker() {
     }
     return info as VehicleInfo;
   };
-  
-  // Funcion para calcular la distancia
+
+  // Funcion para calcular la distancia  
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
     const R = 6371e3;
     const p1 = lat1 * Math.PI / 180;
@@ -192,48 +193,44 @@ export default function VehicleTracker() {
       lat: Number(row['Latitud']),
       lng: Number(row['Longitud']),
     })).filter(event => event.lat && event.lng);
+    
     if (events.length === 0) {
       throw new Error("El archivo no contiene datos de eventos válidos con coordenadas.");
     }
-    const flags: ProcessedTrip['flags'] = [];
-    const routes: ProcessedTrip['routes'] = [{ path: [] }];
-    let stopCounter = 0;
-    const coordCounts = new Map<string, number>();
-    const firstStartEvent = events.find(event => event.description.toLowerCase().includes('inicio de viaje'));
-    if (!firstStartEvent) {
-        throw new Error("No se encontró ningún evento de 'Inicio de Viaje' para comenzar el recorrido.");
-    }
-    const startIndex = events.findIndex(e => e.id === firstStartEvent.id);
-    flags.push({
-      lat: firstStartEvent.lat,
-      lng: firstStartEvent.lng,
-      type: 'start',
-      time: firstStartEvent.time,
-      description: `Inicio del Recorrido`,
-    });
-    const lastEndEventIndex = events.map(e => e.description.toLowerCase().includes('fin de viaje')).lastIndexOf(true);
-    const lastEndEvent = lastEndEventIndex !== -1 ? events[lastEndEventIndex] : null;
-    if (!lastEndEvent) {
-        throw new Error("No se encontró ningún evento de 'Fin de Viaje' para finalizar el recorrido.");
-    }
-    for (let i = startIndex; i < events.length; i++) {
+
+    const hasStartEndEvents = events.some(e => e.description.toLowerCase().includes('inicio de viaje')) &&
+                              events.some(e => e.description.toLowerCase().includes('fin de viaje'));
+
+    // METODO #1 = Archivos que contienen incio y fin de viaje
+    if (hasStartEndEvents) {
+      console.log("Procesando con eventos de Inicio/Fin de Viaje.");
+      const flags: ProcessedTrip['flags'] = [];
+      const routes: ProcessedTrip['routes'] = [{ path: [] }];
+      let stopCounter = 0;
+      
+      const firstStartEvent = events.find(event => event.description.toLowerCase().includes('inicio de viaje'));
+      if (!firstStartEvent) throw new Error("No se encontró 'Inicio de Viaje'.");
+      
+      const lastEndEventIndex = events.map(e => e.description.toLowerCase().includes('fin de viaje')).lastIndexOf(true);
+      const lastEndEvent = lastEndEventIndex !== -1 ? events[lastEndEventIndex] : null;
+      if (!lastEndEvent) throw new Error("No se encontró 'Fin de Viaje'.");
+
+      const startIndex = events.findIndex(e => e.id === firstStartEvent.id);
+      flags.push({
+        lat: firstStartEvent.lat,
+        lng: firstStartEvent.lng,
+        type: 'start',
+        time: firstStartEvent.time,
+        description: `Inicio del Recorrido`,
+      });
+
+      for (let i = startIndex; i < events.length; i++) {
         const currentEvent = events[i];
         if (currentEvent.description.toLowerCase().includes('fin de viaje') && currentEvent.id !== lastEndEvent.id) {
             stopCounter++;
-            const coordKey = `${currentEvent.lat.toFixed(5)},${currentEvent.lng.toFixed(5)}`;
-            const count = coordCounts.get(coordKey) || 0;
-            let displayLat = currentEvent.lat;
-            let displayLng = currentEvent.lng;
-            if (count > 0) {
-                const offsetDistance = 0.004 * Math.sqrt(count);
-                const angle = count * 137.5; 
-                displayLat += offsetDistance * Math.cos(angle * (Math.PI / 180));
-                displayLng += offsetDistance * Math.sin(angle * (Math.PI / 180));
-            }
-            coordCounts.set(coordKey, count + 1);
             const stopFlag: ProcessedTrip['flags'][0] = {
-                lat: displayLat,
-                lng: displayLng,
+                lat: currentEvent.lat,
+                lng: currentEvent.lng,
                 type: 'stop',
                 time: currentEvent.time,
                 description: `Parada ${stopCounter}: ${currentEvent.description}`,
@@ -250,20 +247,96 @@ export default function VehicleTracker() {
             }
             flags.push(stopFlag);
         }
+      }
+      flags.push({
+        lat: lastEndEvent.lat,
+        lng: lastEndEvent.lng,
+        type: 'end',
+        time: lastEndEvent.time,
+        description: `Fin del Recorrido`,
+      });
+
+      const endIndex = events.findIndex(e => e.id === lastEndEvent.id);
+      if(startIndex !== -1 && endIndex !== -1) {
+          routes[0].path = events.slice(startIndex, endIndex + 1).map(e => ({ lat: e.lat, lng: e.lng }));
+      }
+      return { events, routes, flags, processingMethod: 'event-based' };
+
+    // METODO #2 = Archivos que NO contienen incio y fin de viaje
+    // Logica inteligente basada en velocidad
+    } else {
+      console.log("Eventos de Inicio/Fin no encontrados. Procesando por velocidad.");
+      
+      let lastMovementIndex = -1;
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (events[i].speed > 0) {
+          lastMovementIndex = i;
+          break;
+        }
+      }
+      if (lastMovementIndex === -1) {
+        throw new Error("No se encontraron eventos con velocidad mayor a 0. No se puede definir un recorrido.");
+      }
+
+      const trueEndIndex = Math.min(lastMovementIndex + 1, events.length - 1);
+      const relevantEvents = events.slice(0, trueEndIndex + 1);
+
+      const flags: ProcessedTrip['flags'] = [];
+      const routes: ProcessedTrip['routes'] = [{ path: [] }];
+      let stopCounter = 0;
+
+      flags.push({
+          lat: relevantEvents[0].lat,
+          lng: relevantEvents[0].lng,
+          type: 'start',
+          time: relevantEvents[0].time,
+          description: 'Inicio del Recorrido (Detectado)',
+      });
+
+      let stopStartInfo: TripEvent | null = null;
+      for (let i = 1; i < relevantEvents.length - 1; i++) {
+          const prevEvent = relevantEvents[i-1];
+          const currentEvent = relevantEvents[i];
+
+          if (currentEvent.speed === 0 && prevEvent.speed > 0) {
+              stopStartInfo = currentEvent;
+          }
+
+          if (currentEvent.speed > 0 && prevEvent.speed === 0 && stopStartInfo) {
+              const stopStartTime = parseTimeToMinutes(stopStartInfo.time);
+              const lastStopTime = parseTimeToMinutes(prevEvent.time);
+              let duration = lastStopTime - stopStartTime;
+              if (duration < 0) { duration += 24 * 60; }
+
+              if (duration >= 2) {
+                stopCounter++;
+                flags.push({
+                    lat: stopStartInfo.lat,
+                    lng: stopStartInfo.lng,
+                    type: 'stop',
+                    time: stopStartInfo.time,
+                    description: `Parada ${stopCounter} (Detectada por velocidad)`,
+                    duration: duration,
+                    stopNumber: stopCounter,
+                });
+              }
+              stopStartInfo = null;
+          }
+      }
+      
+      const lastTripEvent = relevantEvents[relevantEvents.length - 1];
+      flags.push({
+          lat: lastTripEvent.lat,
+          lng: lastTripEvent.lng,
+          type: 'end',
+          time: lastTripEvent.time,
+          description: 'Fin del Recorrido (Detectado)',
+      });
+
+      routes[0].path = relevantEvents.map(e => ({ lat: e.lat, lng: e.lng }));
+
+      return { events: relevantEvents, routes, flags, processingMethod: 'speed-based' };
     }
-    flags.push({
-      lat: lastEndEvent.lat,
-      lng: lastEndEvent.lng,
-      type: 'end',
-      time: lastEndEvent.time,
-      description: `Fin del Recorrido`,
-    });
-    const endIndex = events.findIndex(e => e.id === lastEndEvent.id);
-    if(startIndex !== -1 && endIndex !== -1) {
-        const relevantEvents = events.slice(startIndex, endIndex + 1);
-        routes[0].path = relevantEvents.map(e => ({ lat: e.lat, lng: e.lng }));
-    }
-    return { events, routes, flags };
   };
 
   // Funcion para leer el archivo EXCEL para las rutas
@@ -285,16 +358,16 @@ export default function VehicleTracker() {
         const ws = wb.Sheets[wsname];
         const vehicleData = parseVehicleInfo(ws);
         setVehicleInfo(vehicleData);
-        const expectedHeaders = ['Latitud', 'Longitud', 'Descripción de Evento:'];
+        const expectedHeaders = ['Latitud', 'Longitud', 'Descripción de Evento:', 'Velocidad(km)'];
         const sheetAsArray: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
         let headerRowIndex = -1;
         for (let i = 0; i < 20 && i < sheetAsArray.length; i++) {
           const row = sheetAsArray[i];
           const matchCount = expectedHeaders.filter(header => row.includes(header)).length;
-          if (matchCount >= 2) { headerRowIndex = i; break; }
+          if (matchCount >= 3) { headerRowIndex = i; break; }
         }
         if (headerRowIndex === -1) {
-            throw new Error("No se pudo encontrar la fila de encabezados en el archivo de viaje.");
+            throw new Error("No se pudo encontrar la fila de encabezados. Verifique que el archivo contenga 'Latitud', 'Longitud', 'Velocidad(km)', etc.");
         }
         const data = XLSX.utils.sheet_to_json(ws, { range: headerRowIndex, defval: "" });
         if (!Array.isArray(data) || data.length === 0) {
@@ -409,7 +482,7 @@ export default function VehicleTracker() {
     const filteredFlags = tripData.flags.filter(flag => 
       flag.type !== 'stop' || (flag.duration && flag.duration >= minStopDuration)
     );
-    const { routes } = tripData;
+    const { routes, processingMethod } = tripData;
     const mapCenter = filteredFlags.length > 0 ? 
       `{lat: ${filteredFlags[0].lat}, lng: ${filteredFlags[0].lng}}` : 
       '{lat: 25.0, lng: -100.0}';
@@ -456,16 +529,18 @@ export default function VehicleTracker() {
           </div>
 
           <div id="controls"><button id="playPauseBtn">Reproducir</button><button id="nextStopBtn">Siguiente Parada</button></div>
+          
           <script>
             let map, markers = [], infowindows = [], openInfoWindow = null, stopInfo = [];
             const routePath = ${JSON.stringify(routes[0]?.path || [])};
             const allFlags = ${JSON.stringify(filteredFlags)};
             const allClients = ${JSON.stringify(clientData || [])};
             const formatDuration = ${formatDuration.toString()};
+            const processingMethod = '${processingMethod}';
             let animatedPolyline, currentPathIndex = 0, animationFrameId, isAnimating = false, currentStopIndex = 0;
             let segmentDistances = [];
             let cumulativeDistance = 0;
-            let visitedClientsCounter = 0;
+            let totalTripDistanceMeters = 0;
             const countedClientKeys = new Set();
 
             function formatDistance(meters) {
@@ -548,6 +623,9 @@ export default function VehicleTracker() {
                   segmentDistances.push(segmentLength);
                   lastPathIndex = stop.pathIndex;
                 }
+                
+                totalTripDistanceMeters = google.maps.geometry.spherical.computeLength(routePath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+                updateDistanceCard(0, cumulativeDistance);
 
                 map.fitBounds(bounds);
                 animatedPolyline = new google.maps.Polyline({ path: [], strokeColor: '#3b82f6', strokeOpacity: 0.8, strokeWeight: 5, map: map });
@@ -560,11 +638,12 @@ export default function VehicleTracker() {
                 const icon = { path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z', fillColor: colors[flag.type], fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 24) };
                 return new google.maps.Marker({ position: { lat: flag.lat, lng: flag.lng }, map, icon, title: flag.description });
             }
+
             function createInfoWindow(flag) {
                 let content = '';
                 switch (flag.type) {
-                    case 'start': content = \`<h3><span style="color: #22c55e;">&#127937;</span> Inicio del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
-                    case 'end': content = \`<h3><span style="color: #ef4444;">&#127937;</span> Fin del Recorrido</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
+                    case 'start': content = \`<h3><span style="color: #22c55e;">&#127937;</span> \${flag.description}</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
+                    case 'end': content = \`<h3><span style="color: #ef4444;">&#127937;</span> \${flag.description}</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
                     case 'stop':
                         const clientInfo = flag.clientName && flag.clientName !== 'Sin coincidencia'
                             ? \`<div style="color:#059669;">
@@ -577,19 +656,64 @@ export default function VehicleTracker() {
                 }
                 return new google.maps.InfoWindow({ content });
             }
-            function togglePlayPause() {
-                const btn = document.getElementById('playPauseBtn'); isAnimating = !isAnimating;
-                if (isAnimating) { btn.textContent = 'Pausa'; document.getElementById('nextStopBtn').disabled = true; if (openInfoWindow) openInfoWindow.close(); animate(routePath.length); }
-                else { btn.textContent = 'Reproducir'; document.getElementById('nextStopBtn').disabled = false; cancelAnimationFrame(animationFrameId); }
+
+            function drawEntireRoute() {
+                if (openInfoWindow) openInfoWindow.close();
+                animatedPolyline.setPath(routePath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+                currentPathIndex = routePath.length;
+                updateDistanceCard(0, totalTripDistanceMeters);
+                document.getElementById('playPauseBtn').disabled = true;
+                document.getElementById('nextStopBtn').disabled = true;
+                const endMarker = markers[markers.length - 1];
+                if (endMarker) {
+                    endMarker.setAnimation(google.maps.Animation.BOUNCE);
+                    setTimeout(() => endMarker.setAnimation(null), 1400);
+                    infowindows[infowindows.length - 1].open(map, endMarker);
+                }
             }
+
+            function togglePlayPause() {
+                if (processingMethod === 'speed-based') {
+                    drawEntireRoute();
+                    return;
+                }
+                
+                const btn = document.getElementById('playPauseBtn');
+                isAnimating = !isAnimating;
+                if (isAnimating) {
+                    btn.textContent = 'Pausa';
+                    document.getElementById('nextStopBtn').disabled = true;
+                    if (openInfoWindow) openInfoWindow.close();
+                    animateSmoothly(routePath.length - 1, () => {
+                        updateDistanceCard(0, totalTripDistanceMeters);
+                    });
+                } else {
+                    btn.textContent = 'Reproducir';
+                    if (currentStopIndex < stopInfo.length - 1) {
+                       document.getElementById('nextStopBtn').disabled = false;
+                    }
+                    cancelAnimationFrame(animationFrameId);
+                }
+            }
+            
             function animateToNextStop() {
-                if (currentStopIndex >= stopInfo.length -1) return;
-                isAnimating = true; if (openInfoWindow) openInfoWindow.close(); document.getElementById('playPauseBtn').disabled = true; document.getElementById('nextStopBtn').disabled = true;
+                if (currentStopIndex >= stopInfo.length - 1) return;
+                isAnimating = true;
+                if (openInfoWindow) openInfoWindow.close();
+                document.getElementById('playPauseBtn').disabled = true;
+                document.getElementById('nextStopBtn').disabled = true;
+                
                 const nextStop = stopInfo[currentStopIndex + 1];
-                animate(nextStop.pathIndex, () => {
-                    const marker = markers[nextStop.markerIndex]; const infowindow = infowindows[nextStop.markerIndex];
-                    marker.setAnimation(google.maps.Animation.BOUNCE); setTimeout(() => marker.setAnimation(null), 1400);
-                    if (openInfoWindow) openInfoWindow.close(); infowindow.open(map, marker); openInfoWindow = infowindow;
+
+                const onSegmentComplete = () => {
+                    isAnimating = false;
+                    const marker = markers[nextStop.markerIndex];
+                    const infowindow = infowindows[nextStop.markerIndex];
+                    marker.setAnimation(google.maps.Animation.BOUNCE);
+                    setTimeout(() => marker.setAnimation(null), 1400);
+                    if (openInfoWindow) openInfoWindow.close();
+                    infowindow.open(map, marker);
+                    openInfoWindow = infowindow;
                     const segmentMeters = segmentDistances[currentStopIndex] || 0;
                     cumulativeDistance += segmentMeters;
                     updateDistanceCard(segmentMeters, cumulativeDistance);
@@ -599,28 +723,55 @@ export default function VehicleTracker() {
                         countedClientKeys.add(currentFlag.clientKey);
                         document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
                     }
-
                     currentStopIndex++;
-                    isAnimating = false; document.getElementById('playPauseBtn').disabled = false;
-                    if (currentStopIndex >= stopInfo.length - 1) { document.getElementById('nextStopBtn').disabled = true; } 
-                    else { document.getElementById('nextStopBtn').disabled = false; }
-                });
+                    document.getElementById('playPauseBtn').disabled = false;
+                    if (currentStopIndex >= stopInfo.length - 1) {
+                        document.getElementById('nextStopBtn').disabled = true;
+                        updateDistanceCard(segmentMeters, totalTripDistanceMeters);
+                    } else {
+                        document.getElementById('nextStopBtn').disabled = false;
+                    }
+                };
+
+                if (processingMethod === 'speed-based') {
+                    animateVeryFast(nextStop.pathIndex, onSegmentComplete);
+                } else {
+                    animateSmoothly(nextStop.pathIndex, onSegmentComplete);
+                }
             }
-            function animate(targetPathIndex, onComplete = () => {}) {
-                const animationStep = 2;
+
+            function runAnimation(targetPathIndex, onComplete, animationStep) {
                 function step() {
-                    if (!isAnimating || currentPathIndex >= targetPathIndex) {
-                        onComplete();
-                        if (currentPathIndex >= routePath.length) { isAnimating = false; document.getElementById('playPauseBtn').textContent = 'Reproducir'; document.getElementById('playPauseBtn').disabled = false; document.getElementById('nextStopBtn').disabled = true; }
+                    if (!isAnimating) {
+                        cancelAnimationFrame(animationFrameId);
                         return;
                     }
+                    
                     const end = Math.min(currentPathIndex + animationStep, targetPathIndex);
                     const newPathSegment = routePath.slice(currentPathIndex, end);
-                    const newFullPath = animatedPolyline.getPath().getArray().concat(newPathSegment);
-                    animatedPolyline.setPath(newFullPath); currentPathIndex = end;
+                    if (newPathSegment.length > 0) {
+                        const newFullPath = animatedPolyline.getPath().getArray().concat(newPathSegment.map(p => new google.maps.LatLng(p.lat, p.lng)));
+                        animatedPolyline.setPath(newFullPath);
+                    }
+                    currentPathIndex = end;
+
+                    if (currentPathIndex >= targetPathIndex) {
+                        const finalFullPath = routePath.slice(0, targetPathIndex + 1).map(p => new google.maps.LatLng(p.lat, p.lng));
+                        animatedPolyline.setPath(finalFullPath);
+                        onComplete();
+                        return;
+                    }
                     animationFrameId = requestAnimationFrame(step);
                 }
                 animationFrameId = requestAnimationFrame(step);
+            }
+
+            function animateVeryFast(targetPathIndex, onComplete) {
+                runAnimation(targetPathIndex, onComplete, 35);
+            }
+
+            function animateSmoothly(targetPathIndex, onComplete = () => {}) {
+                runAnimation(targetPathIndex, onComplete, 1);
             }
           </script>
           <script async defer src="https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap&libraries=geometry"></script>
@@ -662,25 +813,25 @@ export default function VehicleTracker() {
                     <Upload className="w-10 h-10 mb-3 text-blue-500 motion-safe:animate-bounce" />
                     {fileName ? (<p className="font-semibold text-blue-700">{fileName}</p>) : (<>
                         <p className="mb-2 text-sm text-gray-600"><span className="font-semibold">Haz clic para subir</span> o arrastra y suelta</p>
-                        <p className="text-xs text-gray-500">XLSX, XLS o CSV</p>
+                        <p className="text-xs text-gray-500">XLSX, XLS</p>
                     </>)}
                 </div>
-                <input ref={fileInputRef} id="dropzone-file" type="file" className="hidden" onChange={handleFileUpload} accept=".xlsx, .xls, .csv" />
+                <input ref={fileInputRef} id="dropzone-file" type="file" className="hidden" onChange={handleFileUpload} accept=".xlsx, .xls" />
             </label>
         </div>
         
         {tripData && (
             <div className="mt-6">
-                <p className="text-center text-gray-600 mb-2">Paso 2: Sube el archivo de clientes para identificar las paradas.</p>
+                <p className="text-center text-gray-600 mb-2">Paso 2 (Opcional): Sube el archivo de clientes para identificar paradas.</p>
                 <label htmlFor="clients-file" className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors">
                     <div className="flex flex-col items-center justify-center">
                         <ParkingSquare className="w-8 h-8 mb-2 text-green-500 motion-safe:animate-bounce" />
                         {clientFileName ? (<p className="font-semibold text-green-700">{clientFileName}</p>) : (<>
                             <p className="text-sm text-gray-600"><span className="font-semibold">Subir archivo de Clientes</span></p>
-                            <p className="text-xs text-gray-500">XLSX, XLS o CSV</p>
+                            <p className="text-xs text-gray-500">XLSX, XLS</p>
                         </>)}
                     </div>
-                    <input id="clients-file" type="file" className="hidden" onChange={handleClientFileUpload} accept=".xlsx, .xls, .csv" />
+                    <input id="clients-file" type="file" className="hidden" onChange={handleClientFileUpload} accept=".xlsx, .xls" />
                 </label>
             </div>
         )}
