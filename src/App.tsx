@@ -4,9 +4,11 @@ import ReportesView from './components/ReportesView';
 import { Map, FileText, RotateCw } from 'lucide-react';
 
 export default function App() {
-  const [activeView, setActiveView] = useState<'tracker' | 'reports'>('tracker');
+  const [activeView, setActiveView] = useState<'tracker' | 'reports'>(
+    'tracker'
+  );
 
-  const buttonClasses = (view: 'tracker' | 'reports') => 
+  const buttonClasses = (view: 'tracker' | 'reports') =>
     `flex items-center justify-center px-4 py-2 mx-2 rounded-lg transition-colors ${
       activeView === view
         ? 'bg-blue-600 text-white shadow-md'
@@ -24,12 +26,18 @@ export default function App() {
       <header className="bg-white shadow-sm">
         <nav className="container mx-auto flex justify-center items-center p-4 relative">
           {/* Boton para el visualizador de rutas */}
-          <button onClick={() => setActiveView('tracker')} className={buttonClasses('tracker')}>
+          <button
+            onClick={() => setActiveView('tracker')}
+            className={buttonClasses('tracker')}
+          >
             <Map className="w-5 h-5 mr-2" />
             Visualizador de Rutas
           </button>
-            {/* Boton para el generador de reportes */}
-          <button onClick={() => setActiveView('reports')} className={buttonClasses('reports')}>
+          {/* Boton para el generador de reportes */}
+          <button
+            onClick={() => setActiveView('reports')}
+            className={buttonClasses('reports')}
+          >
             <FileText className="w-5 h-5 mr-2" />
             Generador de Reportes
           </button>

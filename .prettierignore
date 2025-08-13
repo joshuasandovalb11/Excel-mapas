@@ -1,0 +1,9 @@
+# Archivos de dependencias y compilación
+node_modules
+build
+dist
+coverage
+
+# Archivos de entorno
+.env
+.env.local
