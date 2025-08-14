@@ -38,6 +38,7 @@ interface DailyVisit {
 interface DailyReport {
   visits: DailyVisit[];
   totalDistance: number;
+  date: string | null;
 }
 
 type WeeklyReportData = {
@@ -131,6 +132,7 @@ export default function ReportesView() {
   ) => {
     const files = Array.from(e.target.files || []);
     setError(null);
+    setWarnings([]);
     setReportData(null);
 
     const validFiles: File[] = [];
@@ -206,6 +208,7 @@ export default function ReportesView() {
     setAvailableVendors([]);
     setSelectedVendor(null);
     setError(null);
+    setWarnings([]);
     setReportMetadata(null);
 
     if (file) {
@@ -374,6 +377,7 @@ export default function ReportesView() {
       const initialDailyReport = (): DailyReport => ({
         visits: [],
         totalDistance: 0,
+        date: null,
       });
       const weeklyReport: WeeklyReportData = {
         Lunes: initialDailyReport(),
@@ -393,6 +397,10 @@ export default function ReportesView() {
       for (const tripResult of allTripsData) {
         const dayOfWeek = getDayOfWeek(tripResult.vehicleInfo.fecha);
         if (!dayOfWeek || !weeklyReport[dayOfWeek]) continue;
+
+        if (tripResult.vehicleInfo.fecha !== 'No encontrada') {
+          weeklyReport[dayOfWeek].date = tripResult.vehicleInfo.fecha;
+        }
 
         const isWeekend = dayOfWeek === 'Sábado' || dayOfWeek === 'Domingo';
         const hasMovement = tripResult.processedTrip.totalDistance > 0;
@@ -457,17 +465,19 @@ export default function ReportesView() {
       }
       if (activeWeekendFiles.length > 0) {
         warningsToShow.push(
-          `Se detectó actividad en ${activeWeekendFiles.length} día(s) de fin de semana. El kilometraje ha sido sumado al total: ${activeWeekendFiles.join(', ')}`
+          `Se detectó actividad en ${activeWeekendFiles.length} día(s) no laborales. El kilometraje ha sido sumado al total: ${activeWeekendFiles.join(', ')}`
         );
       }
 
       setWarnings(warningsToShow);
+
       setReportData(weeklyReport);
       setNonVisitedClients(
         clientsForReport.filter((c) => !visitedClientKeys.has(c.key))
       );
     } catch (err: any) {
       console.error(err);
+      setWarnings([]);
       setError(`Error al generar el reporte: ${err.message}`);
     } finally {
       setIsLoading(false);
@@ -561,8 +571,14 @@ export default function ReportesView() {
     weeklySheetData.push([]);
 
     weekDays.forEach((day) => {
-      const dayData = reportData[day] || { visits: [], totalDistance: 0 };
-      weeklySheetData.push([day]);
+      const dayData = reportData[day] || {
+        visits: [],
+        totalDistance: 0,
+        date: null,
+      };
+      const dateString = dayData.date ? `, ${dayData.date}` : '';
+      weeklySheetData.push([`${day}${dateString}`]);
+
       weeklySheetData.push([
         'Clave Cliente',
         'Nombre Cliente',
@@ -650,7 +666,8 @@ export default function ReportesView() {
     if (weeklySheet['H7']) weeklySheet['H7'].s = styleAlignRight;
 
     weeklySheetData.forEach((row, rowIndex) => {
-      if (row.length === 1 && weekDays.includes(row[0])) {
+      // MODIFICADO: Se aplica el estilo al encabezado del día (que ahora puede tener fecha).
+      if (row.length === 1 && weekDays.some((day) => row[0].startsWith(day))) {
         const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: 0 });
         if (weeklySheet[cellRef]) weeklySheet[cellRef].s = styleDayHeader;
       } else if (row[0] === 'Clave Cliente') {
@@ -752,7 +769,6 @@ export default function ReportesView() {
               <h2 className="text-lg font-semibold text-gray-700 mb-2">
                 1. Cargar Archivos de Viajes
               </h2>
-              {/* --- MEJORA UI: Componente de carga de archivos con nombres por coma --- */}
               <label
                 htmlFor="vehicle-files"
                 className="flex flex-col items-center justify-center w-full h-32 border-2 border-blue-300 border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 p-2"
@@ -896,7 +912,7 @@ export default function ReportesView() {
           </div>
         )}
         {warnings.length > 0 && (
-          <div className="mt-4 text-center p-4 bg-orange-100 text-orange-600 rounded-lg flex flex-col items-center justify-center gap-2">
+          <div className="mt-4 text-center p-4 bg-yellow-100 text-yellow-800 rounded-lg flex flex-col items-center justify-center gap-2">
             {warnings.map((warning, index) => (
               <div key={index} className="flex items-start gap-2 w-full">
                 <AlertCircle className="h-5 w-5 mt-1 shrink-0" />
@@ -938,6 +954,11 @@ export default function ReportesView() {
                   <div key={day}>
                     <h3 className="text-xl font-semibold text-gray-700 mb-2 flex items-center gap-2 border-b-2 border-blue-200 pb-1">
                       <CalendarDays className="w-5 h-5 text-blue-500" /> {day}
+                      {reportData[day]?.date && (
+                        <span className="text-base font-normal text-gray-700 pt-1">
+                          - {reportData[day].date}
+                        </span>
+                      )}
                     </h3>
                     {reportData[day] && reportData[day].visits.length > 0 ? (
                       <div className="overflow-x-auto border rounded-lg">
