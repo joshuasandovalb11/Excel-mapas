@@ -474,13 +474,12 @@ export default function VehicleTracker() {
             
             function animateToNextStop() {
                 if (currentStopIndex >= stopInfo.length - 1) return;
+                const nextStop = stopInfo[currentStopIndex + 1];
                 isAnimating = true;
                 if (openInfoWindow) openInfoWindow.close();
                 document.getElementById('playPauseBtn').disabled = true;
                 document.getElementById('nextStopBtn').disabled = true;
                 
-                const nextStop = stopInfo[currentStopIndex + 1];
-
                 const onSegmentComplete = () => {
                     isAnimating = false;
                     const marker = markers[nextStop.markerIndex];
@@ -524,16 +523,18 @@ export default function VehicleTracker() {
                     }
                     
                     const end = Math.min(currentPathIndex + animationStep, targetPathIndex);
-                    const newPathSegment = routePath.slice(currentPathIndex, end);
-                    if (newPathSegment.length > 0) {
-                        const newFullPath = animatedPolyline.getPath().getArray().concat(newPathSegment.map(p => new google.maps.LatLng(p.lat, p.lng)));
-                        animatedPolyline.setPath(newFullPath);
+                    
+                    if (end > currentPathIndex) {
+                        const newPathSegment = routePath.slice(currentPathIndex, end + 1);
+                        if (newPathSegment.length > 0) {
+                            const existingPath = animatedPolyline.getPath();
+                            newPathSegment.forEach(p => existingPath.push(new google.maps.LatLng(p.lat, p.lng)));
+                        }
                     }
+                    
                     currentPathIndex = end;
 
                     if (currentPathIndex >= targetPathIndex) {
-                        const finalFullPath = routePath.slice(0, targetPathIndex + 1).map(p => new google.maps.LatLng(p.lat, p.lng));
-                        animatedPolyline.setPath(finalFullPath);
                         onComplete();
                         return;
                     }
