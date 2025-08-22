@@ -50,7 +50,6 @@ export default function VehicleTracker() {
   const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ESTADOS PARA MANEJAR VENDEDORES
   const [allClientsFromFile, setAllClientsFromFile] = usePersistentState<
     Client[] | null
   >('vt_allClients', null);
@@ -58,8 +57,8 @@ export default function VehicleTracker() {
     'vt_vendors',
     []
   );
-  const [selectedVendor, setSelectedVendor] = usePersistentState<string | null>(
-    'vt_selectedVendor',
+  const [selection, setSelection] = usePersistentState<string | null>(
+    'vt_selection',
     null
   );
 
@@ -121,7 +120,7 @@ export default function VehicleTracker() {
     setClientFileName(null);
     setAllClientsFromFile(null);
     setAvailableVendors([]);
-    setSelectedVendor(null);
+    setSelection(null);
     setError(null);
     setFileName(file.name);
 
@@ -203,7 +202,7 @@ export default function VehicleTracker() {
     setClientFileName(file.name);
     setError(null);
     setClientData(null);
-    setSelectedVendor(null);
+    setSelection(null);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -233,21 +232,28 @@ export default function VehicleTracker() {
     reader.readAsBinaryString(file);
   };
 
-  // FUNCIÓN PARA MANEJAR LA SELECCIÓN DE VENDEDOR
-  const handleVendorSelect = (vendor: string) => {
-    setSelectedVendor(vendor);
+  // FUNCIÓN PARA MANEJAR LA SELECCIÓN DE VENDEDOR O MODO CHOFER
+  const handleSelection = (selected: string) => {
+    setSelection(selected);
     if (allClientsFromFile) {
-      const filteredClients = allClientsFromFile.filter(
-        (client) => client.vendor === vendor
-      );
-      setClientData(filteredClients);
+      if (selected === 'chofer') {
+        // Modo chofer: usa todos los clientes para matching, pero no los muestra en el mapa
+        setClientData(allClientsFromFile);
+      } else {
+        // Modo vendedor: filtra los clientes por vendedor
+        const filteredClients = allClientsFromFile.filter(
+          (client) => client.vendor === selected
+        );
+        setClientData(filteredClients);
+      }
     }
   };
 
   const generateMapHTML = (
     vehicleInfo: VehicleInfo | null,
     clientData: Client[] | null,
-    totalMatchedStops: number
+    totalMatchedStops: number,
+    selection: string | null
   ): string => {
     if (!tripData) return '';
     const filteredFlags = tripData.flags.filter(
@@ -271,6 +277,8 @@ export default function VehicleTracker() {
         </div>
     `
       : '';
+
+    const clientsToRender = selection === 'chofer' ? [] : clientData || [];
 
     return `
       <!DOCTYPE html>
@@ -310,7 +318,7 @@ export default function VehicleTracker() {
             let map, markers = [], infowindows = [], openInfoWindow = null, stopInfo = [];
             const routePath = ${JSON.stringify(routes[0]?.path || [])};
             const allFlags = ${JSON.stringify(filteredFlags)};
-            const allClients = ${JSON.stringify(clientData || [])};
+            const allClients = ${JSON.stringify(clientsToRender)};
             const formatDuration = ${formatDuration.toString()};
             const processingMethod = '${processingMethod}';
             let animatedPolyline, currentPathIndex = 0, animationFrameId, isAnimating = false, currentStopIndex = 0;
@@ -561,7 +569,8 @@ export default function VehicleTracker() {
     const htmlContent = generateMapHTML(
       vehicleInfo,
       clientData,
-      matchedStopsCount
+      matchedStopsCount,
+      selection
     );
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -664,30 +673,52 @@ export default function VehicleTracker() {
           </div>
         )}
 
-        {/* SECCIÓN PARA SELECCIONAR VENDEDOR */}
+        {/* SECCIÓN PARA SELECCIONAR VENDEDOR O CHOFER */}
         {availableVendors.length > 0 && (
           <div className="mt-4">
             <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
               <UserCheck className="w-5 h-5 text-gray-500" />
-              Paso 3: Selecciona un vendedor
+              Paso 3: Selecciona un vendedor o modo chofer
+            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2 border-b border-b-gray-300">
+              Vendedores
             </label>
             <div className="flex flex-wrap gap-2 mt-2">
               {availableVendors.map((vendor) => (
                 <button
                   key={vendor}
-                  onClick={() => handleVendorSelect(vendor)}
+                  onClick={() => handleSelection(vendor)}
                   className={`
                             px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
                             ${
-                              selectedVendor === vendor
-                                ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105' // Estilo activo
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-green-100 hover:border-green-400' // Estilo inactivo
+                              selection === vendor
+                                ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-green-100 hover:border-green-400'
                             }
                           `}
                 >
                   {vendor}
                 </button>
               ))}
+            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-2 mt-2 items-center gap-2 border-b border-b-gray-300">
+              Modo chofer
+            </label>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <button
+                key="chofer"
+                onClick={() => handleSelection('chofer')}
+                className={`
+                            px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
+                            ${
+                              selection === 'chofer'
+                                ? 'bg-red-500 text-white border-red-500 shadow-lg transform scale-105'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-red-100 hover:border-red-400'
+                            }
+                          `}
+              >
+                CHOFER
+              </button>
             </div>
           </div>
         )}
@@ -701,7 +732,7 @@ export default function VehicleTracker() {
         )}
 
         {tripData && (
-          <div className="space-y-4 pt-4">
+          <div className="space-y-4 pt-2">
             {/* Input para determinar las paradas mayor a que minutos */}
             <div className="flex items-center justify-between">
               <label
@@ -762,7 +793,12 @@ export default function VehicleTracker() {
             Vista Previa del Mapa
           </h2>
           <iframe
-            srcDoc={generateMapHTML(vehicleInfo, clientData, matchedStopsCount)}
+            srcDoc={generateMapHTML(
+              vehicleInfo,
+              clientData,
+              matchedStopsCount,
+              selection
+            )}
             className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
             title="Vista Previa del Mapa"
           />
