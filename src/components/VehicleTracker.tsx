@@ -1,10 +1,17 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Download, Car, Users, UserCheck } from 'lucide-react';
+import {
+  Upload,
+  Download,
+  Car,
+  Users,
+  UserCheck,
+  Truck,
+  FileText,
+} from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 
-// Importa la lógica y tipos compartidos desde el nuevo archivo de utilidades
 import {
   processTripData,
   parseVehicleInfo,
@@ -17,7 +24,7 @@ import {
 } from '../utils/tripUtils';
 
 export default function VehicleTracker() {
-  // Estados existentes
+  // Estados principales
   const [tripData, setTripData] = usePersistentState<ProcessedTrip | null>(
     'vt_tripData',
     null
@@ -44,7 +51,7 @@ export default function VehicleTracker() {
   );
   const [clientRadius, setClientRadius] = usePersistentState<number>(
     'vt_clientRadius',
-    150
+    50
   );
   const [error, setError] = useState<string | null>(null);
   const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0);
@@ -57,12 +64,46 @@ export default function VehicleTracker() {
     'vt_vendors',
     []
   );
-  const [selection, setSelection] = usePersistentState<string | null>(
-    'vt_selection',
-    null
-  );
+  const [selection, setSelection] = usePersistentState<{
+    mode: 'vendor' | 'driver';
+    value: string | null;
+  }>('vt_selection', { mode: 'vendor', value: null });
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
+
+  // Función para obtener la dirección a partir de coordenadas usando la API de Google Maps
+  const getAddress = async (lat: number, lng: number): Promise<string> => {
+    if (!googleMapsApiKey) {
+      return 'API Key de Google Maps no configurada';
+    }
+    if (!lat || !lng) return 'Coordenadas inválidas';
+
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleMapsApiKey}`
+      );
+      if (!response.ok) {
+        throw new Error(
+          `Error en la respuesta de la API de Google: ${response.statusText}`
+        );
+      }
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.results && data.results[0]) {
+        return data.results[0].formatted_address;
+      } else {
+        console.error(
+          'Error de Geocodificación de Google:',
+          data.error_message || data.status
+        );
+        return `Dirección no encontrada (${data.status})`;
+      }
+    } catch (error) {
+      console.error('Error de red en la llamada a Google Maps:', error);
+      return `Dirección no disponible (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+    }
+  };
 
   // Efecto para establecer si hay match con respecto a la ubicacion y al cliente
   useEffect(() => {
@@ -114,15 +155,16 @@ export default function VehicleTracker() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     setTripData(null);
     setVehicleInfo(null);
-    setClientData(null);
-    setClientFileName(null);
-    setAllClientsFromFile(null);
-    setAvailableVendors([]);
-    setSelection(null);
     setError(null);
     setFileName(file.name);
+    // setClientData(null);
+    // setClientFileName(null);
+    // setAllClientsFromFile(null);
+    // setAvailableVendors([]);
+    // setSelection(null);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -202,7 +244,7 @@ export default function VehicleTracker() {
     setClientFileName(file.name);
     setError(null);
     setClientData(null);
-    setSelection(null);
+    setSelection({ mode: 'vendor', value: null });
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -234,7 +276,7 @@ export default function VehicleTracker() {
 
   // FUNCIÓN PARA MANEJAR LA SELECCIÓN DE VENDEDOR O MODO CHOFER
   const handleSelection = (selected: string) => {
-    setSelection(selected);
+    setSelection({ mode: selection.mode, value: selected });
     if (allClientsFromFile) {
       if (selected === 'chofer') {
         // Modo chofer: usa todos los clientes para matching, pero no los muestra en el mapa
@@ -249,6 +291,213 @@ export default function VehicleTracker() {
     }
   };
 
+  // FUNCIÓN PARA GENERAR Y DESCARGAR EL REPORTE
+  const downloadReport = async () => {
+    if (!tripData || !vehicleInfo || !clientData) {
+      alert(
+        'Se necesita un archivo de viaje y un archivo de clientes para generar el reporte.'
+      );
+      return;
+    }
+
+    setIsGeneratingReport(true);
+
+    try {
+      let clientsForReport: Client[] = [];
+      if (selection.mode === 'driver') {
+        clientsForReport = allClientsFromFile || [];
+      } else {
+        clientsForReport = clientData || [];
+      }
+
+      if (clientsForReport.length === 0) {
+        throw new Error('No se encontraron clientes para este reporte.');
+      }
+
+      const coordsToFetch = new Map<string, { lat: number; lng: number }>();
+      const allFlagsToProcess: any[] = [];
+      const visitedClientKeys = new Set<string>();
+
+      for (const flag of tripData.flags) {
+        if (
+          flag.type === 'start' ||
+          flag.type === 'end' ||
+          (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration)
+        ) {
+          let isClientVisit = false;
+          let clientInfo = null;
+
+          if (flag.type === 'stop') {
+            for (const client of clientsForReport) {
+              const distance = calculateDistance(
+                flag.lat,
+                flag.lng,
+                client.lat,
+                client.lng
+              );
+              if (distance < clientRadius) {
+                isClientVisit = true;
+                clientInfo = { key: client.key, name: client.name };
+                visitedClientKeys.add(client.key);
+                break;
+              }
+            }
+          }
+
+          const coordKey = `${flag.lat.toFixed(5)},${flag.lng.toFixed(5)}`;
+          if (!isClientVisit) {
+            if (!coordsToFetch.has(coordKey)) {
+              coordsToFetch.set(coordKey, { lat: flag.lat, lng: flag.lng });
+            }
+          }
+
+          allFlagsToProcess.push({
+            ...flag,
+            isClientVisit,
+            clientInfo,
+            coordKey,
+          });
+        }
+      }
+
+      const addressCache = new Map<string, string>();
+      const uniqueCoords = Array.from(coordsToFetch.entries());
+      const batchSize = 10;
+      for (let i = 0; i < uniqueCoords.length; i += batchSize) {
+        const batch = uniqueCoords.slice(i, i + batchSize);
+        const promises = batch.map(([key, coords]) =>
+          getAddress(coords.lat, coords.lng).then((address) => ({
+            key,
+            address,
+          }))
+        );
+        const results = await Promise.all(promises);
+        for (const result of results) {
+          addressCache.set(result.key, result.address);
+        }
+      }
+
+      const reportEntries: any[] = [];
+      for (const flag of allFlagsToProcess) {
+        let name = '';
+        let entryType = flag.type;
+
+        if (flag.isClientVisit) {
+          name = `${flag.clientInfo.key} - ${flag.clientInfo.name}`;
+          entryType = 'visit';
+        } else {
+          const address =
+            addressCache.get(flag.coordKey) || 'Dirección no disponible';
+          if (flag.type === 'start') name = `Inicio de Viaje: ${address}`;
+          if (flag.type === 'end') name = `Fin de Viaje: ${address}`;
+          if (flag.type === 'stop') name = `Parada: ${address}`;
+        }
+
+        reportEntries.push({
+          time: flag.time,
+          type: entryType,
+          name: name,
+          duration: flag.duration || 0,
+        });
+      }
+      reportEntries.sort((a, b) => a.time.localeCompare(b.time));
+
+      const wb = XLSX.utils.book_new();
+      const reportSheetData: any[][] = [];
+
+      const uniqueClientsVisited = new Set(
+        reportEntries
+          .filter((entry) => entry.type === 'visit')
+          .map((entry) => entry.name.split(' - ')[0])
+      ).size;
+
+      const totalDuration = reportEntries.reduce(
+        (sum, entry) => sum + entry.duration,
+        0
+      );
+      const totalMinutesForPercentage = 8 * 60;
+      const percentageOfTimeUsed = Math.min(
+        (totalDuration / totalMinutesForPercentage) * 100,
+        100
+      );
+      const formattedPercentage = `${percentageOfTimeUsed.toFixed(2)}%`;
+      const totalStopsAndVisits = reportEntries.filter(
+        (e) => e.type === 'visit' || e.type === 'stop'
+      ).length;
+
+      reportSheetData.push(['Reporte de Viaje Individual']);
+      reportSheetData.push([]);
+      reportSheetData.push(['Fecha:', vehicleInfo.fecha]);
+      reportSheetData.push(['Vehículo:', vehicleInfo.placa]);
+      reportSheetData.push([
+        'Reporte para:',
+        selection.mode === 'driver' ? 'CHOFER' : selection.value,
+      ]);
+      reportSheetData.push([]);
+      reportSheetData.push(['Resumen del Viaje']);
+      reportSheetData.push([
+        'Número de Paradas:',
+        String(totalStopsAndVisits || 0),
+      ]);
+      reportSheetData.push([
+        'Clientes Unicos Visitados:',
+        String(uniqueClientsVisited || 0),
+      ]);
+      reportSheetData.push([
+        'Kilometraje Total:',
+        `${Math.round(tripData.totalDistance / 1000)} km`,
+      ]);
+      reportSheetData.push(['Duración Total:', formatDuration(totalDuration)]);
+      reportSheetData.push([
+        '% de Tiempo Utilizado (8h):',
+        String(formattedPercentage),
+      ]);
+      reportSheetData.push([]);
+
+      reportSheetData.push(['Hora', 'Evento', 'Descripción', 'Duración']);
+
+      reportEntries.forEach((entry) => {
+        let eventType = '';
+        switch (entry.type) {
+          case 'start':
+            eventType = 'Inicio de Viaje';
+            break;
+          case 'end':
+            eventType = 'Fin de Viaje';
+            break;
+          case 'visit':
+            eventType = 'Visita a Cliente';
+            break;
+          case 'stop':
+            eventType = 'Parada';
+            break;
+        }
+        reportSheetData.push([
+          entry.time,
+          eventType,
+          entry.name,
+          entry.duration > 0 ? formatDuration(entry.duration) : '--',
+        ]);
+      });
+
+      const ws = XLSX.utils.aoa_to_sheet(reportSheetData);
+      ws['!cols'] = [{ wch: 22 }, { wch: 15 }, { wch: 70 }, { wch: 15 }];
+      XLSX.utils.book_append_sheet(wb, ws, 'Reporte de Viaje');
+
+      const safeSelection =
+        selection.value?.replace(/[^a-zA-Z0-9]/g, '') || 'S_V';
+      const safeDate = vehicleInfo.fecha.replace(/[^a-zA-Z0-9]/g, '-');
+      const fileName = `Reporte_Viaje_${safeSelection}_${safeDate}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Error al generar el reporte: ${err.message}`);
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
+
+  // FUNCIÓN PARA GENERAR EL HTML DEL MAPA
   const generateMapHTML = (
     vehicleInfo: VehicleInfo | null,
     clientData: Client[] | null,
@@ -286,8 +535,8 @@ export default function VehicleTracker() {
         <head>
           <style>
             #map { height: 100%; width: 100%; } body, html { height: 100%; margin: 0; padding: 0; } .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 12px !important; } h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } h3 span { font-size: 20px; margin-right: 8px; } p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
-            #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-220%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-            #controls button { font-family: sans-serif; font-size: 14px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
+            #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+            #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
             #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
             .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 240px; }
             .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
@@ -312,7 +561,11 @@ export default function VehicleTracker() {
             </div>
           </div>
 
-          <div id="controls"><button id="playPauseBtn">Reproducir</button><button id="nextStopBtn">Siguiente Parada</button></div>
+          <div id="controls">
+            <button id="playPauseBtn">Ruta completa</button>
+            <button id="prevStopBtn" disabled>Anterior Parada</button>
+            <button id="nextStopBtn">Siguiente Parada</button>
+          </div>
           
           <script>
             let map, markers = [], infowindows = [], openInfoWindow = null, stopInfo = [];
@@ -415,6 +668,9 @@ export default function VehicleTracker() {
                 animatedPolyline = new google.maps.Polyline({ path: [], strokeColor: '#3b82f6', strokeOpacity: 0.8, strokeWeight: 5, map: map });
                 document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
                 document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
+
+                // CAMBIO: Se añade el event listener para el nuevo botón
+                document.getElementById('prevStopBtn').addEventListener('click', animateToPreviousStop);
             }
 
             function createMarker(flag) {
@@ -448,6 +704,8 @@ export default function VehicleTracker() {
                 updateDistanceCard(0, totalTripDistanceMeters);
                 document.getElementById('playPauseBtn').disabled = true;
                 document.getElementById('nextStopBtn').disabled = true;
+                // CAMBIO: Deshabilitar también el botón de parada anterior
+                document.getElementById('prevStopBtn').disabled = true;
                 const endMarker = markers[markers.length - 1];
                 if (endMarker) {
                     endMarker.setAnimation(google.maps.Animation.BOUNCE);
@@ -467,6 +725,8 @@ export default function VehicleTracker() {
                 if (isAnimating) {
                     btn.textContent = 'Pausa';
                     document.getElementById('nextStopBtn').disabled = true;
+                    // CAMBIO: Deshabilitar también el botón de parada anterior durante la animación
+                    document.getElementById('prevStopBtn').disabled = true;
                     if (openInfoWindow) openInfoWindow.close();
                     animateSmoothly(routePath.length - 1, () => {
                         updateDistanceCard(0, totalTripDistanceMeters);
@@ -475,6 +735,10 @@ export default function VehicleTracker() {
                     btn.textContent = 'Reproducir';
                     if (currentStopIndex < stopInfo.length - 1) {
                        document.getElementById('nextStopBtn').disabled = false;
+                    }
+                    // CAMBIO: Habilitar el botón de parada anterior si no estamos en el inicio
+                    if (currentStopIndex > 0) {
+                        document.getElementById('prevStopBtn').disabled = false;
                     }
                     cancelAnimationFrame(animationFrameId);
                 }
@@ -487,6 +751,8 @@ export default function VehicleTracker() {
                 if (openInfoWindow) openInfoWindow.close();
                 document.getElementById('playPauseBtn').disabled = true;
                 document.getElementById('nextStopBtn').disabled = true;
+                // CAMBIO: Deshabilitar también el botón de parada anterior
+                document.getElementById('prevStopBtn').disabled = true;
                 
                 const onSegmentComplete = () => {
                     isAnimating = false;
@@ -508,6 +774,10 @@ export default function VehicleTracker() {
                     }
                     currentStopIndex++;
                     document.getElementById('playPauseBtn').disabled = false;
+
+                    // CAMBIO: Habilitar siempre el botón de parada anterior después de avanzar
+                    document.getElementById('prevStopBtn').disabled = false;
+
                     if (currentStopIndex >= stopInfo.length - 1) {
                         document.getElementById('nextStopBtn').disabled = true;
                         updateDistanceCard(segmentMeters, totalTripDistanceMeters);
@@ -522,6 +792,66 @@ export default function VehicleTracker() {
                     animateSmoothly(nextStop.pathIndex, onSegmentComplete);
                 }
             }
+
+            // CAMBIO: NUEVA FUNCIÓN para ir a la parada anterior
+            function animateToPreviousStop() {
+                if (currentStopIndex <= 0) return;
+
+                if (openInfoWindow) openInfoWindow.close();
+                document.getElementById('playPauseBtn').disabled = true;
+                document.getElementById('nextStopBtn').disabled = true;
+                document.getElementById('prevStopBtn').disabled = true;
+
+                // Identificar el cliente de la parada que estamos "deshaciendo"
+                const lastStopFlag = allFlags[stopInfo[currentStopIndex].markerIndex];
+                
+                currentStopIndex--;
+                
+                const previousStop = stopInfo[currentStopIndex];
+                const segmentMetersToUndo = segmentDistances[currentStopIndex] || 0;
+                cumulativeDistance -= segmentMetersToUndo;
+
+                // Recortar el polyline
+                const newPath = routePath.slice(0, previousStop.pathIndex + 1);
+                animatedPolyline.setPath(newPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+                currentPathIndex = newPath.length - 1;
+
+                // Lógica para decrementar el contador de clientes visitados
+                if (lastStopFlag && lastStopFlag.type === 'stop' && lastStopFlag.clientKey) {
+                    const clientKeyToRemove = lastStopFlag.clientKey;
+                    // Verificar si este cliente fue visitado en otra parada anterior que aún está en la ruta
+                    let isStillVisited = false;
+                    for (let i = 0; i <= currentStopIndex; i++) {
+                        const flag = allFlags[stopInfo[i].markerIndex];
+                        if (flag.clientKey === clientKeyToRemove) {
+                            isStillVisited = true;
+                            break;
+                        }
+                    }
+                    // Si no hay otra visita a este cliente, lo eliminamos del set
+                    if (!isStillVisited && countedClientKeys.has(clientKeyToRemove)) {
+                        countedClientKeys.delete(clientKeyToRemove);
+                        document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
+                    }
+                }
+
+                updateDistanceCard(segmentMetersToUndo, cumulativeDistance);
+
+                const marker = markers[previousStop.markerIndex];
+                const infowindow = infowindows[previousStop.markerIndex];
+                marker.setAnimation(google.maps.Animation.BOUNCE);
+                setTimeout(() => marker.setAnimation(null), 1400);
+                infowindow.open(map, marker);
+                openInfoWindow = infowindow;
+
+                // Reactivar botones
+                document.getElementById('playPauseBtn').disabled = false;
+                document.getElementById('nextStopBtn').disabled = false;
+                if (currentStopIndex > 0) {
+                    document.getElementById('prevStopBtn').disabled = false;
+                }
+            }
+
 
             function runAnimation(targetPathIndex, onComplete, animationStep) {
                 function step() {
@@ -565,12 +895,13 @@ export default function VehicleTracker() {
     `;
   };
 
+  // Función para descargar el mapa HTML
   const downloadMap = () => {
     const htmlContent = generateMapHTML(
       vehicleInfo,
       clientData,
       matchedStopsCount,
-      selection
+      selection.value
     );
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -691,7 +1022,7 @@ export default function VehicleTracker() {
                   className={`
                             px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
                             ${
-                              selection === vendor
+                              selection.value === vendor
                                 ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
                                 : 'bg-white text-gray-700 border-gray-300 hover:bg-green-100 hover:border-green-400'
                             }
@@ -704,22 +1035,21 @@ export default function VehicleTracker() {
             <label className="block text-sm font-medium text-gray-700 mb-2 mt-2 items-center gap-2 border-b border-b-gray-300">
               Modo chofer
             </label>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <button
-                key="chofer"
-                onClick={() => handleSelection('chofer')}
-                className={`
-                            px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
+            <button
+              key="chofer"
+              onClick={() => handleSelection('chofer')}
+              className={`
+                            px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out flex items-center gap-2
                             ${
-                              selection === 'chofer'
+                              selection.value === 'chofer'
                                 ? 'bg-red-500 text-white border-red-500 shadow-lg transform scale-105'
                                 : 'bg-white text-gray-700 border-gray-300 hover:bg-red-100 hover:border-red-400'
                             }
                           `}
-              >
-                CHOFER
-              </button>
-            </div>
+            >
+              <Truck className="w-4 h-4" />
+              CHOFER
+            </button>
           </div>
         )}
 
@@ -732,7 +1062,7 @@ export default function VehicleTracker() {
         )}
 
         {tripData && (
-          <div className="space-y-4 pt-2">
+          <div className="space-y-4">
             {/* Input para determinar las paradas mayor a que minutos */}
             <div className="flex items-center justify-between">
               <label
@@ -776,13 +1106,24 @@ export default function VehicleTracker() {
                 <span className="text-sm text-gray-500">metros</span>
               </div>
             </div>
-            <button
-              onClick={downloadMap}
-              className="flex items-center justify-center w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
-            >
-              <Download className="h-5 w-5 mr-2" />
-              Descargar Mapa HTML
-            </button>
+            <div className="flex gap-4">
+              <button
+                onClick={downloadReport}
+                disabled={isGeneratingReport || !selection.value}
+                className="flex items-center justify-center w-full px-6 py-3 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition-transform transform hover:scale-105 disabled:bg-blue-300 disabled:cursor-not-allowed"
+              >
+                <FileText className="h-5 w-5 mr-2" />
+                {isGeneratingReport ? 'Generando...' : 'Descargar Reporte'}
+              </button>
+
+              <button
+                onClick={downloadMap}
+                className="flex items-center justify-center w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
+              >
+                <Download className="h-5 w-5 mr-2" />
+                Descargar Mapa HTML
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -797,7 +1138,7 @@ export default function VehicleTracker() {
               vehicleInfo,
               clientData,
               matchedStopsCount,
-              selection
+              selection.value
             )}
             className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
             title="Vista Previa del Mapa"

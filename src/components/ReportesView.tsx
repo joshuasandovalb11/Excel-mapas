@@ -10,6 +10,12 @@ import {
   UserCheck,
   CalendarDays,
   Users2,
+  Info,
+  UsersRound,
+  Truck,
+  Flag,
+  FlagOff,
+  SquareParking,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 
@@ -25,18 +31,55 @@ import {
   type TripEvent,
 } from '../utils/tripUtils';
 
+// --- INTEGRACIÓN DE GOOGLE MAPS API ---
+const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
+
+// --- FUNCIÓN DE GEOCODIFICACIÓN CON DIRECCIÓN COMPLETA ---
+const getAddress = async (lat: number, lng: number): Promise<string> => {
+  if (!googleMapsApiKey) {
+    return 'API Key de Google Maps no configurada';
+  }
+  if (!lat || !lng) return 'Coordenadas inválidas';
+
+  try {
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleMapsApiKey}`
+    );
+    if (!response.ok) {
+      throw new Error(
+        `Error en la respuesta de la API de Google: ${response.statusText}`
+      );
+    }
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results && data.results[0]) {
+      return data.results[0].formatted_address;
+    } else {
+      console.error(
+        'Error de Geocodificación de Google:',
+        data.error_message || data.status
+      );
+      return `Dirección no encontrada (${data.status})`;
+    }
+  } catch (error) {
+    console.error('Error de red en la llamada a Google Maps:', error);
+    return `Dirección no disponible (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+  }
+};
+
 // --- ESTRUCTURAS DE DATOS ---
-interface DailyVisit {
+interface ReportEntry {
   key: string;
   name: string;
   visitCount: number;
   totalDuration: number;
   vehicles: string[];
   visitTimes: string[];
+  type: 'visit' | 'stop' | 'start' | 'end';
 }
 
 interface DailyReport {
-  visits: DailyVisit[];
+  visits: ReportEntry[];
   totalDistance: number;
   date: string | null;
 }
@@ -56,6 +99,7 @@ interface TripFileResult {
   fileName: string;
 }
 
+// Función para obtener el día de la semana a partir de una fecha
 const getDayOfWeek = (dateString: string): string => {
   if (!dateString || isNaN(new Date(dateString).getTime())) return '';
   const date = new Date(`${dateString}T12:00:00Z`);
@@ -86,7 +130,7 @@ export default function ReportesView() {
   );
   const [clientRadius, setClientRadius] = usePersistentState<number>(
     'rv_clientRadius',
-    150
+    50
   );
   const [vehicleFileNames, setVehicleFileNames] = usePersistentState<string[]>(
     'rv_vehicleFileNames',
@@ -108,13 +152,14 @@ export default function ReportesView() {
     'rv_vendors',
     []
   );
-  const [selectedVendor, setSelectedVendor] = usePersistentState<string | null>(
-    'rv_selectedVendor',
-    null
-  );
+  const [selection, setSelection] = usePersistentState<{
+    mode: 'vendor' | 'driver';
+    value: string | null;
+  }>('rv_selection', { mode: 'vendor', value: null });
   const [reportMetadata, setReportMetadata] =
     usePersistentState<ReportMetadata | null>('rv_reportMetadata', null);
 
+  // Función para leer un archivo como cadena binaria
   const readFileAsBinary = (file: File): Promise<string | ArrayBuffer> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -127,6 +172,7 @@ export default function ReportesView() {
     });
   };
 
+  // Funcion para manejar el cambio en los archivos de viaje
   const handleVehicleFilesChange = async (
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
@@ -198,6 +244,7 @@ export default function ReportesView() {
     setVehicleFileNames(validFiles.map((f) => f.name));
   };
 
+  // Funcion para manejar el cambio en el archivo de clientes
   const handleClientFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] || null;
     setClientFile(file);
@@ -206,7 +253,7 @@ export default function ReportesView() {
     setNonVisitedClients([]);
     setAllClientsFromFile(null);
     setAvailableVendors([]);
-    setSelectedVendor(null);
+    setSelection({ mode: 'vendor', value: null });
     setError(null);
     setWarnings([]);
     setReportMetadata(null);
@@ -234,6 +281,7 @@ export default function ReportesView() {
     }
   };
 
+  // Funcion para procesar un solo archivo de viaje
   const processSingleTripFile = async (file: File): Promise<TripFileResult> => {
     const bstr = await readFileAsBinary(file);
     const wb = XLSX.read(bstr, { type: 'binary' });
@@ -321,15 +369,24 @@ export default function ReportesView() {
     }
   };
 
+  // Funcion para manejar la generación del reporte
   const handleGenerateReport = async () => {
+    if (!googleMapsApiKey) {
+      setError(
+        'Error: La clave de la API de Google Maps (VITE_Maps_API_KEY) no está configurada.'
+      );
+      return;
+    }
     if (vehicleFiles.length === 0 || !clientFile) {
       setError(
         'Por favor, sube los archivos de viajes y el archivo de clientes.'
       );
       return;
     }
-    if (!selectedVendor) {
-      setError('Por favor, selecciona un vendedor para generar el reporte.');
+    if (!selection.value) {
+      setError(
+        'Por favor, selecciona un vendedor o el Modo Chofer para generar el reporte.'
+      );
       return;
     }
 
@@ -341,12 +398,20 @@ export default function ReportesView() {
     setReportMetadata(null);
 
     try {
-      const clientsForReport =
-        allClientsFromFile?.filter((c) => c.vendor === selectedVendor) || [];
+      let clientsForReport: Client[] = [];
+      if (selection.mode === 'driver') {
+        clientsForReport = allClientsFromFile || [];
+      } else {
+        clientsForReport =
+          allClientsFromFile?.filter((c) => c.vendor === selection.value) || [];
+      }
+
       if (clientsForReport.length === 0) {
-        throw new Error(
-          `No se encontraron clientes para el vendedor: ${selectedVendor}`
-        );
+        const errorMessage =
+          selection.mode === 'driver'
+            ? 'No se encontraron clientes en el archivo maestro.'
+            : `No se encontraron clientes para el vendedor: ${selection.value}`;
+        throw new Error(errorMessage);
       }
 
       const allTripsData = await Promise.all(
@@ -374,6 +439,94 @@ export default function ReportesView() {
       ];
       setReportMetadata({ dateRange: dateRangeStr, vehicles: uniqueVehicles });
 
+      const coordsToFetch = new Map<string, { lat: number; lng: number }>();
+      const allFlagsToProcess: any[] = [];
+      const visitedClientKeys = new Set<string>();
+
+      const activeWeekendFiles: string[] = [];
+      const inactiveFiles: string[] = [];
+
+      for (const tripResult of allTripsData) {
+        const dayOfWeek = getDayOfWeek(tripResult.vehicleInfo.fecha);
+        if (!dayOfWeek) continue;
+
+        const isWeekend = dayOfWeek === 'Sábado' || dayOfWeek === 'Domingo';
+        const hasMovement = tripResult.processedTrip.totalDistance > 0;
+
+        if (isWeekend) {
+          if (hasMovement) {
+            activeWeekendFiles.push(`${tripResult.fileName} (${dayOfWeek})`);
+          } else {
+            inactiveFiles.push(`${tripResult.fileName} (${dayOfWeek})`);
+          }
+        }
+
+        for (const flag of tripResult.processedTrip.flags) {
+          if (
+            flag.type === 'start' ||
+            flag.type === 'end' ||
+            (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration)
+          ) {
+            let isClientVisit = false;
+            let clientInfo = null;
+
+            if (flag.type === 'stop' && !isWeekend) {
+              for (const client of clientsForReport) {
+                const distance = calculateDistance(
+                  flag.lat,
+                  flag.lng,
+                  client.lat,
+                  client.lng
+                );
+                if (distance < clientRadius) {
+                  isClientVisit = true;
+                  clientInfo = { key: client.key, name: client.name };
+                  visitedClientKeys.add(client.key);
+                  break;
+                }
+              }
+            }
+
+            const coordKey = `${flag.lat.toFixed(5)},${flag.lng.toFixed(5)}`;
+            if (!isClientVisit) {
+              if (!coordsToFetch.has(coordKey)) {
+                coordsToFetch.set(coordKey, { lat: flag.lat, lng: flag.lng });
+              }
+            }
+
+            allFlagsToProcess.push({
+              ...flag,
+              isClientVisit,
+              clientInfo,
+              coordKey,
+              dayOfWeek,
+              vehicle: tripResult.vehicleInfo.placa,
+              totalDistance: tripResult.processedTrip.totalDistance,
+              date: tripResult.vehicleInfo.fecha,
+              fileName: tripResult.fileName,
+            });
+          }
+        }
+      }
+
+      const addressCache = new Map<string, string>();
+      const uniqueCoords = Array.from(coordsToFetch.entries());
+      const batchSize = 10;
+
+      for (let i = 0; i < uniqueCoords.length; i += batchSize) {
+        const batch = uniqueCoords.slice(i, i + batchSize);
+        const promises = batch.map(([key, coords]) =>
+          getAddress(coords.lat, coords.lng).then((address) => ({
+            key,
+            address,
+          }))
+        );
+        const results = await Promise.all(promises);
+        for (const result of results) {
+          addressCache.set(result.key, result.address);
+        }
+      }
+
       const initialDailyReport = (): DailyReport => ({
         visits: [],
         totalDistance: 0,
@@ -388,76 +541,52 @@ export default function ReportesView() {
         Sábado: initialDailyReport(),
         Domingo: initialDailyReport(),
       };
-      const visitedClientKeys = new Set<string>();
 
-      const warningsToShow: string[] = [];
-      const activeWeekendFiles: string[] = [];
-      const inactiveFiles: string[] = [];
+      const processedFilesForDistance: Set<string> = new Set();
 
       for (const tripResult of allTripsData) {
         const dayOfWeek = getDayOfWeek(tripResult.vehicleInfo.fecha);
-        if (!dayOfWeek || !weeklyReport[dayOfWeek]) continue;
+        if (!dayOfWeek) continue;
 
-        if (tripResult.vehicleInfo.fecha !== 'No encontrada') {
-          weeklyReport[dayOfWeek].date = tripResult.vehicleInfo.fecha;
-        }
+        const dayData = weeklyReport[dayOfWeek];
 
-        const isWeekend = dayOfWeek === 'Sábado' || dayOfWeek === 'Domingo';
-        const hasMovement = tripResult.processedTrip.totalDistance > 0;
-
-        weeklyReport[dayOfWeek].totalDistance +=
-          tripResult.processedTrip.totalDistance;
-
-        if (isWeekend) {
-          if (hasMovement) {
-            activeWeekendFiles.push(`${tripResult.fileName} (${dayOfWeek})`);
-          } else {
-            inactiveFiles.push(`${tripResult.fileName} (${dayOfWeek})`);
-          }
-        } else {
-          const realStops = tripResult.processedTrip.flags.filter(
-            (flag) =>
-              flag.type === 'stop' && (flag.duration || 0) >= minStopDuration
-          );
-
-          for (const stop of realStops) {
-            for (const client of clientsForReport) {
-              const distance = calculateDistance(
-                stop.lat,
-                stop.lng,
-                client.lat,
-                client.lng
-              );
-              if (distance < clientRadius) {
-                visitedClientKeys.add(client.key);
-                const dayVisits = weeklyReport[dayOfWeek].visits;
-                let clientVisit = dayVisits.find((v) => v.key === client.key);
-                if (!clientVisit) {
-                  clientVisit = {
-                    key: client.key,
-                    name: client.name,
-                    visitCount: 0,
-                    totalDuration: 0,
-                    vehicles: [],
-                    visitTimes: [],
-                  };
-                  dayVisits.push(clientVisit);
-                }
-                clientVisit.visitCount++;
-                clientVisit.totalDuration += stop.duration || 0;
-                clientVisit.visitTimes.push(stop.time);
-                if (
-                  !clientVisit.vehicles.includes(tripResult.vehicleInfo.placa)
-                ) {
-                  clientVisit.vehicles.push(tripResult.vehicleInfo.placa);
-                }
-                break;
-              }
-            }
-          }
+        if (!processedFilesForDistance.has(tripResult.fileName)) {
+          dayData.totalDistance += tripResult.processedTrip.totalDistance;
+          if (tripResult.vehicleInfo.fecha !== 'No encontrada')
+            dayData.date = tripResult.vehicleInfo.fecha;
+          processedFilesForDistance.add(tripResult.fileName);
         }
       }
 
+      for (const flag of allFlagsToProcess) {
+        const dayData = weeklyReport[flag.dayOfWeek];
+        let name = '';
+        let entryType: 'visit' | 'stop' | 'start' | 'end' = flag.type;
+
+        if (flag.isClientVisit) {
+          name = `${flag.clientInfo.key} - ${flag.clientInfo.name}`;
+          entryType = 'visit';
+        } else {
+          const address =
+            addressCache.get(flag.coordKey) ||
+            `Dirección para ${flag.coordKey} no encontrada`;
+          if (flag.type === 'start') name = `Inicio de Viaje: ${address}`;
+          if (flag.type === 'end') name = `Fin de Viaje: ${address}`;
+          if (flag.type === 'stop') name = `Parada: ${address}`;
+        }
+
+        dayData.visits.push({
+          key: `${flag.type}-${flag.time}-${flag.lat.toFixed(5)}`,
+          name: name,
+          visitCount: 1,
+          totalDuration: flag.duration || 0,
+          vehicles: [flag.vehicle],
+          visitTimes: [flag.time],
+          type: entryType,
+        });
+      }
+
+      const warningsToShow: string[] = [];
       if (inactiveFiles.length > 0) {
         warningsToShow.push(
           `Se detectaron ${inactiveFiles.length} día(s) de fin de semana sin actividad. No sumarán distancia ni visitas: ${inactiveFiles.join(', ')}`
@@ -465,11 +594,16 @@ export default function ReportesView() {
       }
       if (activeWeekendFiles.length > 0) {
         warningsToShow.push(
-          `Se detectó actividad en ${activeWeekendFiles.length} día(s) no laborales. El kilometraje ha sido sumado al total: ${activeWeekendFiles.join(', ')}`
+          `Se detectó actividad en ${activeWeekendFiles.length} día(s) no laborales. El kilometraje ha sido sumado al total, y las paradas se muestran como genéricas: ${activeWeekendFiles.join(', ')}`
         );
       }
-
       setWarnings(warningsToShow);
+
+      for (const day in weeklyReport) {
+        weeklyReport[day].visits.sort((a, b) =>
+          a.visitTimes[0].localeCompare(b.visitTimes[0])
+        );
+      }
 
       setReportData(weeklyReport);
       setNonVisitedClients(
@@ -484,6 +618,7 @@ export default function ReportesView() {
     }
   };
 
+  // Función para descargar el reporte en Excel
   const downloadReport = () => {
     if (!reportData || !reportMetadata) return;
 
@@ -498,18 +633,32 @@ export default function ReportesView() {
       'Domingo',
     ];
     const weeklySheetData: any[][] = [];
+
     const totalWeeklyDuration = Object.values(reportData).reduce(
       (sum, day) =>
-        sum + day.visits.reduce((dSum, v) => dSum + v.totalDuration, 0),
+        sum +
+        day.visits.reduce(
+          (dSum, v) =>
+            dSum +
+            (v.type === 'visit' || v.type === 'stop' ? v.totalDuration : 0),
+          0
+        ),
       0
     );
+
     const totalWeeklyKms = Object.values(reportData).reduce(
       (sum, day) => sum + day.totalDistance,
       0
     );
+
     const uniqueClientsVisited = new Set(
-      Object.values(reportData).flatMap((day) => day.visits.map((v) => v.key))
+      Object.values(reportData).flatMap((day) =>
+        day.visits
+          .filter((v) => v.type === 'visit')
+          .map((v) => v.name.split(' - ')[0])
+      )
     ).size;
+
     const totalMinutesForPercentage = 48 * 60;
     const percentageOfTimeUsed =
       totalWeeklyDuration > 0
@@ -517,12 +666,11 @@ export default function ReportesView() {
         : 0;
     const formattedPercentage = `${percentageOfTimeUsed.toFixed(2)}%`;
 
-    weeklySheetData.push(['Reporte de Visitas Semanal']);
+    weeklySheetData.push(['Reporte de Actividad Semanal']);
     weeklySheetData.push([]);
     weeklySheetData.push([
-      'Vendedor:',
-      selectedVendor || 'N/A',
-      '',
+      'Modo de Reporte:',
+      selection.mode === 'driver' ? 'CHOFER' : `Vendedor: ${selection.value}`,
       '',
       '',
       '',
@@ -534,18 +682,16 @@ export default function ReportesView() {
       '',
       '',
       '',
-      '',
       'Clientes Únicos Visitados:',
       String(uniqueClientsVisited || 0),
     ]);
     weeklySheetData.push([
-      'Vehículos Involucrados:',
+      'Vehículo Involucrado:',
       reportMetadata.vehicles.join(', '),
       '',
       '',
       '',
-      '',
-      'Tiempo Total en Visitas:',
+      'Tiempo Total en Paradas/Visitas:',
       formatDuration(totalWeeklyDuration),
     ]);
     weeklySheetData.push([
@@ -554,12 +700,10 @@ export default function ReportesView() {
       '',
       '',
       '',
-      '',
-      'Porcentaje de tiempo utilizado (48h):',
+      '% de tiempo utilizado (48h):',
       formattedPercentage,
     ]);
     weeklySheetData.push([
-      '',
       '',
       '',
       '',
@@ -580,47 +724,54 @@ export default function ReportesView() {
       weeklySheetData.push([`${day}${dateString}`]);
 
       weeklySheetData.push([
-        'Clave Cliente',
-        'Nombre Cliente',
-        '# Visitas',
+        'Hora',
+        'Evento',
+        'Clave - Cliente / Descripción',
         'Duración',
-        'Hora de Visita',
       ]);
 
       if (dayData.visits.length > 0) {
-        const sortedVisits = [...dayData.visits].sort((a, b) =>
-          (a.visitTimes[0] || '23:59').localeCompare(b.visitTimes[0] || '23:59')
-        );
-        sortedVisits.forEach((v) => {
+        dayData.visits.forEach((v) => {
+          let eventType = '';
+          switch (v.type) {
+            case 'start':
+              eventType = 'Inicio de Viaje';
+              break;
+            case 'end':
+              eventType = 'Fin de Viaje';
+              break;
+            case 'visit':
+              eventType = 'Visita a Cliente';
+              break;
+            case 'stop':
+              eventType = 'Parada';
+              break;
+          }
           weeklySheetData.push([
-            String(v.key),
-            String(v.name),
-            String(v.visitCount),
-            formatDuration(v.totalDuration),
-            [...v.visitTimes].sort().join(', '),
+            v.visitTimes[0] || '',
+            eventType,
+            v.name,
+            v.totalDuration > 0 ? formatDuration(v.totalDuration) : '--',
           ]);
         });
-        const totalVisits = dayData.visits.reduce(
-          (sum, v) => sum + v.visitCount,
-          0
-        );
         const totalDayDuration = dayData.visits.reduce(
           (sum, v) => sum + v.totalDuration,
           0
         );
+        const totalStopsAndVisits = dayData.visits.filter(
+          (v) => v.type === 'visit' || v.type === 'stop'
+        ).length;
         weeklySheetData.push([
           'Totales del Día:',
-          '',
-          String(totalVisits),
-          formatDuration(totalDayDuration),
+          `${totalStopsAndVisits} parada(s)`,
           `${Math.round(dayData.totalDistance / 1000)} km`,
+          formatDuration(totalDayDuration),
         ]);
       } else {
         weeklySheetData.push([
-          'No se registraron visitas',
+          'No se registró actividad',
           '',
-          '0',
-          '00:00',
+          '',
           `${Math.round(dayData.totalDistance / 1000)} km`,
         ]);
       }
@@ -629,98 +780,25 @@ export default function ReportesView() {
 
     const weeklySheet = XLSX.utils.aoa_to_sheet(weeklySheetData);
     weeklySheet['!cols'] = [
-      { wch: 20 },
-      { wch: 40 },
-      { wch: 12 },
+      { wch: 18 },
+      { wch: 17 },
+      { wch: 55 },
       { wch: 15 },
-      { wch: 20 },
-      { wch: 5 },
+      { wch: 1 },
       { wch: 35 },
-      { wch: 20 },
+      { wch: 15 },
     ];
-    const styleHeader = {
-      font: { bold: true },
-      fill: { fgColor: { rgb: 'D9E1F2' } },
-      alignment: { horizontal: 'center', vertical: 'center' },
-    };
-    const styleDayHeader = {
-      font: { bold: true, sz: 12, color: { rgb: 'FFFFFF' } },
-      fill: { fgColor: { rgb: '4F81BD' } },
-      alignment: { horizontal: 'center' },
-    };
-    const styleAlignRight = { alignment: { horizontal: 'right' } };
-    const styleAlignLeft = { alignment: { horizontal: 'left' } };
-    const styleAlignCenter = { alignment: { horizontal: 'center' } };
 
-    if (weeklySheet['A1'])
-      weeklySheet['A1'].s = {
-        font: { sz: 16, bold: true, color: { rgb: '003366' } },
-      };
-    if (weeklySheet['G3'])
-      weeklySheet['G3'].s = {
-        font: { sz: 14, bold: true, color: { rgb: '003366' } },
-      };
-    if (weeklySheet['H4']) weeklySheet['H4'].s = styleAlignRight;
-    if (weeklySheet['H5']) weeklySheet['H5'].s = styleAlignRight;
-    if (weeklySheet['H6']) weeklySheet['H6'].s = styleAlignRight;
-    if (weeklySheet['H7']) weeklySheet['H7'].s = styleAlignRight;
-
-    weeklySheetData.forEach((row, rowIndex) => {
-      // MODIFICADO: Se aplica el estilo al encabezado del día (que ahora puede tener fecha).
-      if (row.length === 1 && weekDays.some((day) => row[0].startsWith(day))) {
-        const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c: 0 });
-        if (weeklySheet[cellRef]) weeklySheet[cellRef].s = styleDayHeader;
-      } else if (row[0] === 'Clave Cliente') {
-        for (let c = 0; c < 5; c++) {
-          const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c });
-          if (weeklySheet[cellRef]) weeklySheet[cellRef].s = styleHeader;
-        }
-      } else if (row.length === 5 && !row[0].includes('Totales')) {
-        if (weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 0 })])
-          weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 0 })].s =
-            styleAlignCenter;
-        if (weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 1 })])
-          weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 1 })].s =
-            styleAlignLeft;
-        if (weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 2 })])
-          weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 2 })].s =
-            styleAlignLeft;
-        if (weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 3 })])
-          weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 3 })].s =
-            styleAlignRight;
-        if (weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 4 })])
-          weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 4 })].s =
-            styleAlignRight;
-      } else if (
-        typeof row[0] === 'string' &&
-        row[0].includes('Totales del Día')
-      ) {
-        const totalStyleRight = {
-          font: { bold: true },
-          fill: { fgColor: { rgb: 'F2F2F2' } },
-          alignment: { horizontal: 'right' },
-        };
-        const totalStyleLeft = {
-          font: { bold: true },
-          fill: { fgColor: { rgb: 'F2F2F2' } },
-          alignment: { horizontal: 'left' },
-        };
-        if (weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 0 })])
-          weeklySheet[XLSX.utils.encode_cell({ r: rowIndex, c: 0 })].s =
-            totalStyleLeft;
-        for (let c = 2; c < 5; c++) {
-          const cellRef = XLSX.utils.encode_cell({ r: rowIndex, c });
-          if (weeklySheet[cellRef]) weeklySheet[cellRef].s = totalStyleRight;
-        }
-      }
-    });
     XLSX.utils.book_append_sheet(wb, weeklySheet, 'Reporte Semanal');
 
     if (nonVisitedClients.length > 0) {
       const nonVisitedSheetData = [
         ['Clientes No Visitados'],
         [],
-        ['Vendedor:', selectedVendor || 'N/A'],
+        [
+          'Reporte para:',
+          selection.mode === 'driver' ? 'CHOFER' : selection.value,
+        ],
         [],
         ['Clave Cliente', 'Nombre Cliente'],
       ];
@@ -729,24 +807,16 @@ export default function ReportesView() {
         .forEach((c) => nonVisitedSheetData.push([c.key, c.name]));
       const nonVisitedSheet = XLSX.utils.aoa_to_sheet(nonVisitedSheetData);
       nonVisitedSheet['!cols'] = [{ wch: 20 }, { wch: 40 }];
-      if (nonVisitedSheet['A1'])
-        nonVisitedSheet['A1'].s = {
-          font: { sz: 16, bold: true, color: { rgb: '003366' } },
-        };
-      if (nonVisitedSheet['A5']) nonVisitedSheet['A5'].s = styleHeader;
-      if (nonVisitedSheet['B5']) nonVisitedSheet['B5'].s = styleHeader;
       XLSX.utils.book_append_sheet(
         wb,
         nonVisitedSheet,
         'Clientes No Visitados'
       );
     }
-    const safeDateRange = reportMetadata.dateRange.replace(
-      /[^a-zA-Z0-9]/g,
-      '_'
-    );
-    const safeVendor = selectedVendor?.replace(/[^a-zA-Z0-9]/g, '') || 'S_V';
-    const fileName = `Reporte_Semanal_${safeVendor}_${safeDateRange}.xlsx`;
+
+    const safeSelection =
+      selection.value?.replace(/[^a-zA-Z0-9]/g, '') || 'S_V';
+    const fileName = `Reporte_Actividad_${safeSelection}_${reportMetadata.dateRange.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`;
     XLSX.writeFile(wb, fileName);
   };
 
@@ -821,7 +891,7 @@ export default function ReportesView() {
               </label>
             </div>
           </div>
-          <div className="bg-gray-50 p-2 rounded-lg space-y-4">
+          <div className="bg-gray-50 p-4 rounded-lg space-y-4">
             <h2 className="text-lg font-semibold text-gray-700 mb-3">
               3. Configurar Reporte
             </h2>
@@ -829,15 +899,21 @@ export default function ReportesView() {
               <div>
                 <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
                   <UserCheck className="w-4 h-4" />
-                  Selecciona Vendedor:
+                  Selecciona un vendedor o modo chofer:
                 </label>
-                <div className="flex flex-wrap gap-2">
+                <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2 border-b border-b-gray-300">
+                  Vendedores
+                </label>
+                <div className="flex flex-wrap gap-2 mb-4">
                   {availableVendors.map((vendor) => (
                     <button
                       key={vendor}
-                      onClick={() => setSelectedVendor(vendor)}
+                      onClick={() =>
+                        setSelection({ mode: 'vendor', value: vendor })
+                      }
                       className={`px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out ${
-                        selectedVendor === vendor
+                        selection.mode === 'vendor' &&
+                        selection.value === vendor
                           ? 'bg-blue-600 text-white border-blue-600 shadow-md transform scale-105'
                           : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-100 hover:border-blue-400'
                       }`}
@@ -846,6 +922,23 @@ export default function ReportesView() {
                     </button>
                   ))}
                 </div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 mt-2 items-center gap-2 border-b border-b-gray-300">
+                  Modo chofer
+                </label>
+                <button
+                  key="driver-mode"
+                  onClick={() =>
+                    setSelection({ mode: 'driver', value: 'CHOFER' })
+                  }
+                  className={`px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out flex items-center gap-2 ${
+                    selection.mode === 'driver'
+                      ? 'bg-red-600 text-white border-red-600 shadow-md transform scale-105'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-red-100 hover:border-red-400'
+                  }`}
+                >
+                  <Truck className="w-4 h-4" />
+                  CHOFER
+                </button>
               </div>
             )}
             <div className="flex items-center justify-between pt-2">
@@ -853,7 +946,7 @@ export default function ReportesView() {
                 htmlFor="stop-duration-report"
                 className="text-sm font-medium text-gray-700"
               >
-                Visitas con parada mayor a:
+                Paradas con duración mayor a:
               </label>
               <div className="flex items-center gap-2">
                 <input
@@ -895,7 +988,7 @@ export default function ReportesView() {
                 isLoading ||
                 vehicleFiles.length === 0 ||
                 !clientFile ||
-                !selectedVendor
+                !selection.value
               }
               className="w-full flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed transform hover:scale-105"
             >
@@ -941,6 +1034,15 @@ export default function ReportesView() {
                   </button>
                 </div>
               </div>
+
+              <div className="p-3 mb-4 bg-blue-50 text-blue-800 rounded-lg flex items-center gap-2 text-sm">
+                <Info className="h-5 w-5 shrink-0" />
+                <span>
+                  El inicio, fin y las paradas sin cliente ahora muestran una
+                  dirección aproximada.
+                </span>
+              </div>
+
               <div className="space-y-6">
                 {[
                   'Lunes',
@@ -965,40 +1067,58 @@ export default function ReportesView() {
                         <table className="min-w-full bg-white">
                           <thead className="bg-gray-100">
                             <tr>
-                              <th className="py-2 px-4 border-b text-center text-sm font-semibold text-gray-600">
-                                Clave
+                              <th className="py-2 px-3 border-b text-center text-sm font-semibold text-gray-600 w-12"></th>
+                              <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
+                                Hora
                               </th>
                               <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
-                                Nombre Cliente
+                                Evento
                               </th>
-                              <th className="py-2 px-4 border-b text-center text-sm font-semibold text-gray-600">
-                                # Visitas
+                              <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
+                                Clave - Cliente / Descripción
                               </th>
                               <th className="py-2 px-4 border-b text-right text-sm font-semibold text-gray-600">
                                 Duración
-                              </th>
-                              <th className="py-2 px-4 border-b text-right text-sm font-semibold text-gray-600">
-                                Hora de Visita(s)
                               </th>
                             </tr>
                           </thead>
                           <tbody>
                             {reportData[day].visits.map((row) => (
                               <tr key={row.key} className="hover:bg-gray-50">
-                                <td className="py-2 px-4 border-b text-sm text-center">
-                                  {row.key}
+                                <td className="py-2 px-3 border-b text-center">
+                                  {row.type === 'start' && (
+                                    <Flag className="w-5 h-5 mx-auto text-green-500" />
+                                  )}
+                                  {row.type === 'end' && (
+                                    <FlagOff className="w-5 h-5 mx-auto text-red-500" />
+                                  )}
+                                  {row.type === 'visit' && (
+                                    <UsersRound className="w-5 h-5 mx-auto text-blue-600" />
+                                  )}
+                                  {row.type === 'stop' && (
+                                    <SquareParking className="w-5 h-5 mx-auto text-yellow-500" />
+                                  )}
+                                </td>
+                                <td className="py-2 px-4 border-b text-sm text-left">
+                                  {row.visitTimes[0]}
+                                </td>
+                                <td className="py-2 px-4 border-b text-sm text-left font-medium">
+                                  {
+                                    {
+                                      start: 'Inicio de Viaje',
+                                      end: 'Fin de Viaje',
+                                      visit: 'Visita a Cliente',
+                                      stop: 'Parada',
+                                    }[row.type]
+                                  }
                                 </td>
                                 <td className="py-2 px-4 border-b text-sm text-left">
                                   {row.name}
                                 </td>
-                                <td className="py-2 px-4 border-b text-sm text-center">
-                                  {row.visitCount}
-                                </td>
                                 <td className="py-2 px-4 border-b text-sm text-right">
-                                  {formatDuration(row.totalDuration)}
-                                </td>
-                                <td className="py-2 px-4 border-b text-sm text-right">
-                                  {row.visitTimes.sort().join(', ')}
+                                  {row.totalDuration > 0
+                                    ? formatDuration(row.totalDuration)
+                                    : '--'}
                                 </td>
                               </tr>
                             ))}
@@ -1007,7 +1127,7 @@ export default function ReportesView() {
                       </div>
                     ) : (
                       <p className="text-sm text-gray-500 px-4 py-2 bg-gray-50 rounded-md">
-                        No se registraron visitas este día.
+                        No se registró actividad este día.
                       </p>
                     )}
                   </div>
