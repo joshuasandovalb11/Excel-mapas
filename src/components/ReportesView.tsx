@@ -570,9 +570,9 @@ export default function ReportesView() {
           const address =
             addressCache.get(flag.coordKey) ||
             `Dirección para ${flag.coordKey} no encontrada`;
-          if (flag.type === 'start') name = `Inicio de Viaje: ${address}`;
-          if (flag.type === 'end') name = `Fin de Viaje: ${address}`;
-          if (flag.type === 'stop') name = `Parada: ${address}`;
+          if (flag.type === 'start') name = `${address}`;
+          if (flag.type === 'end') name = `${address}`;
+          if (flag.type === 'stop') name = `${address}`;
         }
 
         dayData.visits.push({

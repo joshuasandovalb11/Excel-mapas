@@ -388,9 +388,9 @@ export default function VehicleTracker() {
         } else {
           const address =
             addressCache.get(flag.coordKey) || 'Dirección no disponible';
-          if (flag.type === 'start') name = `Inicio de Viaje: ${address}`;
-          if (flag.type === 'end') name = `Fin de Viaje: ${address}`;
-          if (flag.type === 'stop') name = `Parada: ${address}`;
+          if (flag.type === 'start') name = `${address}`;
+          if (flag.type === 'end') name = `${address}`;
+          if (flag.type === 'stop') name = `${address}`;
         }
 
         reportEntries.push({
@@ -623,7 +623,7 @@ export default function VehicleTracker() {
             }
 
             function initMap() {
-                map = new google.maps.Map(document.getElementById('map'), { center: ${mapCenter}, zoom: 12, mapTypeControl: false, streetViewControl: false });
+                map = new google.maps.Map(document.getElementById('map'), { center: ${mapCenter}, zoom: 12, mapTypeControl: false, streetViewControl: true });
                 const bounds = new google.maps.LatLngBounds();
 
                 allFlags.forEach((flag, index) => {
