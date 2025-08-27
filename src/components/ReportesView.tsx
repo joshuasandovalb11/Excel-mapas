@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import {
   Upload,
   Users,
@@ -618,9 +618,101 @@ export default function ReportesView() {
     }
   };
 
-  // Función para descargar el reporte en Excel
   const downloadReport = () => {
     if (!reportData || !reportMetadata) return;
+
+    const styles = {
+      title: {
+        font: { name: 'Arial', sz: 18, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF0275D8' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      infoLabel: {
+        font: {
+          name: 'Arial',
+          sz: 10,
+          bold: true,
+        },
+        alignment: { horizontal: 'right' },
+      },
+      infoValue: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'left' },
+      },
+      header: {
+        font: { name: 'Arial', sz: 11, bold: true },
+        fill: { fgColor: { rgb: 'FFDDDDDD' } },
+        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
+      },
+      subHeader: {
+        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF4F81BD' } },
+        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
+      },
+      summaryLabel: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'right' },
+      },
+      summaryValue: {
+        font: { name: 'Arial', sz: 10 },
+      },
+      totalRow: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFF2F2F2' } },
+        alignment: { horizontal: 'center' },
+        border: {
+          top: { style: 'thin', color: { auto: 1 } },
+          bottom: { style: 'thin', color: { auto: 1 } },
+        },
+      },
+      cell: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { vertical: 'center' },
+      },
+      cellCentered: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      cellRight: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'right', vertical: 'center' },
+      },
+      clientVisitCell: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFEBF5FF' } },
+        alignment: { vertical: 'center' },
+      },
+      eventCell: (type: 'visit' | 'stop' | 'start' | 'end') => {
+        const baseStyle = {
+          font: { name: 'Arial', sz: 10, bold: true },
+          alignment: { horizontal: 'center', vertical: 'center' },
+        };
+        const typeSpecificStyles = {
+          visit: {
+            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
+            fill: { fgColor: { rgb: 'FF0066CC' } },
+          },
+          stop: {
+            font: { ...baseStyle.font, color: { rgb: '00000000' } },
+            fill: { fgColor: { rgb: 'FFFFC000' } },
+          },
+          start: {
+            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
+            fill: { fgColor: { rgb: 'FF00B050' } },
+          },
+          end: {
+            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
+            fill: { fgColor: { rgb: 'FFFF0000' } },
+          },
+        };
+        return { ...baseStyle, ...typeSpecificStyles[type] };
+      },
+      nonVisitedHeader: {
+        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FFC00000' } },
+        alignment: { horizontal: 'center' },
+      },
+    };
 
     const wb = XLSX.utils.book_new();
     const weekDays = [
@@ -632,7 +724,8 @@ export default function ReportesView() {
       'Sábado',
       'Domingo',
     ];
-    const weeklySheetData: any[][] = [];
+    const finalSheetData: any[][] = [];
+    const merges: XLSX.Range[] = [];
 
     const totalWeeklyDuration = Object.values(reportData).reduce(
       (sum, day) =>
@@ -645,12 +738,10 @@ export default function ReportesView() {
         ),
       0
     );
-
     const totalWeeklyKms = Object.values(reportData).reduce(
       (sum, day) => sum + day.totalDistance,
       0
     );
-
     const uniqueClientsVisited = new Set(
       Object.values(reportData).flatMap((day) =>
         day.visits
@@ -658,7 +749,6 @@ export default function ReportesView() {
           .map((v) => v.name.split(' - ')[0])
       )
     ).size;
-
     const totalMinutesForPercentage = 48 * 60;
     const percentageOfTimeUsed =
       totalWeeklyDuration > 0
@@ -666,54 +756,23 @@ export default function ReportesView() {
         : 0;
     const formattedPercentage = `${percentageOfTimeUsed.toFixed(2)}%`;
 
-    weeklySheetData.push(['Reporte de Actividad Semanal']);
-    weeklySheetData.push([]);
-    weeklySheetData.push([
-      'Modo de Reporte:',
-      selection.mode === 'driver' ? 'CHOFER' : `Vendedor: ${selection.value}`,
-      '',
-      '',
-      '',
-      'Resumen General de la Semana',
-    ]);
-    weeklySheetData.push([
-      'Rango de Fechas:',
-      reportMetadata.dateRange,
-      '',
-      '',
-      '',
-      'Clientes Únicos Visitados:',
-      String(uniqueClientsVisited || 0),
-    ]);
-    weeklySheetData.push([
-      'Vehículo Involucrado:',
-      reportMetadata.vehicles.join(', '),
-      '',
-      '',
-      '',
-      'Tiempo Total en Paradas/Visitas:',
-      formatDuration(totalWeeklyDuration),
-    ]);
-    weeklySheetData.push([
-      '',
-      '',
-      '',
-      '',
-      '',
-      '% de tiempo utilizado (48h):',
-      formattedPercentage,
-    ]);
-    weeklySheetData.push([
-      '',
-      '',
-      '',
-      '',
-      '',
-      'Kilometraje Total:',
-      `${Math.round(totalWeeklyKms / 1000)} km`,
-    ]);
-    weeklySheetData.push([]);
+    const rightSideData = [
+      ['Información del Reporte'],
+      ['Rango de Fechas:', reportMetadata.dateRange],
+      ['Vehículo Involucrado:', reportMetadata.vehicles.join(', ')],
+      [
+        'Reporte para:',
+        selection.mode === 'driver' ? 'CHOFER' : `${selection.value}`,
+      ],
+      [],
+      ['Resumen General de la Semana'],
+      ['Clientes Únicos Visitados:', String(uniqueClientsVisited || 0)],
+      ['Tiempo Total en Paradas/Visitas:', formatDuration(totalWeeklyDuration)],
+      ['% de tiempo utilizado (48h):', formattedPercentage],
+      ['Kilometraje Total:', `${Math.round(totalWeeklyKms / 1000)} km`],
+    ];
 
+    const leftSideData: any[][] = [];
     weekDays.forEach((day) => {
       const dayData = reportData[day] || {
         visits: [],
@@ -721,14 +780,15 @@ export default function ReportesView() {
         date: null,
       };
       const dateString = dayData.date ? `, ${dayData.date}` : '';
-      weeklySheetData.push([`${day}${dateString}`]);
+      leftSideData.push([`${day}${dateString}`, '', '', '']);
 
-      weeklySheetData.push([
+      const headerRow = [
         'Hora',
         'Evento',
-        'Clave - Cliente / Descripción',
+        '# - Cliente / Descripción',
         'Duración',
-      ]);
+      ];
+      leftSideData.push(headerRow);
 
       if (dayData.visits.length > 0) {
         dayData.visits.forEach((v) => {
@@ -747,7 +807,7 @@ export default function ReportesView() {
               eventType = 'Parada';
               break;
           }
-          weeklySheetData.push([
+          leftSideData.push([
             v.visitTimes[0] || '',
             eventType,
             v.name,
@@ -761,34 +821,151 @@ export default function ReportesView() {
         const totalStopsAndVisits = dayData.visits.filter(
           (v) => v.type === 'visit' || v.type === 'stop'
         ).length;
-        weeklySheetData.push([
+        leftSideData.push([
           'Totales del Día:',
           `${totalStopsAndVisits} parada(s)`,
           `${Math.round(dayData.totalDistance / 1000)} km`,
           formatDuration(totalDayDuration),
         ]);
       } else {
-        weeklySheetData.push([
-          'No se registró actividad',
-          '',
-          '',
-          `${Math.round(dayData.totalDistance / 1000)} km`,
-        ]);
+        leftSideData.push(['No se registró actividad', '', '', '']);
       }
-      weeklySheetData.push([]);
+      leftSideData.push([]);
     });
 
-    const weeklySheet = XLSX.utils.aoa_to_sheet(weeklySheetData);
-    weeklySheet['!cols'] = [
-      { wch: 18 },
-      { wch: 17 },
-      { wch: 55 },
-      { wch: 15 },
-      { wch: 1 },
-      { wch: 35 },
-      { wch: 15 },
-    ];
+    finalSheetData.push(['Reporte de Actividad Semanal']);
+    finalSheetData.push([]);
 
+    const numRows = Math.max(leftSideData.length, rightSideData.length);
+    const startRow = 2;
+
+    for (let i = 0; i < numRows; i++) {
+      const leftRow = leftSideData[i] || ['', '', '', ''];
+      const rightRow = rightSideData[i] || [];
+      finalSheetData[startRow + i] = [
+        ...leftRow,
+        '',
+        ...(rightRow || ['', '']),
+      ];
+    }
+
+    const weeklySheet = XLSX.utils.aoa_to_sheet(finalSheetData);
+
+    if (weeklySheet['A1']) weeklySheet['A1'].s = styles.title;
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } });
+
+    const rightSideStartCol = 5;
+    if (weeklySheet[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
+      weeklySheet[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
+        styles.subHeader;
+    merges.push({
+      s: { r: 2, c: rightSideStartCol },
+      e: { r: 2, c: rightSideStartCol + 1 },
+    });
+
+    for (let i = 3; i <= 5; i++) {
+      if (weeklySheet[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })])
+        weeklySheet[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })].s =
+          styles.infoLabel;
+      if (
+        weeklySheet[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })]
+      )
+        weeklySheet[
+          XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })
+        ].s = styles.infoValue;
+    }
+
+    if (weeklySheet[XLSX.utils.encode_cell({ r: 7, c: rightSideStartCol })])
+      weeklySheet[XLSX.utils.encode_cell({ r: 7, c: rightSideStartCol })].s =
+        styles.subHeader;
+    merges.push({
+      s: { r: 7, c: rightSideStartCol },
+      e: { r: 7, c: rightSideStartCol + 1 },
+    });
+
+    for (let i = 8; i <= 11; i++) {
+      if (weeklySheet[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })])
+        weeklySheet[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })].s =
+          styles.summaryLabel;
+      if (
+        weeklySheet[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })]
+      )
+        weeklySheet[
+          XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })
+        ].s = styles.summaryValue;
+    }
+
+    let currentRowIndex = 2;
+    weekDays.forEach((day) => {
+      const dayData = reportData[day] || { visits: [], totalDistance: 0 };
+
+      const subHeaderCell =
+        weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 })];
+      if (subHeaderCell && subHeaderCell.v) {
+        subHeaderCell.s = styles.subHeader;
+        merges.push({
+          s: { r: currentRowIndex, c: 0 },
+          e: { r: currentRowIndex, c: 3 },
+        });
+      }
+      currentRowIndex++;
+
+      const tableHeaderRow = currentRowIndex;
+      if (
+        leftSideData[tableHeaderRow - startRow] &&
+        leftSideData[tableHeaderRow - startRow].length > 1
+      ) {
+        for (let c = 0; c < 4; c++) {
+          const cell =
+            weeklySheet[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
+          if (cell) cell.s = styles.header;
+        }
+      }
+      currentRowIndex++;
+
+      dayData.visits.forEach((v) => {
+        const cellA =
+          weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 })];
+        const cellB =
+          weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 1 })];
+        const cellC =
+          weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 2 })];
+        const cellD =
+          weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 3 })];
+        if (cellA) cellA.s = styles.cellCentered;
+        if (cellB) cellB.s = styles.eventCell(v.type);
+        if (cellC)
+          cellC.s = v.type === 'visit' ? styles.clientVisitCell : styles.cell;
+        if (cellD) cellD.s = styles.cellRight;
+        currentRowIndex++;
+      });
+
+      const totalRow = currentRowIndex;
+      const totalRowData = leftSideData[totalRow - startRow] || [];
+      if (totalRowData[0] === 'No se registró actividad') {
+        const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c: 0 })];
+        if (cell) cell.s = styles.cellCentered;
+        merges.push({ s: { r: totalRow, c: 0 }, e: { r: totalRow, c: 3 } });
+      } else if (totalRowData.length > 1) {
+        for (let c = 0; c < 4; c++) {
+          const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c })];
+          if (cell) cell.s = styles.totalRow;
+        }
+      }
+      currentRowIndex++;
+      currentRowIndex++;
+    });
+
+    weeklySheet['!merges'] = merges;
+    weeklySheet['!cols'] = [
+      { wch: 15 },
+      { wch: 20 },
+      { wch: 72 },
+      { wch: 15 },
+      { wch: 3 },
+      { wch: 30 },
+      { wch: 25 },
+    ];
     XLSX.utils.book_append_sheet(wb, weeklySheet, 'Reporte Semanal');
 
     if (nonVisitedClients.length > 0) {
@@ -806,7 +983,13 @@ export default function ReportesView() {
         .sort((a, b) => a.name.localeCompare(b.name))
         .forEach((c) => nonVisitedSheetData.push([c.key, c.name]));
       const nonVisitedSheet = XLSX.utils.aoa_to_sheet(nonVisitedSheetData);
-      nonVisitedSheet['!cols'] = [{ wch: 20 }, { wch: 40 }];
+      if (nonVisitedSheet['A1']) nonVisitedSheet['A1'].s = styles.title;
+      if (nonVisitedSheet['A5'])
+        nonVisitedSheet['A5'].s = styles.nonVisitedHeader;
+      if (nonVisitedSheet['B5'])
+        nonVisitedSheet['B5'].s = styles.nonVisitedHeader;
+      nonVisitedSheet['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+      nonVisitedSheet['!cols'] = [{ wch: 25 }, { wch: 50 }];
       XLSX.utils.book_append_sheet(
         wb,
         nonVisitedSheet,

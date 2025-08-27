@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useRef, useEffect } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import {
   Upload,
   Download,
@@ -302,6 +302,90 @@ export default function VehicleTracker() {
 
     setIsGeneratingReport(true);
 
+    const styles = {
+      title: {
+        font: { name: 'Arial', sz: 18, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF0275D8' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      infoLabel: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'right' },
+      },
+      infoValue: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'left' },
+      },
+      header: {
+        font: { name: 'Arial', sz: 11, bold: true },
+        fill: { fgColor: { rgb: 'FFDDDDDD' } },
+        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
+      },
+      subHeader: {
+        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF4F81BD' } },
+        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
+      },
+      summaryLabel: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'right' },
+      },
+      summaryValue: {
+        font: { name: 'Arial', sz: 10 },
+      },
+      totalRow: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFF2F2F2' } },
+        alignment: { horizontal: 'center' },
+        border: {
+          top: { style: 'thin', color: { auto: 1 } },
+          bottom: { style: 'thin', color: { auto: 1 } },
+        },
+      },
+      cell: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { vertical: 'center' },
+      },
+      cellCentered: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      cellRight: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'right', vertical: 'center' },
+      },
+      clientVisitCell: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFEBF5FF' } },
+        alignment: { vertical: 'center' },
+      },
+      eventCell: (type: 'visit' | 'stop' | 'start' | 'end') => {
+        const baseStyle = {
+          font: { name: 'Arial', sz: 10, bold: true },
+          alignment: { horizontal: 'center', vertical: 'center' },
+        };
+        const typeSpecificStyles = {
+          visit: {
+            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
+            fill: { fgColor: { rgb: 'FF0066CC' } },
+          },
+          stop: {
+            font: { ...baseStyle.font, color: { rgb: '00000000' } },
+            fill: { fgColor: { rgb: 'FFFFC000' } },
+          },
+          start: {
+            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
+            fill: { fgColor: { rgb: 'FF00B050' } },
+          },
+          end: {
+            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
+            fill: { fgColor: { rgb: 'FFFF0000' } },
+          },
+        };
+        return { ...baseStyle, ...typeSpecificStyles[type] };
+      },
+    };
+
     try {
       let clientsForReport: Client[] = [];
       if (selection.mode === 'driver') {
@@ -309,15 +393,12 @@ export default function VehicleTracker() {
       } else {
         clientsForReport = clientData || [];
       }
-
       if (clientsForReport.length === 0) {
         throw new Error('No se encontraron clientes para este reporte.');
       }
-
       const coordsToFetch = new Map<string, { lat: number; lng: number }>();
       const allFlagsToProcess: any[] = [];
       const visitedClientKeys = new Set<string>();
-
       for (const flag of tripData.flags) {
         if (
           flag.type === 'start' ||
@@ -326,7 +407,6 @@ export default function VehicleTracker() {
         ) {
           let isClientVisit = false;
           let clientInfo = null;
-
           if (flag.type === 'stop') {
             for (const client of clientsForReport) {
               const distance = calculateDistance(
@@ -343,14 +423,12 @@ export default function VehicleTracker() {
               }
             }
           }
-
           const coordKey = `${flag.lat.toFixed(5)},${flag.lng.toFixed(5)}`;
           if (!isClientVisit) {
             if (!coordsToFetch.has(coordKey)) {
               coordsToFetch.set(coordKey, { lat: flag.lat, lng: flag.lng });
             }
           }
-
           allFlagsToProcess.push({
             ...flag,
             isClientVisit,
@@ -359,7 +437,6 @@ export default function VehicleTracker() {
           });
         }
       }
-
       const addressCache = new Map<string, string>();
       const uniqueCoords = Array.from(coordsToFetch.entries());
       const batchSize = 10;
@@ -376,23 +453,23 @@ export default function VehicleTracker() {
           addressCache.set(result.key, result.address);
         }
       }
-
       const reportEntries: any[] = [];
       for (const flag of allFlagsToProcess) {
         let name = '';
         let entryType = flag.type;
-
         if (flag.isClientVisit) {
           name = `${flag.clientInfo.key} - ${flag.clientInfo.name}`;
           entryType = 'visit';
         } else {
           const address =
             addressCache.get(flag.coordKey) || 'Dirección no disponible';
-          if (flag.type === 'start') name = `${address}`;
-          if (flag.type === 'end') name = `${address}`;
-          if (flag.type === 'stop') name = `${address}`;
+          if (
+            flag.type === 'start' ||
+            flag.type === 'end' ||
+            flag.type === 'stop'
+          )
+            name = address;
         }
-
         reportEntries.push({
           time: flag.time,
           type: entryType,
@@ -402,15 +479,11 @@ export default function VehicleTracker() {
       }
       reportEntries.sort((a, b) => a.time.localeCompare(b.time));
 
-      const wb = XLSX.utils.book_new();
-      const reportSheetData: any[][] = [];
-
       const uniqueClientsVisited = new Set(
         reportEntries
-          .filter((entry) => entry.type === 'visit')
-          .map((entry) => entry.name.split(' - ')[0])
+          .filter((e) => e.type === 'visit')
+          .map((e) => e.name.split(' - ')[0])
       ).size;
-
       const totalDuration = reportEntries.reduce(
         (sum, entry) => sum + entry.duration,
         0
@@ -425,36 +498,34 @@ export default function VehicleTracker() {
         (e) => e.type === 'visit' || e.type === 'stop'
       ).length;
 
-      reportSheetData.push(['Reporte de Viaje Individual']);
-      reportSheetData.push([]);
-      reportSheetData.push(['Fecha:', vehicleInfo.fecha]);
-      reportSheetData.push(['Vehículo:', vehicleInfo.placa]);
-      reportSheetData.push([
-        'Reporte para:',
-        selection.mode === 'driver' ? 'CHOFER' : selection.value,
-      ]);
-      reportSheetData.push([]);
-      reportSheetData.push(['Resumen del Viaje']);
-      reportSheetData.push([
-        'Número de Paradas:',
-        String(totalStopsAndVisits || 0),
-      ]);
-      reportSheetData.push([
-        'Clientes Unicos Visitados:',
-        String(uniqueClientsVisited || 0),
-      ]);
-      reportSheetData.push([
-        'Kilometraje Total:',
-        `${Math.round(tripData.totalDistance / 1000)} km`,
-      ]);
-      reportSheetData.push(['Duración Total:', formatDuration(totalDuration)]);
-      reportSheetData.push([
-        '% de Tiempo Utilizado (8h):',
-        String(formattedPercentage),
-      ]);
-      reportSheetData.push([]);
+      const rightSideData = [
+        ['Información del Viaje'],
+        ['Fecha:', vehicleInfo.fecha],
+        ['Vehículo:', vehicleInfo.placa],
+        [
+          'Reporte para:',
+          selection.mode === 'driver' ? 'CHOFER' : selection.value,
+        ],
+        [],
+        ['Resumen del Viaje'],
+        ['Número de Paradas:', String(totalStopsAndVisits)],
+        ['Clientes Únicos Visitados:', String(uniqueClientsVisited)],
+        [
+          'Kilometraje Total:',
+          `${Math.round(tripData.totalDistance / 1000)} km`,
+        ],
+        ['Duración Total en Paradas:', formatDuration(totalDuration)],
+        ['% de Tiempo Utilizado (8h):', formattedPercentage],
+      ];
 
-      reportSheetData.push(['Hora', 'Evento', 'Descripción', 'Duración']);
+      const leftSideData: any[][] = [];
+      leftSideData.push(['Detalle de Actividades', '', '', '']);
+      leftSideData.push([
+        'Hora',
+        'Evento',
+        '# - Cliente / Descripción',
+        'Duración',
+      ]);
 
       reportEntries.forEach((entry) => {
         let eventType = '';
@@ -472,7 +543,7 @@ export default function VehicleTracker() {
             eventType = 'Parada';
             break;
         }
-        reportSheetData.push([
+        leftSideData.push([
           entry.time,
           eventType,
           entry.name,
@@ -480,8 +551,99 @@ export default function VehicleTracker() {
         ]);
       });
 
-      const ws = XLSX.utils.aoa_to_sheet(reportSheetData);
-      ws['!cols'] = [{ wch: 22 }, { wch: 15 }, { wch: 70 }, { wch: 15 }];
+      const finalSheetData: any[][] = [];
+      finalSheetData.push(['Reporte de Viaje Individual']);
+      finalSheetData.push([]);
+
+      const numRows = Math.max(leftSideData.length, rightSideData.length);
+      const startRow = 2;
+
+      for (let i = 0; i < numRows; i++) {
+        const leftRow = leftSideData[i] || ['', '', '', ''];
+        const rightRow = rightSideData[i] || [];
+        finalSheetData[startRow + i] = [
+          ...leftRow,
+          '',
+          ...(rightRow || ['', '']),
+        ];
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(finalSheetData);
+      const merges: XLSX.Range[] = [];
+
+      if (ws['A1']) ws['A1'].s = styles.title;
+      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } });
+
+      const rightSideStartCol = 5;
+      if (ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
+        ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
+          styles.subHeader;
+      merges.push({
+        s: { r: 2, c: rightSideStartCol },
+        e: { r: 2, c: rightSideStartCol + 1 },
+      });
+
+      for (let i = 3; i <= 5; i++) {
+        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })])
+          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })].s =
+            styles.infoLabel;
+        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })])
+          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })].s =
+            styles.infoValue;
+      }
+
+      if (ws[XLSX.utils.encode_cell({ r: 7, c: rightSideStartCol })])
+        ws[XLSX.utils.encode_cell({ r: 7, c: rightSideStartCol })].s =
+          styles.subHeader;
+      merges.push({
+        s: { r: 7, c: rightSideStartCol },
+        e: { r: 7, c: rightSideStartCol + 1 },
+      });
+
+      for (let i = 8; i <= 12; i++) {
+        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })])
+          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })].s =
+            styles.summaryLabel;
+        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })])
+          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })].s =
+            styles.summaryValue;
+      }
+
+      if (ws['A3']) ws['A3'].s = styles.subHeader;
+      merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 3 } });
+
+      const tableHeaderRow = 3;
+      for (let c = 0; c < 4; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
+        if (cell) cell.s = styles.header;
+      }
+
+      reportEntries.forEach((entry, index) => {
+        const r = tableHeaderRow + 1 + index;
+        const cellA = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+        const cellB = ws[XLSX.utils.encode_cell({ r, c: 1 })];
+        const cellC = ws[XLSX.utils.encode_cell({ r, c: 2 })];
+        const cellD = ws[XLSX.utils.encode_cell({ r, c: 3 })];
+
+        if (cellA) cellA.s = styles.cellCentered;
+        if (cellB) cellB.s = styles.eventCell(entry.type);
+        if (cellC)
+          cellC.s =
+            entry.type === 'visit' ? styles.clientVisitCell : styles.cell;
+        if (cellD) cellD.s = styles.cellRight;
+      });
+
+      ws['!merges'] = merges;
+      ws['!cols'] = [
+        { wch: 15 },
+        { wch: 20 },
+        { wch: 72 },
+        { wch: 15 },
+        { wch: 3 },
+        { wch: 30 },
+        { wch: 22 },
+      ];
+      const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Reporte de Viaje');
 
       const safeSelection =
