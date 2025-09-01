@@ -291,6 +291,35 @@ export default function VehicleTracker() {
     }
   };
 
+  // Funcion para formatear fechas en Excel
+  const formatExcelDate = (dateString: string | null): string => {
+    if (!dateString) return '';
+
+    const meses = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+
+    const date = new Date(`${dateString}T12:00:00Z`);
+    if (isNaN(date.getTime())) return '';
+
+    const mes = meses[date.getMonth()];
+    const dia = String(date.getDate()).padStart(2, '0');
+    const anio = date.getFullYear();
+
+    return `${mes}-${dia}-${anio}`;
+  };
+
   // FUNCIÓN PARA GENERAR Y DESCARGAR EL REPORTE
   const downloadReport = async () => {
     if (!tripData || !vehicleInfo || !clientData) {
@@ -471,6 +500,7 @@ export default function VehicleTracker() {
             name = address;
         }
         reportEntries.push({
+          fecha: formatExcelDate(vehicleInfo.fecha),
           time: flag.time,
           type: entryType,
           name: name,
@@ -519,8 +549,15 @@ export default function VehicleTracker() {
       ];
 
       const leftSideData: any[][] = [];
-      leftSideData.push(['Detalle de Actividades', '', '', '']);
       leftSideData.push([
+        `Detalle de Actividades (${vehicleInfo.fecha})`,
+        '',
+        '',
+        '',
+        '',
+      ]);
+      leftSideData.push([
+        'Fecha',
         'Hora',
         'Evento',
         '# - Cliente / Descripción',
@@ -543,7 +580,9 @@ export default function VehicleTracker() {
             eventType = 'Parada';
             break;
         }
+        const formattedDate = formatExcelDate(vehicleInfo.fecha);
         leftSideData.push([
+          formattedDate,
           entry.time,
           eventType,
           entry.name,
@@ -559,7 +598,7 @@ export default function VehicleTracker() {
       const startRow = 2;
 
       for (let i = 0; i < numRows; i++) {
-        const leftRow = leftSideData[i] || ['', '', '', ''];
+        const leftRow = leftSideData[i] || ['', '', '', '', ''];
         const rightRow = rightSideData[i] || [];
         finalSheetData[startRow + i] = [
           ...leftRow,
@@ -572,9 +611,9 @@ export default function VehicleTracker() {
       const merges: XLSX.Range[] = [];
 
       if (ws['A1']) ws['A1'].s = styles.title;
-      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } });
+      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
 
-      const rightSideStartCol = 5;
+      const rightSideStartCol = 6;
       if (ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
         ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
           styles.subHeader;
@@ -610,38 +649,41 @@ export default function VehicleTracker() {
       }
 
       if (ws['A3']) ws['A3'].s = styles.subHeader;
-      merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 3 } });
+      merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 4 } });
 
       const tableHeaderRow = 3;
-      for (let c = 0; c < 4; c++) {
+      for (let c = 0; c < 5; c++) {
         const cell = ws[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
         if (cell) cell.s = styles.header;
       }
 
       reportEntries.forEach((entry, index) => {
         const r = tableHeaderRow + 1 + index;
-        const cellA = ws[XLSX.utils.encode_cell({ r, c: 0 })];
-        const cellB = ws[XLSX.utils.encode_cell({ r, c: 1 })];
-        const cellC = ws[XLSX.utils.encode_cell({ r, c: 2 })];
-        const cellD = ws[XLSX.utils.encode_cell({ r, c: 3 })];
+        const cellFecha = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+        const cellHora = ws[XLSX.utils.encode_cell({ r, c: 1 })];
+        const cellEvento = ws[XLSX.utils.encode_cell({ r, c: 2 })];
+        const cellDesc = ws[XLSX.utils.encode_cell({ r, c: 3 })];
+        const cellDuracion = ws[XLSX.utils.encode_cell({ r, c: 4 })];
 
-        if (cellA) cellA.s = styles.cellCentered;
-        if (cellB) cellB.s = styles.eventCell(entry.type);
-        if (cellC)
-          cellC.s =
-            entry.type === 'visit' ? styles.clientVisitCell : styles.cell;
-        if (cellD) cellD.s = styles.cellRight;
+        if (cellFecha) cellFecha.s = styles.cellCentered; //Estilo para la fecha
+        if (cellHora) cellHora.s = styles.cellCentered; //Estilo para la hora
+        if (cellEvento) cellEvento.s = styles.eventCell(entry.type); //Estilo para el tipo de evento
+        if (cellDesc)
+          cellDesc.s =
+            entry.type === 'visit' ? styles.clientVisitCell : styles.cell; //Estilo para la descripción
+        if (cellDuracion) cellDuracion.s = styles.cellRight; //Estilo para la duración
       });
 
       ws['!merges'] = merges;
       ws['!cols'] = [
-        { wch: 15 },
-        { wch: 20 },
-        { wch: 72 },
-        { wch: 15 },
-        { wch: 3 },
+        { wch: 18 }, //Fecha
+        { wch: 15 }, //Hora
+        { wch: 20 }, //Evento
+        { wch: 70 }, //Descripción
+        { wch: 15 }, //Duración
+        { wch: 3 }, //Espacio
         { wch: 30 },
-        { wch: 22 },
+        { wch: 25 },
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Reporte de Viaje');

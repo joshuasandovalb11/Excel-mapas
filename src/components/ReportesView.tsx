@@ -369,6 +369,35 @@ export default function ReportesView() {
     }
   };
 
+  // Funcion para formatear fechas en Excel
+  const formatExcelDate = (dateString: string | null): string => {
+    if (!dateString) return '';
+
+    const meses = [
+      'Ene',
+      'Feb',
+      'Mar',
+      'Abr',
+      'May',
+      'Jun',
+      'Jul',
+      'Ago',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dic',
+    ];
+
+    const date = new Date(`${dateString}T12:00:00Z`);
+    if (isNaN(date.getTime())) return '';
+
+    const mes = meses[date.getMonth()];
+    const dia = String(date.getDate()).padStart(2, '0');
+    const anio = date.getFullYear();
+
+    return `${mes}-${dia}-${anio}`;
+  };
+
   // Funcion para manejar la generación del reporte
   const handleGenerateReport = async () => {
     if (!googleMapsApiKey) {
@@ -618,6 +647,7 @@ export default function ReportesView() {
     }
   };
 
+  // Funcion para descargar el reporte en Excel
   const downloadReport = () => {
     if (!reportData || !reportMetadata) return;
 
@@ -780,9 +810,10 @@ export default function ReportesView() {
         date: null,
       };
       const dateString = dayData.date ? `, ${dayData.date}` : '';
-      leftSideData.push([`${day}${dateString}`, '', '', '']);
+      leftSideData.push([`${day}${dateString}`, '', '', '', '']);
 
       const headerRow = [
+        'Fecha',
         'Hora',
         'Evento',
         '# - Cliente / Descripción',
@@ -807,7 +838,9 @@ export default function ReportesView() {
               eventType = 'Parada';
               break;
           }
+          const formattedDate = formatExcelDate(dayData.date);
           leftSideData.push([
+            formattedDate,
             v.visitTimes[0] || '',
             eventType,
             v.name,
@@ -822,13 +855,14 @@ export default function ReportesView() {
           (v) => v.type === 'visit' || v.type === 'stop'
         ).length;
         leftSideData.push([
+          '',
           'Totales del Día:',
           `${totalStopsAndVisits} parada(s)`,
           `${Math.round(dayData.totalDistance / 1000)} km`,
           formatDuration(totalDayDuration),
         ]);
       } else {
-        leftSideData.push(['No se registró actividad', '', '', '']);
+        leftSideData.push(['', 'No se registró actividad', '', '', '']);
       }
       leftSideData.push([]);
     });
@@ -840,7 +874,7 @@ export default function ReportesView() {
     const startRow = 2;
 
     for (let i = 0; i < numRows; i++) {
-      const leftRow = leftSideData[i] || ['', '', '', ''];
+      const leftRow = leftSideData[i] || ['', '', '', '', ''];
       const rightRow = rightSideData[i] || [];
       finalSheetData[startRow + i] = [
         ...leftRow,
@@ -852,9 +886,9 @@ export default function ReportesView() {
     const weeklySheet = XLSX.utils.aoa_to_sheet(finalSheetData);
 
     if (weeklySheet['A1']) weeklySheet['A1'].s = styles.title;
-    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 6 } });
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
 
-    const rightSideStartCol = 5;
+    const rightSideStartCol = 6;
     if (weeklySheet[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
       weeklySheet[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
         styles.subHeader;
@@ -905,7 +939,7 @@ export default function ReportesView() {
         subHeaderCell.s = styles.subHeader;
         merges.push({
           s: { r: currentRowIndex, c: 0 },
-          e: { r: currentRowIndex, c: 3 },
+          e: { r: currentRowIndex, c: 4 },
         });
       }
       currentRowIndex++;
@@ -915,7 +949,7 @@ export default function ReportesView() {
         leftSideData[tableHeaderRow - startRow] &&
         leftSideData[tableHeaderRow - startRow].length > 1
       ) {
-        for (let c = 0; c < 4; c++) {
+        for (let c = 0; c < 5; c++) {
           const cell =
             weeklySheet[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
           if (cell) cell.s = styles.header;
@@ -924,30 +958,34 @@ export default function ReportesView() {
       currentRowIndex++;
 
       dayData.visits.forEach((v) => {
-        const cellA =
+        const cellFecha =
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 0 })];
-        const cellB =
+        const cellHora =
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 1 })];
-        const cellC =
+        const cellEvento =
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 2 })];
-        const cellD =
+        const cellDesc =
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 3 })];
-        if (cellA) cellA.s = styles.cellCentered;
-        if (cellB) cellB.s = styles.eventCell(v.type);
-        if (cellC)
-          cellC.s = v.type === 'visit' ? styles.clientVisitCell : styles.cell;
-        if (cellD) cellD.s = styles.cellRight;
+        const cellDuracion =
+          weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 4 })];
+        if (cellFecha) cellFecha.s = styles.cellCentered; // Estilo para la fecha
+        if (cellHora) cellHora.s = styles.cellCentered; // Estilo para la hora
+        if (cellEvento) cellEvento.s = styles.eventCell(v.type); // Estilo para el tipo de evento
+        if (cellDesc)
+          cellDesc.s =
+            v.type === 'visit' ? styles.clientVisitCell : styles.cell; // Estilo para descripción
+        if (cellDuracion) cellDuracion.s = styles.cellRight; // Estilo para duración
         currentRowIndex++;
       });
 
       const totalRow = currentRowIndex;
       const totalRowData = leftSideData[totalRow - startRow] || [];
-      if (totalRowData[0] === 'No se registró actividad') {
-        const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c: 0 })];
+      if (totalRowData[1] === 'No se registró actividad') {
+        const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c: 1 })];
         if (cell) cell.s = styles.cellCentered;
-        merges.push({ s: { r: totalRow, c: 0 }, e: { r: totalRow, c: 3 } });
+        merges.push({ s: { r: totalRow, c: 1 }, e: { r: totalRow, c: 4 } });
       } else if (totalRowData.length > 1) {
-        for (let c = 0; c < 4; c++) {
+        for (let c = 0; c < 5; c++) {
           const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c })];
           if (cell) cell.s = styles.totalRow;
         }
@@ -958,11 +996,12 @@ export default function ReportesView() {
 
     weeklySheet['!merges'] = merges;
     weeklySheet['!cols'] = [
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 72 },
-      { wch: 15 },
-      { wch: 3 },
+      { wch: 18 }, //Fecha
+      { wch: 15 }, //Hora
+      { wch: 20 }, //Evento
+      { wch: 70 }, //Descripción
+      { wch: 15 }, //Duración
+      { wch: 3 }, //Espacio
       { wch: 30 },
       { wch: 25 },
     ];
