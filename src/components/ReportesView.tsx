@@ -76,6 +76,8 @@ interface ReportEntry {
   vehicles: string[];
   visitTimes: string[];
   type: 'visit' | 'stop' | 'start' | 'end';
+  branchNumber?: string;
+  branchName?: string;
 }
 
 interface DailyReport {
@@ -509,7 +511,12 @@ export default function ReportesView() {
                 );
                 if (distance < clientRadius) {
                   isClientVisit = true;
-                  clientInfo = { key: client.key, name: client.name };
+                  clientInfo = {
+                    key: client.key,
+                    name: client.name,
+                    branchNumber: client.branchNumber,
+                    branchName: client.branchName,
+                  };
                   visitedClientKeys.add(client.key);
                   break;
                 }
@@ -612,6 +619,12 @@ export default function ReportesView() {
           vehicles: [flag.vehicle],
           visitTimes: [flag.time],
           type: entryType,
+          branchNumber: flag.isClientVisit
+            ? flag.clientInfo.branchNumber
+            : undefined,
+          branchName: flag.isClientVisit
+            ? flag.clientInfo.branchName
+            : undefined,
         });
       }
 
@@ -810,13 +823,14 @@ export default function ReportesView() {
         date: null,
       };
       const dateString = dayData.date ? `, ${dayData.date}` : '';
-      leftSideData.push([`${day}${dateString}`, '', '', '', '']);
+      leftSideData.push([`${day}${dateString}`, '', '', '', '', '']);
 
       const headerRow = [
         'Fecha',
         'Hora',
         'Evento',
         '# - Cliente / Descripción',
+        'Sucursal',
         'Duración',
       ];
       leftSideData.push(headerRow);
@@ -838,12 +852,22 @@ export default function ReportesView() {
               eventType = 'Parada';
               break;
           }
+
+          // Formatear información de sucursal
+          let branchInfo = '--';
+          if (v.type === 'visit' && v.branchNumber) {
+            branchInfo = v.branchName
+              ? `Suc. ${v.branchNumber} (${v.branchName})`
+              : `Suc. ${v.branchNumber}`;
+          }
+
           const formattedDate = formatExcelDate(dayData.date);
           leftSideData.push([
             formattedDate,
             v.visitTimes[0] || '',
             eventType,
             v.name,
+            branchInfo,
             v.totalDuration > 0 ? formatDuration(v.totalDuration) : '--',
           ]);
         });
@@ -859,12 +883,13 @@ export default function ReportesView() {
           'Totales del Día:',
           `${totalStopsAndVisits} parada(s)`,
           `${Math.round(dayData.totalDistance / 1000)} km`,
+          '',
           formatDuration(totalDayDuration),
         ]);
       } else {
-        leftSideData.push(['', 'No se registró actividad', '', '', '']);
+        leftSideData.push(['', 'No se registró actividad', '', '', '', '']);
       }
-      leftSideData.push([]);
+      leftSideData.push(['', '', '', '', '', '']);
     });
 
     finalSheetData.push(['Reporte de Actividad Semanal']);
@@ -874,7 +899,7 @@ export default function ReportesView() {
     const startRow = 2;
 
     for (let i = 0; i < numRows; i++) {
-      const leftRow = leftSideData[i] || ['', '', '', '', ''];
+      const leftRow = leftSideData[i] || ['', '', '', '', '', ''];
       const rightRow = rightSideData[i] || [];
       finalSheetData[startRow + i] = [
         ...leftRow,
@@ -886,9 +911,9 @@ export default function ReportesView() {
     const weeklySheet = XLSX.utils.aoa_to_sheet(finalSheetData);
 
     if (weeklySheet['A1']) weeklySheet['A1'].s = styles.title;
-    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } });
 
-    const rightSideStartCol = 6;
+    const rightSideStartCol = 7;
     if (weeklySheet[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
       weeklySheet[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
         styles.subHeader;
@@ -939,7 +964,7 @@ export default function ReportesView() {
         subHeaderCell.s = styles.subHeader;
         merges.push({
           s: { r: currentRowIndex, c: 0 },
-          e: { r: currentRowIndex, c: 4 },
+          e: { r: currentRowIndex, c: 5 },
         });
       }
       currentRowIndex++;
@@ -949,7 +974,7 @@ export default function ReportesView() {
         leftSideData[tableHeaderRow - startRow] &&
         leftSideData[tableHeaderRow - startRow].length > 1
       ) {
-        for (let c = 0; c < 5; c++) {
+        for (let c = 0; c < 6; c++) {
           const cell =
             weeklySheet[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
           if (cell) cell.s = styles.header;
@@ -966,14 +991,17 @@ export default function ReportesView() {
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 2 })];
         const cellDesc =
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 3 })];
-        const cellDuracion =
+        const cellSucursal =
           weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 4 })];
+        const cellDuracion =
+          weeklySheet[XLSX.utils.encode_cell({ r: currentRowIndex, c: 5 })];
         if (cellFecha) cellFecha.s = styles.cellCentered; // Estilo para la fecha
         if (cellHora) cellHora.s = styles.cellCentered; // Estilo para la hora
         if (cellEvento) cellEvento.s = styles.eventCell(v.type); // Estilo para el tipo de evento
         if (cellDesc)
           cellDesc.s =
             v.type === 'visit' ? styles.clientVisitCell : styles.cell; // Estilo para descripción
+        if (cellSucursal) cellSucursal.s = styles.cellCentered;
         if (cellDuracion) cellDuracion.s = styles.cellRight; // Estilo para duración
         currentRowIndex++;
       });
@@ -983,9 +1011,9 @@ export default function ReportesView() {
       if (totalRowData[1] === 'No se registró actividad') {
         const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c: 1 })];
         if (cell) cell.s = styles.cellCentered;
-        merges.push({ s: { r: totalRow, c: 1 }, e: { r: totalRow, c: 4 } });
+        merges.push({ s: { r: totalRow, c: 1 }, e: { r: totalRow, c: 5 } });
       } else if (totalRowData.length > 1) {
-        for (let c = 0; c < 5; c++) {
+        for (let c = 0; c < 6; c++) {
           const cell = weeklySheet[XLSX.utils.encode_cell({ r: totalRow, c })];
           if (cell) cell.s = styles.totalRow;
         }
@@ -999,7 +1027,8 @@ export default function ReportesView() {
       { wch: 18 }, //Fecha
       { wch: 15 }, //Hora
       { wch: 20 }, //Evento
-      { wch: 70 }, //Descripción
+      { wch: 50 }, //Descripción
+      { wch: 25 }, //Sucursal
       { wch: 15 }, //Duración
       { wch: 3 }, //Espacio
       { wch: 30 },

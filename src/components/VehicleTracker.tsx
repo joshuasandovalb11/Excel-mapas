@@ -105,6 +105,31 @@ export default function VehicleTracker() {
     }
   };
 
+  // Función para verificar si una parada está en horario laboral
+  const isWorkingHours = (
+    time: string,
+    tripDate: string | undefined
+  ): boolean => {
+    if (!time || !tripDate) return true;
+
+    const dateParts = tripDate.split(/[-/]/);
+    const year = parseInt(dateParts[0], 10);
+    const month = parseInt(dateParts[1], 10) - 1;
+    const dayOfMonth = parseInt(dateParts[2], 10);
+
+    const [hours, minutes] = time.split(':').map(Number);
+
+    const date = new Date(year, month, dayOfMonth, hours, minutes);
+
+    const day = date.getDay();
+    const hour = date.getHours();
+
+    const isWeekday = day >= 1 && day <= 5;
+    const isWorkingTime = hour >= 7 && hour < 19;
+
+    return isWeekday && isWorkingTime;
+  };
+
   // Efecto para establecer si hay match con respecto a la ubicacion y al cliente
   useEffect(() => {
     if (tripData && clientData) {
@@ -126,8 +151,10 @@ export default function VehicleTracker() {
           }
           return {
             ...flag,
-            clientName: matchedClient?.name || 'Sin coincidencia',
+            clientName: matchedClient?.displayName || 'Sin coincidencia',
             clientKey: matchedClient?.key,
+            clientBranchNumber: matchedClient?.branchNumber,
+            clientBranchName: matchedClient?.branchName,
           };
         }
         return flag;
@@ -446,7 +473,12 @@ export default function VehicleTracker() {
               );
               if (distance < clientRadius) {
                 isClientVisit = true;
-                clientInfo = { key: client.key, name: client.name };
+                clientInfo = {
+                  key: client.key,
+                  name: client.name,
+                  branchNumber: client.branchNumber,
+                  branchName: client.branchName,
+                };
                 visitedClientKeys.add(client.key);
                 break;
               }
@@ -486,9 +518,13 @@ export default function VehicleTracker() {
       for (const flag of allFlagsToProcess) {
         let name = '';
         let entryType = flag.type;
+        let branchNumber = undefined;
+        let branchName = undefined;
         if (flag.isClientVisit) {
           name = `${flag.clientInfo.key} - ${flag.clientInfo.name}`;
           entryType = 'visit';
+          branchNumber = flag.clientBranchNumber;
+          branchName = flag.clientBranchName;
         } else {
           const address =
             addressCache.get(flag.coordKey) || 'Dirección no disponible';
@@ -505,6 +541,8 @@ export default function VehicleTracker() {
           type: entryType,
           name: name,
           duration: flag.duration || 0,
+          branchNumber,
+          branchName,
         });
       }
       reportEntries.sort((a, b) => a.time.localeCompare(b.time));
@@ -555,12 +593,14 @@ export default function VehicleTracker() {
         '',
         '',
         '',
+        '',
       ]);
       leftSideData.push([
         'Fecha',
         'Hora',
         'Evento',
         '# - Cliente / Descripción',
+        'Sucursal',
         'Duración',
       ]);
 
@@ -580,12 +620,21 @@ export default function VehicleTracker() {
             eventType = 'Parada';
             break;
         }
+
+        let branchInfo = '--';
+        if (entry.type === 'visit' && entry.branchNumber) {
+          branchInfo = entry.branchName
+            ? `Suc. ${entry.branchNumber} (${entry.branchName})`
+            : `Suc. ${entry.branchNumber}`;
+        }
+
         const formattedDate = formatExcelDate(vehicleInfo.fecha);
         leftSideData.push([
           formattedDate,
           entry.time,
           eventType,
           entry.name,
+          branchInfo,
           entry.duration > 0 ? formatDuration(entry.duration) : '--',
         ]);
       });
@@ -598,7 +647,7 @@ export default function VehicleTracker() {
       const startRow = 2;
 
       for (let i = 0; i < numRows; i++) {
-        const leftRow = leftSideData[i] || ['', '', '', '', ''];
+        const leftRow = leftSideData[i] || ['', '', '', '', '', ''];
         const rightRow = rightSideData[i] || [];
         finalSheetData[startRow + i] = [
           ...leftRow,
@@ -611,9 +660,9 @@ export default function VehicleTracker() {
       const merges: XLSX.Range[] = [];
 
       if (ws['A1']) ws['A1'].s = styles.title;
-      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 7 } });
+      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } });
 
-      const rightSideStartCol = 6;
+      const rightSideStartCol = 7;
       if (ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
         ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
           styles.subHeader;
@@ -649,10 +698,10 @@ export default function VehicleTracker() {
       }
 
       if (ws['A3']) ws['A3'].s = styles.subHeader;
-      merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 4 } });
+      merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 5 } });
 
       const tableHeaderRow = 3;
-      for (let c = 0; c < 5; c++) {
+      for (let c = 0; c < 6; c++) {
         const cell = ws[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
         if (cell) cell.s = styles.header;
       }
@@ -663,7 +712,8 @@ export default function VehicleTracker() {
         const cellHora = ws[XLSX.utils.encode_cell({ r, c: 1 })];
         const cellEvento = ws[XLSX.utils.encode_cell({ r, c: 2 })];
         const cellDesc = ws[XLSX.utils.encode_cell({ r, c: 3 })];
-        const cellDuracion = ws[XLSX.utils.encode_cell({ r, c: 4 })];
+        const cellSucursal = ws[XLSX.utils.encode_cell({ r, c: 4 })];
+        const cellDuracion = ws[XLSX.utils.encode_cell({ r, c: 5 })];
 
         if (cellFecha) cellFecha.s = styles.cellCentered; //Estilo para la fecha
         if (cellHora) cellHora.s = styles.cellCentered; //Estilo para la hora
@@ -671,6 +721,7 @@ export default function VehicleTracker() {
         if (cellDesc)
           cellDesc.s =
             entry.type === 'visit' ? styles.clientVisitCell : styles.cell; //Estilo para la descripción
+        if (cellSucursal) cellSucursal.s = styles.cellCentered; //Estilo para la sucursal
         if (cellDuracion) cellDuracion.s = styles.cellRight; //Estilo para la duración
       });
 
@@ -679,7 +730,8 @@ export default function VehicleTracker() {
         { wch: 18 }, //Fecha
         { wch: 15 }, //Hora
         { wch: 20 }, //Evento
-        { wch: 70 }, //Descripción
+        { wch: 50 }, //Descripción
+        { wch: 25 }, //Sucursal
         { wch: 15 }, //Duración
         { wch: 3 }, //Espacio
         { wch: 30 },
@@ -766,7 +818,8 @@ export default function VehicleTracker() {
           </div>
 
           <div id="controls">
-            <button id="playPauseBtn">Ruta completa</button>
+            <!--<button id="playPauseBtn">Ruta completa</button>-->
+            <button id="resetBtn">Reiniciar</button>
             <button id="prevStopBtn" disabled>Anterior Parada</button>
             <button id="nextStopBtn">Siguiente Parada</button>
           </div>
@@ -777,6 +830,8 @@ export default function VehicleTracker() {
             const allFlags = ${JSON.stringify(filteredFlags)};
             const allClients = ${JSON.stringify(clientsToRender)};
             const formatDuration = ${formatDuration.toString()};
+            const isWorkingHoursFunc = ${isWorkingHours.toString()};
+            const tripDateForCheck = '${vehicleInfo?.fecha || ''}';
             const processingMethod = '${processingMethod}';
             let animatedPolyline, currentPathIndex = 0, animationFrameId, isAnimating = false, currentStopIndex = 0;
             let segmentDistances = [];
@@ -807,7 +862,7 @@ export default function VehicleTracker() {
                 position: { lat: client.lat, lng: client.lng },
                 map,
                 icon,
-                title: client.name
+                title: client.displayName
               });
             }
 
@@ -821,7 +876,7 @@ export default function VehicleTracker() {
                     Cliente
                   </h3>
                   <p style="margin: 2px 0 0 0; color: #059669;"><strong>#</strong> <strong> \${client.key} </strong></p>
-                  <p style="margin: 2px 0 0 0; color: #059669;"><strong> \${client.name} </strong></p>
+                  <p style="margin: 2px 0 0 0; color: #059669;"><strong> \${client.displayName} </strong></p>
                 </div>\`;
               return new google.maps.InfoWindow({ content });
             }
@@ -870,11 +925,10 @@ export default function VehicleTracker() {
 
                 map.fitBounds(bounds);
                 animatedPolyline = new google.maps.Polyline({ path: [], strokeColor: '#3b82f6', strokeOpacity: 0.8, strokeWeight: 5, map: map });
-                document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
-                document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
-
-                // CAMBIO: Se añade el event listener para el nuevo botón
+                // document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
+                document.getElementById('resetBtn').addEventListener('click', resetRoute);
                 document.getElementById('prevStopBtn').addEventListener('click', animateToPreviousStop);
+                document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
             }
 
             function createMarker(flag) {
@@ -884,21 +938,133 @@ export default function VehicleTracker() {
             }
 
             function createInfoWindow(flag) {
+                // Determinar si está en horario laboral
+                const isWorkingHoursFlag = ${isWorkingHours.toString()};
+                const tripDate = '${vehicleInfo?.fecha || ''}';
+                const inWorkingHours = flag.type === 'stop' ? isWorkingHoursFlag(flag.time, tripDate) : true;
+                
+                // Estilos base y condicionales
+                const containerStyle = inWorkingHours 
+                    ? 'background: white; color: black;' 
+                    : 'background: white; color: #FF0000;';
+                const titleColor = inWorkingHours ? '#000' : '#C40000';
+                const squareColor = inWorkingHours ? '#4F4E4E' : '#C40000';
+                const labelColor = inWorkingHours ? '#374151' : '#C40000';
+                const clientMatchColor = inWorkingHours ? '#059669' : '#10b981';
+                const clientNoMatchColor = inWorkingHours ? '#FC2121' : '#C40000';
+                const branchColor = inWorkingHours ? '#2563eb' : '#60a5fa';
+                
                 let content = '';
+                
                 switch (flag.type) {
-                    case 'start': content = \`<h3><span style="color: #22c55e;">&#127937;</span> \${flag.description}</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
-                    case 'end': content = \`<h3><span style="color: #ef4444;">&#127937;</span> \${flag.description}</h3><p><strong>Hora:</strong> \${flag.time}</p>\`; break;
+                    case 'start': 
+                        content = \`
+                            <div style="\${containerStyle} padding: 4px;">
+                                <h3 style="color: \${titleColor};">
+                                    <span style="color: #22c55e;">&#127937;</span> \${flag.description}
+                                </h3>
+                                <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
+                            </div>\`; 
+                        break;
+                        
+                    case 'end': 
+                        content = \`
+                            <div style="\${containerStyle} padding: 4px;">
+                                <h3 style="color: \${titleColor};">
+                                    <span style="color: #ef4444;">&#127937;</span> \${flag.description}
+                                </h3>
+                                <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
+                            </div>\`; 
+                        break;
+                        
                     case 'stop':
-                        const clientInfo = flag.clientName && flag.clientName !== 'Sin coincidencia'
-                            ? \`<div style="color:#059669;">
-                                 <p style="margin: 2px 0; font-weight: 500;"><strong>#</strong> <strong>\${flag.clientKey || 'N/A'}</strong></p>
-                                 <p style="margin: 2px 0; font-weight: 500;"><strong> \${flag.clientName} </strong></p>
-                               </div>\`
-                            : \`<p style="color:#FC2121; font-weight: 500;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
-                        content = \`<h3><span style="color: #4F4E4E;">&#9209;</span> Parada \${flag.stopNumber}</h3><p><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p><p><strong>Hora:</strong> \${flag.time}</p>\${clientInfo}<p>\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>\`;
+                        let clientInfo = '';
+                        if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
+                            const clientKey = flag.clientKey || 'N/A';
+                            const clientBaseName = flag.clientName;
+                            const branchInfo = flag.clientBranchNumber ? 
+                                (flag.clientBranchName ? 
+                                    \`Suc. \${flag.clientBranchNumber} (\${flag.clientBranchName})\` : 
+                                    \`Suc. \${flag.clientBranchNumber}\`) 
+                                : null;
+                            
+                            clientInfo = \`
+                                <div style="color:\${clientMatchColor};">
+                                    <p style="margin: 2px 0; font-weight: 500;">
+                                        <strong>#</strong> <strong>\${clientKey}</strong>
+                                    </p>
+                                    <p style="margin: 2px 0; font-weight: 500;">
+                                        <strong>\${clientBaseName}</strong>
+                                    </p>
+                                    <strong>\${branchInfo ? \`<p style="margin: 2px 0; font-weight: 500; color: \${branchColor};">\${branchInfo}</p>\` : ''}</strong>
+                                </div>\`;
+                        } else {
+                            clientInfo = \`<p style="color:\${clientNoMatchColor}; font-weight: 500;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
+                        }
+                        
+                        const timeWarning = !inWorkingHours 
+                            ? \`<p style="color: #fbbf24; font-weight: 600; margin-top: 4px;">⚠️ Fuera de horario laboral</p>\`
+                            : '';
+                        
+                        content = \`
+                            <div style="\${containerStyle} padding: 4px;">
+                                <h3 style="color: \${titleColor};">
+                                    <span style="color: \${squareColor};">&#9209;</span> Parada \${flag.stopNumber}
+                                    </h3>
+                                \${timeWarning}
+                                <p style="color: \${labelColor};"><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p>
+                                <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
+                                \${clientInfo}
+                                <!--<p style="color: \${labelColor};">\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>-->
+                            </div>\`;
                         break;
                 }
+                
                 return new google.maps.InfoWindow({ content });
+            }
+
+            function resetRoute() {
+              if (openInfoWindow) openInfoWindow.close();
+              
+              // Resetear el polyline a vacío
+              animatedPolyline.setPath([]);
+              currentPathIndex = 0;
+              currentStopIndex = 0;
+              cumulativeDistance = 0;
+              isAnimating = false;
+              
+              // Limpiar el set de clientes visitados
+              countedClientKeys.clear();
+              document.getElementById('visited-clients-count').textContent = '0';
+              
+              // Resetear las distancias
+              updateDistanceCard(0, 0);
+              
+              // Cancelar cualquier animación en curso
+              if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+              }
+              
+              // Habilitar/deshabilitar botones apropiadamente
+              document.getElementById('resetBtn').disabled = false;
+              document.getElementById('nextStopBtn').disabled = false;
+              document.getElementById('prevStopBtn').disabled = true;
+              
+              // Abrir el InfoWindow del inicio
+              const startMarker = markers[0];
+              const startInfowindow = infowindows[0];
+              if (startMarker && startInfowindow) {
+                startMarker.setAnimation(google.maps.Animation.BOUNCE);
+                setTimeout(() => startMarker.setAnimation(null), 1400);
+                startInfowindow.open(map, startMarker);
+                openInfoWindow = startInfowindow;
+              }
+              
+              // Recentrar el mapa en el punto de inicio
+              if (allFlags.length > 0) {
+                map.setCenter({ lat: allFlags[0].lat, lng: allFlags[0].lng });
+                map.setZoom(14);
+              }
             }
 
             function drawEntireRoute() {
@@ -953,9 +1119,9 @@ export default function VehicleTracker() {
                 const nextStop = stopInfo[currentStopIndex + 1];
                 isAnimating = true;
                 if (openInfoWindow) openInfoWindow.close();
-                document.getElementById('playPauseBtn').disabled = true;
+                // document.getElementById('playPauseBtn').disabled = true;
+                document.getElementById('resetBtn').disabled = true;
                 document.getElementById('nextStopBtn').disabled = true;
-                // CAMBIO: Deshabilitar también el botón de parada anterior
                 document.getElementById('prevStopBtn').disabled = true;
                 
                 const onSegmentComplete = () => {
@@ -977,9 +1143,8 @@ export default function VehicleTracker() {
                         document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
                     }
                     currentStopIndex++;
-                    document.getElementById('playPauseBtn').disabled = false;
-
-                    // CAMBIO: Habilitar siempre el botón de parada anterior después de avanzar
+                    // document.getElementById('playPauseBtn').disabled = false;
+                    document.getElementById('resetBtn').disabled = false;
                     document.getElementById('prevStopBtn').disabled = false;
 
                     if (currentStopIndex >= stopInfo.length - 1) {
@@ -1002,7 +1167,8 @@ export default function VehicleTracker() {
                 if (currentStopIndex <= 0) return;
 
                 if (openInfoWindow) openInfoWindow.close();
-                document.getElementById('playPauseBtn').disabled = true;
+                // document.getElementById('playPauseBtn').disabled = true;
+                document.getElementById('resetBtn').disabled = true;
                 document.getElementById('nextStopBtn').disabled = true;
                 document.getElementById('prevStopBtn').disabled = true;
 
@@ -1049,7 +1215,8 @@ export default function VehicleTracker() {
                 openInfoWindow = infowindow;
 
                 // Reactivar botones
-                document.getElementById('playPauseBtn').disabled = false;
+                // document.getElementById('playPauseBtn').disabled = false;
+                document.getElementById('resetBtn').disabled = false;
                 document.getElementById('nextStopBtn').disabled = false;
                 if (currentStopIndex > 0) {
                     document.getElementById('prevStopBtn').disabled = false;

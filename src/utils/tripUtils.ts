@@ -26,6 +26,8 @@ export interface ProcessedTrip {
     stopNumber?: number;
     clientKey?: string;
     clientName?: string;
+    clientBranchNumber?: string;
+    clientBranchName?: string;
   }>;
   totalDistance: number; // en metros
   processingMethod: 'event-based' | 'speed-based';
@@ -38,13 +40,16 @@ export interface VehicleInfo {
   fecha: string;
 }
 
-// Interfaz de Cliente
+// Interfaz de Cliente actualizada para incluir sucursales
 export interface Client {
   key: string;
   name: string;
   lat: number;
   lng: number;
   vendor: string;
+  branchNumber?: string; // Número de sucursal
+  branchName?: string; // Nombre de sucursal
+  displayName: string; // Nombre para mostrar
 }
 
 // Estructura del resultado del procesamiento del archivo de clientes
@@ -155,7 +160,7 @@ export const parseVehicleInfo = (
   return info;
 };
 
-// FUNCIÓN UNIFICADA PARA PROCESAR EL ARCHIVO DE CLIENTES
+// FUNCIÓN ACTUALIZADA PARA PROCESAR AMBOS FORMATOS DE ARCHIVO DE CLIENTES
 export const processMasterClientFile = (
   worksheet: XLSX.WorkSheet
 ): MasterClientData => {
@@ -165,40 +170,89 @@ export const processMasterClientFile = (
   });
 
   let headerRowIndex = -1;
+  let isNewFormat = false;
+
+  // Buscar los encabezados en las primeras 10 filas
   for (let i = 0; i < 10 && i < sheetAsArray.length; i++) {
-    const row = sheetAsArray[i].map((cell) => String(cell || '').toUpperCase());
-    if (
-      (row.includes('VND') || row.includes('CVE')) &&
-      row.includes('CLAVE') &&
-      row.includes('RAZON') &&
-      row.includes('GPS')
-    ) {
+    const row = sheetAsArray[i].map((cell) =>
+      String(cell || '')
+        .toUpperCase()
+        .trim()
+    );
+
+    // Verificar formato nuevo (VND, CLAVE, RAZON, GPS)
+    const hasNewFormatHeaders =
+      row.some((cell) => cell === 'VEND') &&
+      row.some((cell) => cell.includes('#CLIENTE')) &&
+      row.some((cell) => cell.includes('NOMBRE') && cell.includes('CLIENTE')) &&
+      row.some((cell) => cell === 'GPS');
+
+    // Verificar formato anterior (Vend, #Cliente, Nombre del Cliente, GPS)
+    const hasOldFormatHeaders =
+      row.some((cell) => cell.includes('VND')) &&
+      row.some((cell) => cell.includes('CLAVE')) &&
+      row.some((cell) => cell.includes('RAZON')) &&
+      row.some((cell) => cell.includes('GPS'));
+
+    if (hasNewFormatHeaders || hasOldFormatHeaders) {
       headerRowIndex = i;
+      isNewFormat = hasNewFormatHeaders;
       break;
     }
   }
 
   if (headerRowIndex === -1) {
     throw new Error(
-      'Archivo de clientes: No se encontraron los encabezados requeridos (VND o CVE, CLAVE, RAZON, GPS).'
+      'Archivo de clientes: No se encontraron los encabezados requeridos. ' +
+        'Formato esperado: (VND/Vend, CLAVE/#Cliente, RAZON/Nombre del Cliente, GPS)'
     );
   }
 
   const data: any[] = XLSX.utils.sheet_to_json(worksheet, {
     range: headerRowIndex,
   });
+
   const allVendors = new Set<string>();
 
-  const clients: Client[] = data
-    .map((row) => {
-      const vendor = String(row['VND'] || row['CVE'] || 'N/A')
-        .trim()
-        .toUpperCase();
+  const clients = data
+    .map((row): Client | null => {
+      // Determinar las columnas según el formato
+      let vendor: string;
+      let clientKey: string;
+      let clientName: string;
+      let gpsString: string;
+      let branchNumber: string | undefined;
+      let branchName: string | undefined;
+
+      if (isNewFormat) {
+        // Formato nuevo
+        vendor = String(row['Vend'] || 'N/A')
+          .trim()
+          .toUpperCase();
+        clientKey = String(row['#Cliente'] || 'N/A').trim();
+        clientName = String(row['Nombre del Cliente'] || '').trim();
+        gpsString = String(row['GPS'] || '').trim();
+        branchNumber = String(row['#Suc'] || '').trim();
+        branchName = String(row['Sucursal'] || '').trim();
+      } else {
+        // Formato anterior
+        vendor = String(row['VND'] || 'N/A')
+          .trim()
+          .toUpperCase();
+        clientKey = String(row['CLAVE'] || 'N/A').trim();
+        clientName = String(row['RAZON'] || '').trim();
+        gpsString = String(row['GPS'] || '').trim();
+        // En el formato anterior no hay sucursales
+        branchNumber = undefined;
+        branchName = undefined;
+      }
+
+      // Validar vendor
       if (vendor && vendor !== 'N/A') {
         allVendors.add(vendor);
       }
 
-      let gpsString = String(row['GPS'] || '');
+      // Procesar coordenadas GPS
       if (!gpsString) return null;
       gpsString = gpsString.replace('&', ',');
       const coords = gpsString.split(',');
@@ -208,12 +262,33 @@ export const processMasterClientFile = (
       const lng = Number(coords[1]?.trim());
       if (isNaN(lat) || isNaN(lng)) return null;
 
+      // Crear nombre para mostrar
+      const displayName = toTitleCase(clientName);
+
+      // Si tiene información de sucursal, agregarla al nombre para mostrar
+      /*
+      if (branchNumber && branchNumber !== '' && branchNumber !== '0') {
+        if (branchName && branchName !== '') {
+          displayName += ` - Suc. ${branchNumber} (${toTitleCase(branchName)})`;
+        } else {
+          displayName += ` - Suc. ${branchNumber}`;
+        }
+      }
+      */
+
       return {
-        key: String(row['CLAVE'] || 'N/A'),
-        name: toTitleCase(String(row['RAZON'] || '')),
+        key: clientKey,
+        name: toTitleCase(clientName),
         lat,
         lng,
         vendor,
+        branchNumber:
+          branchNumber && branchNumber !== '' && branchNumber !== '0'
+            ? branchNumber
+            : undefined,
+        branchName:
+          branchName && branchName !== '' ? toTitleCase(branchName) : undefined,
+        displayName,
       };
     })
     .filter((c): c is Client => c !== null);
@@ -227,7 +302,17 @@ export const processMasterClientFile = (
   return { clients, vendors: Array.from(allVendors).sort() };
 };
 
-// PROCESAMIENTO DE VIAJES
+export const formatBranchInfo = (client: Client): string | null => {
+  if (client.branchNumber && client.branchNumber !== '0') {
+    if (client.branchName) {
+      return `Suc. ${client.branchNumber} (${client.branchName})`;
+    }
+    return `Suc. ${client.branchNumber}`;
+  }
+  return null;
+};
+
+// PROCESAMIENTO DE VIAJES (sin cambios)
 export const processTripData = (data: any[]): ProcessedTrip => {
   const findTimeColumn = (row: any): string | null => {
     const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
