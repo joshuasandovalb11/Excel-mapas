@@ -867,6 +867,12 @@ export default function VehicleTracker() {
             }
 
             function createClientInfoWindow(client) {
+              const branchInfo = client.branchNumber ? 
+                (client.branchName ? 
+                  \`<p style="margin: 2px 0; font-weight: 500; color: #2563eb;">Suc. \${client.branchNumber} (\${client.branchName})</p>\` : 
+                  \`<p style="margin: 2px 0; font-weight: 500; color: #2563eb;">Suc. \${client.branchNumber}</p>\`) 
+                : '';
+
               const content = \`
                 <div>
                   <h3 style="display:flex; align-items:center;">
@@ -877,6 +883,7 @@ export default function VehicleTracker() {
                   </h3>
                   <p style="margin: 2px 0 0 0; color: #059669;"><strong>#</strong> <strong> \${client.key} </strong></p>
                   <p style="margin: 2px 0 0 0; color: #059669;"><strong> \${client.displayName} </strong></p>
+                  \${branchInfo}
                 </div>\`;
               return new google.maps.InfoWindow({ content });
             }
