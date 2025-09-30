@@ -758,7 +758,12 @@ export default function VehicleTracker() {
     vehicleInfo: VehicleInfo | null,
     clientData: Client[] | null,
     totalMatchedStops: number,
-    selection: string | null
+    selection: string | null,
+    summaryStats: {
+      timeWithClients: number;
+      timeWithNonClients: number;
+      travelTime: number;
+    }
   ): string => {
     if (!tripData) return '';
     const filteredFlags = tripData.flags.filter(
@@ -785,6 +790,25 @@ export default function VehicleTracker() {
 
     const clientsToRender = selection === 'chofer' ? [] : clientData || [];
 
+    const summaryCardHTML = `
+      <div id="summary-box" class="info-card">
+        <h4>Resumen del Viaje</h4>
+        <p><strong>Clientes Visitados:</strong> <span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
+        <p><strong>Tiempo con Clientes:</strong> ${formatDuration(
+          summaryStats.timeWithClients
+        )}</p>
+        <p><strong>Tiempo en Paradas (No Clientes):</strong> ${formatDuration(
+          summaryStats.timeWithNonClients
+        )}</p>
+        <p><strong>Tiempo en Traslados:</strong> ${formatDuration(
+          summaryStats.travelTime
+        )}</p>
+        <h4 style="margin-top: 5px; padding-top: 5px;">Kilometraje</h4>
+        <p><strong>Distancia del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
+        <p><strong>Distancia Total:</strong> <span id="total-distance">0.00 km</span></p>
+      </div>
+    `;
+
     return `
       <!DOCTYPE html>
       <html>
@@ -803,18 +827,19 @@ export default function VehicleTracker() {
           <div id="map"></div>
           <div id="info-container">
             ${infoBoxHTML}
-            <div id="distance-box" class="info-card">
+            ${summaryCardHTML}
+            <!--<div id="distance-box" class="info-card">
               <h4>Kilometraje</h4>
               <p><strong>Recorrido del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
               <p><strong>Recorrido Total:</strong> <span id="total-distance">0.00 km</span></p>
-            </div>
+            </div>-->
 
-            <div id="clients-box" class="info-card">
+            <!--<div id="clients-box" class="info-card">
               <h4>Clientes Visitados</h4>
               <p style="font-size: 16px; text-align: center; font-weight: bold; margin-top: 8px;">
                 <span id="visited-clients-count">0</span> / ${totalMatchedStops}
               </p>
-            </div>
+            </div>-->
           </div>
 
           <div id="controls">
@@ -1275,11 +1300,48 @@ export default function VehicleTracker() {
 
   // Función para descargar el mapa HTML
   const downloadMap = () => {
+    const summaryStats = {
+      timeWithClients: 0,
+      timeWithNonClients: 0,
+      travelTime: 0,
+    };
+
+    if (tripData) {
+      const timeToMinutes = (timeStr: string): number => {
+        if (!timeStr) return 0;
+        const [h, m] = timeStr.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      const startTimeFlag = tripData.flags.find((f) => f.type === 'start');
+      const endTimeFlag = tripData.flags.find((f) => f.type === 'end');
+
+      if (startTimeFlag && endTimeFlag) {
+        const totalTripDuration =
+          timeToMinutes(endTimeFlag.time) - timeToMinutes(startTimeFlag.time);
+        let totalStopTime = 0;
+
+        tripData.flags.forEach((flag) => {
+          if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
+            totalStopTime += flag.duration || 0;
+            if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
+              summaryStats.timeWithClients += flag.duration || 0;
+            } else {
+              summaryStats.timeWithNonClients += flag.duration || 0;
+            }
+          }
+        });
+
+        summaryStats.travelTime = totalTripDuration - totalStopTime;
+      }
+    }
+
     const htmlContent = generateMapHTML(
       vehicleInfo,
       clientData,
       matchedStopsCount,
-      selection.value
+      selection.value,
+      summaryStats
     );
     const blob = new Blob([htmlContent], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
@@ -1291,6 +1353,55 @@ export default function VehicleTracker() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  // Función auxiliar para calcular estadísticas del viaje
+  const calculateSummaryStats = () => {
+    const stats = {
+      timeWithClients: 0,
+      timeWithNonClients: 0,
+      travelTime: 0,
+    };
+
+    if (!tripData) return stats;
+
+    const timeToMinutes = (timeStr: string): number => {
+      if (!timeStr) return 0;
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const startTimeFlag = tripData.flags.find((f) => f.type === 'start');
+    const endTimeFlag = tripData.flags.find((f) => f.type === 'end');
+
+    if (!startTimeFlag || !endTimeFlag) return stats;
+
+    let totalTripDuration =
+      timeToMinutes(endTimeFlag.time) - timeToMinutes(startTimeFlag.time);
+    if (totalTripDuration < 0) {
+      totalTripDuration += 24 * 60;
+    }
+
+    let totalStopTime = 0;
+
+    tripData.flags.forEach((flag) => {
+      if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
+        const duration = flag.duration || 0;
+        totalStopTime += duration;
+
+        if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
+          stats.timeWithClients += duration;
+        } else {
+          stats.timeWithNonClients += duration;
+        }
+      }
+    });
+
+    stats.travelTime = Math.max(0, totalTripDuration - totalStopTime);
+
+    return stats;
+  };
+
+  const summaryStats = calculateSummaryStats();
 
   return (
     <div className="flex flex-col items-center justify-center p-4">
@@ -1516,7 +1627,8 @@ export default function VehicleTracker() {
               vehicleInfo,
               clientData,
               matchedStopsCount,
-              selection.value
+              selection.value,
+              summaryStats
             )}
             className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
             title="Vista Previa del Mapa"
