@@ -793,6 +793,8 @@ export default function VehicleTracker() {
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
         <h4>Resumen del Viaje</h4>
+        <!--<p><strong>Estado inicial:</strong> <span id="start-time">0</span></p>
+        <p><strong>Inicio de labores:</strong> <span id="start-time">0</span></p>-->
         <p><strong>Clientes Visitados:</strong> <span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
         <p><strong>Tiempo con Clientes:</strong> ${formatDuration(
           summaryStats.timeWithClients
@@ -805,7 +807,8 @@ export default function VehicleTracker() {
         )}</p>
         <h4 style="margin-top: 5px; padding-top: 5px;">Kilometraje</h4>
         <p><strong>Distancia del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
-        <p><strong>Distancia Total:</strong> <span id="total-distance">0.00 km</span></p>
+        <p style="margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #ddd;"><strong>Distancia Total:</strong> <span id="total-distance">0.00 km</span></p>
+        <!--<p><strong>Fin de labores:</strong> <span id="end-time">0</span></p>-->
       </div>
     `;
 
@@ -875,9 +878,12 @@ export default function VehicleTracker() {
             }
 
             function createClientMarker(client) {
+              const specialBlueIds  = [ '3689', '6395' ];
+              const isSpecial = specialBlueIds.includes(String(client.key));
+              
               const icon = {
                 path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                fillColor: '#A12323',
+                fillColor: isSpecial ? '#007bff' : '#A12323',
                 fillOpacity: 1,
                 strokeWeight: 0,
                 scale: 1.3,
