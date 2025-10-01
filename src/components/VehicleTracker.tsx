@@ -797,7 +797,7 @@ export default function VehicleTracker() {
         <p><strong>Tiempo con Clientes:</strong> ${formatDuration(
           summaryStats.timeWithClients
         )}</p>
-        <p><strong>Tiempo en Paradas (No Clientes):</strong> ${formatDuration(
+        <p style="color: red;"><strong>Tiempo en Paradas (No Clientes):</strong> ${formatDuration(
           summaryStats.timeWithNonClients
         )}</p>
         <p><strong>Tiempo en Traslados:</strong> ${formatDuration(
@@ -818,7 +818,7 @@ export default function VehicleTracker() {
             #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
             #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
             #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
-            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 240px; }
+            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 260px; }
             .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
             .info-card p { margin: 3px 0; font-size: 12px; }
           </style>
