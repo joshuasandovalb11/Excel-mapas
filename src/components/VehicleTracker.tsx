@@ -190,7 +190,12 @@ export default function VehicleTracker() {
   useEffect(() => {
     if (rawTripData) {
       try {
-        const processed = processTripData(rawTripData, viewMode);
+        const processed = processTripData(
+          rawTripData,
+          viewMode,
+          vehicleInfo?.fecha || '',
+          clientData
+        );
         setTripData(processed);
       } catch (err) {
         console.error(err);
@@ -201,7 +206,7 @@ export default function VehicleTracker() {
         );
       }
     }
-  }, [viewMode, rawTripData, setTripData]);
+  }, [viewMode, rawTripData, vehicleInfo, clientData, setTripData]);
 
   // Funcion para leer el archivo EXCEL para las rutas
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -273,7 +278,12 @@ export default function VehicleTracker() {
           );
         }
         setRawTripData(data);
-        const processed = processTripData(data, viewMode);
+        const processed = processTripData(
+          data,
+          viewMode,
+          vehicleInfo?.fecha || '',
+          clientData
+        );
         setTripData(processed);
       } catch (err) {
         console.error(err);
@@ -806,11 +816,20 @@ export default function VehicleTracker() {
     const infoBoxHTML = vehicleInfo
       ? `
         <div id="info-box" class="info-card">
-            <h4>Información del Viaje</h4>
-            <p><strong>Descripción:</strong> ${vehicleInfo.descripcion}</p>
-            <p><strong>Vehículo:</strong> ${vehicleInfo.vehiculo}</p>
-            <p><strong>Placa:</strong> ${vehicleInfo.placa}</p>
-            <p><strong>Fecha:</strong> ${vehicleInfo.fecha}</p>
+        <h4>Información del Viaje</h4>
+          <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1px;">
+              <p><strong>Descripción:</strong></p>
+              <p style="text-align: left;">${vehicleInfo.descripcion}</p>
+
+              <p><strong>Vehículo:</strong></p>
+              <p style="text-align: left;">${vehicleInfo.vehiculo}</p>
+
+              <p><strong>Placa:</strong></p>
+              <p style="text-align: left;">${vehicleInfo.placa}</p>
+
+              <p><strong>Fecha:</strong></p>
+              <p style="text-align: left;">${vehicleInfo.fecha}</p>
+          </div>
         </div>
     `
       : '';
@@ -819,24 +838,35 @@ export default function VehicleTracker() {
 
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
-        <h4>Resumen del Viaje</h4>
-        <p><strong>Estado inicial:</strong> <strong style="color: ${tripData.initialState === 'En movimiento' ? '#22c55e' : 'red'};">${tripData.initialState}</strong></p>
-        <p style="color: #22c55e;"><strong>Inicio de labores:</strong> <strong>${tripData.workStartTime || 'N/A'}</strong></p>
-        <p><strong>Clientes Visitados:</strong> <span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
-        <p><strong>Tiempo con Clientes:</strong> ${formatDuration(
-          summaryStats.timeWithClients
-        )}</p>
-        <p style="color: #FF6A00;"><strong>Tiempo en Paradas (No Clientes):</strong> ${formatDuration(
-          summaryStats.timeWithNonClients
-        )}</p>
-        <p><strong>Tiempo en Traslados:</strong> ${formatDuration(
-          summaryStats.travelTime
-        )}</p>
-        <h4 style="margin-top: 5px; padding-top: 5px;">Kilometraje</h4>
-        <p><strong>Distancia del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
-        <p style="margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #ddd;"><strong>Distancia Total:</strong> <span id="total-distance">0.00 km</span></p>
-        <!--<p style="color: red;"><strong>Fin de labores:</strong> <strong>${tripData.workEndTime || 'N/A'}</strong></p>-->
-        <p style="color: red;"><strong>Fin de labores:</strong> <strong>${viewMode === 'new' && tripData.isTripOngoing ? (tripData.workEndTime || 'N/A') + ' En movimiento...' : tripData.workEndTime || 'N/A'}</strong></p>
+      <h4>Resumen del Viaje</h4>
+        <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1px;">
+          <p><strong>Estado inicial:</strong></p>
+          <p style="text-align: left;">${tripData.initialState}</p>
+          
+          <p><strong>Inicio de labores:</strong></p>
+          <p style="text-align: left;"><strong>${tripData.workStartTime || 'N/A'}</strong></p>
+          
+          <p><strong>Clientes Visitados:</strong></p>
+          <p style="text-align: left;"><span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
+          
+          <p><strong>Tiempo con Clientes:</strong></p>
+          <p style="text-align: left;">${formatDuration(summaryStats.timeWithClients)}</p>
+          
+          <p><strong>Tiempo con NO Clientes:</strong></p>
+          <p style="text-align: left;">${formatDuration(summaryStats.timeWithNonClients)}</p>
+          
+          <p><strong>Tiempo en Traslados:</strong></p>
+          <p style="text-align: left;">${formatDuration(summaryStats.travelTime)}</p>
+          
+          <p><strong>Distancia Tramo:</strong></p>
+          <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
+          
+          <p style="border-bottom: 1px solid #ddd; padding-bottom: 5px;"><strong>Distancia Total:</strong></p>
+          <p style="text-align: left; border-bottom: 1px solid #ddd; padding-bottom: 5px;"><span id="total-distance">0.00 km</span></p>
+          
+          <p><strong>Fin de labores:</strong></p>
+          <p style="text-align: left;"><strong>${viewMode === 'new' && tripData.isTripOngoing ? (tripData.workEndTime || 'N/A') + ' En movimiento...' : tripData.workEndTime || 'N/A'}</strong></p>
+        </div>
       </div>
     `;
 
@@ -849,9 +879,9 @@ export default function VehicleTracker() {
             #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
             #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
             #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
-            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 260px; }
-            .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; }
-            .info-card p { margin: 3px 0; font-size: 12px; }
+            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 270px; }
+            .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #0000FF}
+            .info-card p { margin: 3px 0; font-size: 12px; color: #0000FF}
           </style>
         </head>
         <body>
@@ -931,6 +961,8 @@ export default function VehicleTracker() {
                   \`<p style="margin: 2px 0; font-weight: 500; color: #2563eb;">Suc. \${client.branchNumber} (\${client.branchName})</p>\` : 
                   \`<p style="margin: 2px 0; font-weight: 500; color: #2563eb;">Suc. \${client.branchNumber}</p>\`) 
                 : '';
+              const googleMapsLink = \`https://www.google.com/maps/search/?api=1&query=\${client.lat},\${client.lng}\`;
+              const coordinatesText = \`\${client.lat.toFixed(6)}, \${client.lng.toFixed(6)}\`;
 
               const content = \`
                 <div>
@@ -943,6 +975,10 @@ export default function VehicleTracker() {
                   <p style="margin: 2px 0 0 0; color: #059669;"><strong>#</strong> <strong> \${client.key} </strong></p>
                   <p style="margin: 2px 0 0 0; color: #059669;"><strong> \${client.displayName} </strong></p>
                   \${branchInfo}
+                  <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
+                  <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                    <strong>View on Google Maps</strong>
+                  </a>
                 </div>\`;
               return new google.maps.InfoWindow({ content });
             }
@@ -1020,6 +1056,10 @@ export default function VehicleTracker() {
                 const clientNoMatchColor = inWorkingHours ? '#FC2121' : '#C40000';
                 const branchColor = inWorkingHours ? '#2563eb' : '#60a5fa';
                 
+                // Crear enlace a Google Maps
+                const googleMapsLink = \`https://www.google.com/maps/search/?api=1&query=\${flag.lat},\${flag.lng}\`;
+                const coordinatesText = \`\${flag.lat.toFixed(6)}, \${flag.lng.toFixed(6)}\`;
+                
                 let content = '';
                 
                 switch (flag.type) {
@@ -1030,6 +1070,10 @@ export default function VehicleTracker() {
                                     <span style="color: #22c55e;">&#127937;</span> \${flag.description}
                                 </h3>
                                 <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
+                                <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
+                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                                    <strong>View on Google Maps</strong>
+                                </a>
                             </div>\`; 
                         break;
                         
@@ -1040,6 +1084,10 @@ export default function VehicleTracker() {
                                     <span style="color: #ef4444;">&#127937;</span> \${flag.description}
                                 </h3>
                                 <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
+                                <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
+                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                                    <strong>View on Google Maps</strong>
+                                </a>
                             </div>\`; 
                         break;
                         
@@ -1076,12 +1124,15 @@ export default function VehicleTracker() {
                             <div style="\${containerStyle} padding: 4px;">
                                 <h3 style="color: \${titleColor};">
                                     <span style="color: \${squareColor};">&#9209;</span> Parada \${flag.stopNumber}
-                                    </h3>
+                                </h3>
                                 \${timeWarning}
                                 <p style="color: \${labelColor};"><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p>
                                 <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
                                 \${clientInfo}
-                                <!--<p style="color: \${labelColor};">\${flag.description.replace(\`Parada \${flag.stopNumber}: \`, '')}</p>-->
+                                <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
+                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                                    <strong>View on Google Maps</strong>
+                                </a>
                             </div>\`;
                         break;
                 }
@@ -1490,38 +1541,6 @@ export default function VehicleTracker() {
         </div>
 
         {tripData && (
-          <div className="border-t border-t-gray-300 pt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
-              Modo de Vista de Jornada
-            </label>
-            <div className="flex justify-center">
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                <button
-                  onClick={() => setViewMode('current')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    viewMode === 'current'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Vista Actual
-                </button>
-                <button
-                  onClick={() => setViewMode('new')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    viewMode === 'new'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Vista Completa
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tripData && (
           <div className="mt-6">
             <p className="text-center text-gray-600 mb-2">
               Paso 2 (Opcional): Sube el archivo de clientes para identificar
@@ -1613,6 +1632,38 @@ export default function VehicleTracker() {
             <p>
               <strong>Error:</strong> {error}
             </p>
+          </div>
+        )}
+
+        {tripData && (
+          <div className="border-t border-t-gray-300 pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
+              Modo de Vista de Jornada
+            </label>
+            <div className="flex justify-center">
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  onClick={() => setViewMode('current')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    viewMode === 'current'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Vista Actual
+                </button>
+                <button
+                  onClick={() => setViewMode('new')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    viewMode === 'new'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Vista Completa
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

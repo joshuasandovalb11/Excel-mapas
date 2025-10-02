@@ -126,6 +126,10 @@ export default function ReportesView() {
   const [nonVisitedClients, setNonVisitedClients] = usePersistentState<
     Client[]
   >('rv_nonVisitedClients', []);
+  const [clientData] = usePersistentState<Client[] | null>(
+    'rv_clientData',
+    null
+  );
   const [minStopDuration, setMinStopDuration] = usePersistentState<number>(
     'rv_minStopDuration',
     5
@@ -349,7 +353,12 @@ export default function ReportesView() {
       throw new Error(`No hay eventos con coordenadas en: ${file.name}`);
 
     try {
-      const processedTrip = processTripData(data);
+      const processedTrip = processTripData(
+        data,
+        'current',
+        vehicleInfo.fecha,
+        clientData
+      );
       return { vehicleInfo, processedTrip, fileName: file.name };
     } catch (error: any) {
       if (
@@ -363,6 +372,10 @@ export default function ReportesView() {
           flags: [],
           totalDistance: 0,
           processingMethod: 'speed-based',
+          initialState: 'Apagado',
+          workStartTime: undefined,
+          workEndTime: undefined,
+          isTripOngoing: false,
         };
         return { vehicleInfo, processedTrip: emptyTrip, fileName: file.name };
       } else {

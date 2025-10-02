@@ -1,7 +1,20 @@
-import { useState } from 'react';
-import VehicleTracker from './components/VehicleTracker';
-import ReportesView from './components/ReportesView';
+import { useState, lazy, Suspense } from 'react';
+// import VehicleTracker from './components/VehicleTracker';
+// import ReportesView from './components/ReportesView';
 import { Map, FileText, RotateCw } from 'lucide-react';
+
+const VehicleTracker = lazy(() => import('./components/VehicleTracker'));
+const ReportesView = lazy(() => import('./components/ReportesView'));
+
+// Componente de carga
+function LoadingSpinner() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[400px]">
+      <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <p className="mt-4 text-gray-600 font-medium">Cargando página...</p>
+    </div>
+  );
+}
 
 export default function App() {
   const [activeView, setActiveView] = useState<'tracker' | 'reports'>(
@@ -58,7 +71,9 @@ export default function App() {
       </header>
 
       <main className="p-4">
-        {activeView === 'tracker' ? <VehicleTracker /> : <ReportesView />}
+        <Suspense fallback={<LoadingSpinner />}>
+          {activeView === 'tracker' ? <VehicleTracker /> : <ReportesView />}
+        </Suspense>
       </main>
     </div>
   );

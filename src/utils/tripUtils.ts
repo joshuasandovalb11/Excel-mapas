@@ -1,5 +1,27 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from 'xlsx';
+import { format, fromZonedTime } from 'date-fns-tz';
+
+const convertToTijuanaTime = (
+  timeString: string,
+  dateString: string
+): string => {
+  if (!timeString || !dateString) {
+    return timeString;
+  }
+  const cdmxTimeZone = 'America/Mexico_City';
+  const tijuanaTimeZone = 'America/Tijuana';
+
+  const dateTimeString = `${dateString}T${timeString}`;
+
+  try {
+    const dateInCdmx = fromZonedTime(dateTimeString, cdmxTimeZone);
+    return format(dateInCdmx, 'HH:mm:ss', { timeZone: tijuanaTimeZone });
+  } catch (error) {
+    console.error(`Error convirtiendo la hora: ${dateTimeString}`, error);
+    return timeString;
+  }
+};
 
 // INTERFACES
 export interface TripEvent {
@@ -321,6 +343,59 @@ export const formatBranchInfo = (client: Client): string | null => {
   return null;
 };
 
+// --- NUEVA FUNCIÓN PARA UNIR PARADAS CON CLIENTES ---
+const matchStopsWithClients = (
+  flags: ProcessedTrip['flags'],
+  clients: Client[] | null,
+  // Distancia en metros para considerar una parada como visita
+  matchingThreshold = 50
+): ProcessedTrip['flags'] => {
+  // Si no hay clientes o paradas, no hay nada que hacer
+  if (!clients || clients.length === 0) {
+    return flags;
+  }
+
+  // Mapeamos solo las paradas para encontrar el cliente más cercano
+  return flags.map((flag) => {
+    // Solo nos interesan las paradas ('stop')
+    if (flag.type !== 'stop') {
+      return flag;
+    }
+
+    let closestClient: Client | null = null;
+    let minDistance = Infinity;
+
+    // Iteramos sobre cada cliente para encontrar el más cercano a la parada
+    for (const client of clients) {
+      const distance = calculateDistance(
+        flag.lat,
+        flag.lng,
+        client.lat,
+        client.lng
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        closestClient = client;
+      }
+    }
+
+    // Si el cliente más cercano está dentro de nuestro umbral, lo asignamos
+    if (closestClient && minDistance <= matchingThreshold) {
+      return {
+        ...flag,
+        clientKey: closestClient.key,
+        clientName: closestClient.name,
+        clientBranchNumber: closestClient.branchNumber,
+        clientBranchName: closestClient.name, // O el nombre de la sucursal si lo tienes
+      };
+    }
+
+    // Si no se encontró un cliente cercano, devolvemos la parada sin cambios
+    return flag;
+  });
+};
+
 /**
  * Procesa un viaje basándose en los eventos de "Inicio de viaje" y "Fin de viaje".
  * Esta es la lógica para el MÉTODO #1.
@@ -530,15 +605,29 @@ const processBySpeedAndMovement = (
  */
 export const processTripData = (
   rawData: any[],
-  processingMode: 'current' | 'new'
+  processingMode: 'current' | 'new',
+  tripDate: string,
+  clientData: Client[] | null
 ): ProcessedTrip => {
   // 1. Parsear todos los eventos del archivo (común para ambos métodos)
   const findTimeColumn = (row: any): string | null => {
-    const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
+    if (!row) return null;
+    const timePattern = /^\d{1,2}:\d{2}(:\d{2})?(\s?(AM|PM))?$/i;
     for (const key in row) {
       if (typeof row[key] === 'string' && timePattern.test(row[key].trim())) {
         return key;
       }
+      if (typeof row[key] === 'number' && row[key] < 1) {
+        return key;
+      }
+    }
+    const commonTimeColumns = ['hora', 'tiempo', 'time'];
+    const rowKeys = Object.keys(row);
+    for (const commonKey of commonTimeColumns) {
+      const foundKey = rowKeys.find((key) =>
+        key.toLowerCase().includes(commonKey)
+      );
+      if (foundKey) return foundKey;
     }
     return null;
   };
@@ -546,14 +635,19 @@ export const processTripData = (
   if (!timeColumn) throw new Error('No se encontró columna de tiempo.');
 
   const allEvents: TripEvent[] = rawData
-    .map((row, index) => ({
-      id: index + 1,
-      time: row[timeColumn] || '00:00:00',
-      description: row['Descripción de Evento:'] || 'Sin descripción',
-      speed: Number(row['Velocidad(km)']) || 0,
-      lat: Number(row['Latitud']),
-      lng: Number(row['Longitud']),
-    }))
+    .map((row: any, index: number) => {
+      const originalTime = row[timeColumn]
+        ? String(row[timeColumn]).trim()
+        : '00:00:00';
+      return {
+        id: index + 1,
+        time: convertToTijuanaTime(originalTime, tripDate),
+        description: row['Descripción de Evento:'] || 'Sin descripción',
+        speed: Number(row['Velocidad(km)']) || 0,
+        lat: Number(row['Latitud']),
+        lng: Number(row['Longitud']),
+      };
+    })
     .filter((event) => event.lat && event.lng);
 
   if (allEvents.length === 0) {
@@ -568,8 +662,6 @@ export const processTripData = (
     .slice()
     .reverse()
     .find((e) => e.speed > 0);
-
-  // Comprueba si el último evento del reporte tenía el vehículo en movimiento.
   const isTripOngoing = allEvents[allEvents.length - 1].speed > 0;
 
   // 3. Decidir qué método de procesamiento usar y ejecutarlo
@@ -588,19 +680,34 @@ export const processTripData = (
     coreTripData = processBySpeedAndMovement(allEvents);
   }
 
+  coreTripData.flags = matchStopsWithClients(coreTripData.flags, clientData);
+
   // 4. Construir el objeto final combinando los resultados
+  const firstClientVisit = coreTripData.flags.find(
+    (flag) => flag.type === 'stop' && flag.clientKey
+  );
+
   const finalTripData: ProcessedTrip = {
     ...coreTripData,
     initialState: initialState,
     isTripOngoing: isTripOngoing,
-    // Por defecto, usamos los tiempos de las banderas de inicio/fin
-    workStartTime: coreTripData.flags.find((f) => f.type === 'start')?.time,
+    workStartTime:
+      firstClientVisit?.time ||
+      coreTripData.flags.find((f) => f.type === 'start')?.time,
     workEndTime: coreTripData.flags.find((f) => f.type === 'end')?.time,
   };
 
-  // Si el modo es 'new', sobreescribimos con la información más completa
+  if (!finalTripData.workEndTime && lastMovingEvent && !isTripOngoing) {
+    finalTripData.workEndTime = lastMovingEvent.time;
+  }
+
+  if (isTripOngoing) {
+    finalTripData.workEndTime = undefined;
+  }
+
   if (processingMode === 'new') {
-    finalTripData.workStartTime = firstMovingEvent?.time;
+    finalTripData.workStartTime =
+      firstClientVisit?.time || firstMovingEvent?.time;
     finalTripData.workEndTime = lastMovingEvent?.time;
   }
 
