@@ -29,6 +29,10 @@ export default function VehicleTracker() {
     'vt_tripData',
     null
   );
+  const [rawTripData, setRawTripData] = usePersistentState<any[] | null>(
+    'vt_rawTripData',
+    null
+  );
   const [vehicleInfo, setVehicleInfo] = usePersistentState<VehicleInfo | null>(
     'vt_vehicleInfo',
     null
@@ -56,6 +60,7 @@ export default function VehicleTracker() {
   const [error, setError] = useState<string | null>(null);
   const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
   const [allClientsFromFile, setAllClientsFromFile] = usePersistentState<
     Client[] | null
@@ -68,7 +73,10 @@ export default function VehicleTracker() {
     mode: 'vendor' | 'driver';
     value: string | null;
   }>('vt_selection', { mode: 'vendor', value: null });
-  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [viewMode, setViewMode] = usePersistentState<'current' | 'new'>(
+    'vt_viewMode',
+    'current'
+  );
 
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
@@ -178,12 +186,30 @@ export default function VehicleTracker() {
     }
   }, [clientData, clientRadius, tripData, setTripData]);
 
+  // Efecto para reprocesar los datos cuando cambia el modo de vista
+  useEffect(() => {
+    if (rawTripData) {
+      try {
+        const processed = processTripData(rawTripData, viewMode);
+        setTripData(processed);
+      } catch (err) {
+        console.error(err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Ocurrió un error al reprocesar el viaje.'
+        );
+      }
+    }
+  }, [viewMode, rawTripData, setTripData]);
+
   // Funcion para leer el archivo EXCEL para las rutas
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setTripData(null);
+    setRawTripData(null);
     setVehicleInfo(null);
     setError(null);
     setFileName(file.name);
@@ -246,7 +272,8 @@ export default function VehicleTracker() {
             'No se encontraron datos en el archivo de viaje o el formato es incorrecto.'
           );
         }
-        const processed = processTripData(data);
+        setRawTripData(data);
+        const processed = processTripData(data, viewMode);
         setTripData(processed);
       } catch (err) {
         console.error(err);
@@ -793,13 +820,13 @@ export default function VehicleTracker() {
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
         <h4>Resumen del Viaje</h4>
-        <!--<p><strong>Estado inicial:</strong> <span id="start-time">0</span></p>
-        <p><strong>Inicio de labores:</strong> <span id="start-time">0</span></p>-->
+        <p><strong>Estado inicial:</strong> <strong style="color: ${tripData.initialState === 'En movimiento' ? '#22c55e' : 'red'};">${tripData.initialState}</strong></p>
+        <p style="color: #22c55e;"><strong>Inicio de labores:</strong> <strong>${tripData.workStartTime || 'N/A'}</strong></p>
         <p><strong>Clientes Visitados:</strong> <span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
         <p><strong>Tiempo con Clientes:</strong> ${formatDuration(
           summaryStats.timeWithClients
         )}</p>
-        <p style="color: red;"><strong>Tiempo en Paradas (No Clientes):</strong> ${formatDuration(
+        <p style="color: #FF6A00;"><strong>Tiempo en Paradas (No Clientes):</strong> ${formatDuration(
           summaryStats.timeWithNonClients
         )}</p>
         <p><strong>Tiempo en Traslados:</strong> ${formatDuration(
@@ -808,7 +835,8 @@ export default function VehicleTracker() {
         <h4 style="margin-top: 5px; padding-top: 5px;">Kilometraje</h4>
         <p><strong>Distancia del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
         <p style="margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #ddd;"><strong>Distancia Total:</strong> <span id="total-distance">0.00 km</span></p>
-        <!--<p><strong>Fin de labores:</strong> <span id="end-time">0</span></p>-->
+        <!--<p style="color: red;"><strong>Fin de labores:</strong> <strong>${tripData.workEndTime || 'N/A'}</strong></p>-->
+        <p style="color: red;"><strong>Fin de labores:</strong> <strong>${viewMode === 'new' && tripData.isTripOngoing ? (tripData.workEndTime || 'N/A') + ' En movimiento...' : tripData.workEndTime || 'N/A'}</strong></p>
       </div>
     `;
 
@@ -1376,13 +1404,13 @@ export default function VehicleTracker() {
       return h * 60 + m;
     };
 
-    const startTimeFlag = tripData.flags.find((f) => f.type === 'start');
-    const endTimeFlag = tripData.flags.find((f) => f.type === 'end');
+    // Lógica modificada para usar los datos correctos según el viewMode
+    const startTime = tripData.workStartTime;
+    const endTime = tripData.workEndTime;
 
-    if (!startTimeFlag || !endTimeFlag) return stats;
+    if (!startTime || !endTime) return stats;
 
-    let totalTripDuration =
-      timeToMinutes(endTimeFlag.time) - timeToMinutes(startTimeFlag.time);
+    let totalTripDuration = timeToMinutes(endTime) - timeToMinutes(startTime);
     if (totalTripDuration < 0) {
       totalTripDuration += 24 * 60;
     }
@@ -1460,6 +1488,38 @@ export default function VehicleTracker() {
             />
           </label>
         </div>
+
+        {tripData && (
+          <div className="border-t border-t-gray-300 pt-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
+              Modo de Vista de Jornada
+            </label>
+            <div className="flex justify-center">
+              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                <button
+                  onClick={() => setViewMode('current')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    viewMode === 'current'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Vista Actual
+                </button>
+                <button
+                  onClick={() => setViewMode('new')}
+                  className={`px-4 py-2 text-sm font-medium transition-colors ${
+                    viewMode === 'new'
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  Vista Completa
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {tripData && (
           <div className="mt-6">

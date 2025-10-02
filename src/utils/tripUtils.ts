@@ -31,6 +31,10 @@ export interface ProcessedTrip {
   }>;
   totalDistance: number; // en metros
   processingMethod: 'event-based' | 'speed-based';
+  initialState: 'Apagado' | 'En movimiento';
+  workStartTime?: string; // Hora de inicio de labores
+  workEndTime?: string; // Hora de fin de labores
+  isTripOngoing?: boolean; // Indica si el viaje esta en curso
 }
 
 export interface VehicleInfo {
@@ -65,6 +69,7 @@ export const toTitleCase = (str: string): string => {
   return str.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 };
 
+// Funcion para calcular la distancia entre dos puntos GPS
 export const calculateDistance = (
   lat1: number,
   lon1: number,
@@ -80,9 +85,10 @@ export const calculateDistance = (
     Math.sin(deltaP / 2) * Math.sin(deltaP / 2) +
     Math.cos(p1) * Math.cos(p2) * Math.sin(deltaL / 2) * Math.sin(deltaL / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // Devuelve distancia en metros
+  return R * c;
 };
 
+// Convierte una cadena de tiempo a minutos
 const parseTimeToMinutes = (timeStr: string): number => {
   if (!timeStr || !timeStr.includes(':')) return 0;
   const parts = timeStr.split(':').map(Number);
@@ -91,6 +97,7 @@ const parseTimeToMinutes = (timeStr: string): number => {
   return hours * 60 + minutes;
 };
 
+// Formatea la duracion en minutos a un string legible
 export const formatDuration = (minutes: number): string => {
   if (minutes < 1) return 'Menos de 1 min';
   if (minutes < 60) return `${Math.round(minutes)} min`;
@@ -99,6 +106,7 @@ export const formatDuration = (minutes: number): string => {
   return `${hours} h ${mins} min`;
 };
 
+// FUNCIÓN PARA EXTRAER INFORMACIÓN DEL VEHÍCULO
 export const parseVehicleInfo = (
   worksheet: XLSX.WorkSheet,
   fileName: string
@@ -160,7 +168,7 @@ export const parseVehicleInfo = (
   return info;
 };
 
-// FUNCIÓN ACTUALIZADA PARA PROCESAR AMBOS FORMATOS DE ARCHIVO DE CLIENTES
+// FUNCIÓN PARA PROCESAR AMBOS FORMATOS DE ARCHIVO DE CLIENTES
 export const processMasterClientFile = (
   worksheet: XLSX.WorkSheet
 ): MasterClientData => {
@@ -302,6 +310,7 @@ export const processMasterClientFile = (
   return { clients, vendors: Array.from(allVendors).sort() };
 };
 
+// Formatea la informacion de la sucursal
 export const formatBranchInfo = (client: Client): string | null => {
   if (client.branchNumber && client.branchNumber !== '0') {
     if (client.branchName) {
@@ -312,8 +321,218 @@ export const formatBranchInfo = (client: Client): string | null => {
   return null;
 };
 
-// PROCESAMIENTO DE VIAJES (sin cambios)
-export const processTripData = (data: any[]): ProcessedTrip => {
+/**
+ * Procesa un viaje basándose en los eventos de "Inicio de viaje" y "Fin de viaje".
+ * Esta es la lógica para el MÉTODO #1.
+ */
+const processByEventMarkers = (
+  events: TripEvent[]
+): Omit<ProcessedTrip, 'initialState' | 'workStartTime' | 'workEndTime'> => {
+  console.log('Procesando con eventos de Inicio/Fin de Viaje.');
+
+  const flags: ProcessedTrip['flags'] = [];
+  const routes: ProcessedTrip['routes'] = [{ path: [] }];
+  let stopCounter = 0;
+
+  const firstStartEvent = events.find((event) =>
+    event.description.toLowerCase().includes('inicio de viaje')
+  );
+  if (!firstStartEvent) throw new Error("No se encontró 'Inicio de Viaje'.");
+
+  const lastEndEventIndex = events
+    .map((e) => e.description.toLowerCase().includes('fin de viaje'))
+    .lastIndexOf(true);
+  const lastEndEvent =
+    lastEndEventIndex !== -1 ? events[lastEndEventIndex] : null;
+  if (!lastEndEvent) throw new Error("No se encontró 'Fin de Viaje'.");
+
+  const startIndex = events.findIndex((e) => e.id === firstStartEvent.id);
+  flags.push({
+    lat: firstStartEvent.lat,
+    lng: firstStartEvent.lng,
+    type: 'start',
+    time: firstStartEvent.time,
+    description: `Inicio del Recorrido`,
+  });
+
+  for (let i = startIndex; i < events.length; i++) {
+    const currentEvent = events[i];
+    if (
+      currentEvent.description.toLowerCase().includes('fin de viaje') &&
+      currentEvent.id !== lastEndEvent.id
+    ) {
+      stopCounter++;
+      const stopFlag: ProcessedTrip['flags'][0] = {
+        lat: currentEvent.lat,
+        lng: currentEvent.lng,
+        type: 'stop',
+        time: currentEvent.time,
+        description: `Parada ${stopCounter}: ${currentEvent.description}`,
+        duration: 0,
+        stopNumber: stopCounter,
+      };
+      const nextStartEvent = events.find(
+        (event, j) =>
+          j > i && event.description.toLowerCase().includes('inicio de viaje')
+      );
+      if (nextStartEvent) {
+        const stopEndTime = parseTimeToMinutes(currentEvent.time);
+        const moveStartTime = parseTimeToMinutes(nextStartEvent.time);
+        let duration = moveStartTime - stopEndTime;
+        if (duration < 0) duration += 24 * 60;
+        stopFlag.duration = duration;
+      }
+      flags.push(stopFlag);
+    }
+  }
+
+  flags.push({
+    lat: lastEndEvent.lat,
+    lng: lastEndEvent.lng,
+    type: 'end',
+    time: lastEndEvent.time,
+    description: `Fin del Recorrido`,
+  });
+
+  const endIndex = events.findIndex((e) => e.id === lastEndEvent.id);
+  if (startIndex !== -1 && endIndex !== -1) {
+    routes[0].path = events
+      .slice(startIndex, endIndex + 1)
+      .map((e) => ({ lat: e.lat, lng: e.lng }));
+  }
+
+  const totalDistance = routes.reduce((total, route) => {
+    for (let i = 0; i < route.path.length - 1; i++) {
+      total += calculateDistance(
+        route.path[i].lat,
+        route.path[i].lng,
+        route.path[i + 1].lat,
+        route.path[i + 1].lng
+      );
+    }
+    return total;
+  }, 0);
+
+  return {
+    events,
+    routes,
+    flags,
+    totalDistance,
+    processingMethod: 'event-based',
+  };
+};
+
+/*
+ * Procesa un viaje basándose en la velocidad y el movimiento.
+ * Esta es la lógica para el MÉTODO #2.
+ */
+const processBySpeedAndMovement = (
+  events: TripEvent[]
+): Omit<ProcessedTrip, 'initialState' | 'workStartTime' | 'workEndTime'> => {
+  console.log(
+    'Eventos de Inicio/Fin no encontrados. Procesando por velocidad.'
+  );
+
+  const firstMovementIndex = events.findIndex((e) => e.speed > 0);
+  if (firstMovementIndex === -1) {
+    throw new Error('No se encontraron eventos con velocidad > 0.');
+  }
+
+  const lastMovementIndex = events.map((e) => e.speed > 0).lastIndexOf(true);
+
+  const relevantEvents = events.slice(
+    firstMovementIndex,
+    lastMovementIndex + 1
+  );
+
+  if (relevantEvents.length === 0) {
+    throw new Error('No hay eventos relevantes para procesar.');
+  }
+
+  const flags: ProcessedTrip['flags'] = [];
+  const routes: ProcessedTrip['routes'] = [{ path: [] }];
+  let stopCounter = 0;
+
+  flags.push({
+    lat: relevantEvents[0].lat,
+    lng: relevantEvents[0].lng,
+    type: 'start',
+    time: relevantEvents[0].time,
+    description: 'Inicio del Recorrido (Detectado)',
+  });
+
+  let stopStartInfo: TripEvent | null = null;
+  for (let i = 1; i < relevantEvents.length; i++) {
+    const prevEvent = relevantEvents[i - 1];
+    const currentEvent = relevantEvents[i];
+
+    if (currentEvent.speed === 0 && prevEvent.speed > 0) {
+      stopStartInfo = currentEvent;
+    }
+
+    if (currentEvent.speed > 0 && prevEvent.speed === 0 && stopStartInfo) {
+      const stopStartTime = parseTimeToMinutes(stopStartInfo.time);
+      const lastStopTime = parseTimeToMinutes(prevEvent.time);
+      let duration = lastStopTime - stopStartTime;
+      if (duration < 0) duration += 24 * 60;
+      if (duration >= 2) {
+        stopCounter++;
+        flags.push({
+          lat: stopStartInfo.lat,
+          lng: stopStartInfo.lng,
+          type: 'stop',
+          time: stopStartInfo.time,
+          description: `Parada ${stopCounter} (Detectada)`,
+          duration: duration,
+          stopNumber: stopCounter,
+        });
+      }
+      stopStartInfo = null;
+    }
+  }
+
+  const lastTripEvent = relevantEvents[relevantEvents.length - 1];
+  flags.push({
+    lat: lastTripEvent.lat,
+    lng: lastTripEvent.lng,
+    type: 'end',
+    time: lastTripEvent.time,
+    description: 'Fin del Recorrido (Detectado)',
+  });
+
+  routes[0].path = relevantEvents.map((e) => ({ lat: e.lat, lng: e.lng }));
+
+  const totalDistance = routes.reduce((total, route) => {
+    for (let i = 0; i < route.path.length - 1; i++) {
+      total += calculateDistance(
+        route.path[i].lat,
+        route.path[i].lng,
+        route.path[i + 1].lat,
+        route.path[i + 1].lng
+      );
+    }
+    return total;
+  }, 0);
+
+  return {
+    events: relevantEvents,
+    routes,
+    flags,
+    totalDistance,
+    processingMethod: 'speed-based',
+  };
+};
+
+/**
+ * --- FUNCIÓN PRINCIPAL Y PUNTO DE ENTRADA ---
+ * Determina qué método de procesamiento usar y enriquece los datos
+ * según el modo de vista seleccionado ('current' o 'new').
+ */
+export const processTripData = (
+  rawData: any[],
+  processingMode: 'current' | 'new'
+): ProcessedTrip => {
+  // 1. Parsear todos los eventos del archivo (común para ambos métodos)
   const findTimeColumn = (row: any): string | null => {
     const timePattern = /^\d{1,2}:\d{2}(:\d{2})?$/;
     for (const key in row) {
@@ -323,13 +542,10 @@ export const processTripData = (data: any[]): ProcessedTrip => {
     }
     return null;
   };
-  const timeColumn = data.length > 0 ? findTimeColumn(data[0]) : null;
-  if (!timeColumn) {
-    throw new Error(
-      'No se encontró una columna con datos de tiempo válidos en el archivo.'
-    );
-  }
-  const events: TripEvent[] = data
+  const timeColumn = rawData.length > 0 ? findTimeColumn(rawData[0]) : null;
+  if (!timeColumn) throw new Error('No se encontró columna de tiempo.');
+
+  const allEvents: TripEvent[] = rawData
     .map((row, index) => ({
       id: index + 1,
       time: row[timeColumn] || '00:00:00',
@@ -340,200 +556,53 @@ export const processTripData = (data: any[]): ProcessedTrip => {
     }))
     .filter((event) => event.lat && event.lng);
 
-  if (events.length === 0) {
-    throw new Error(
-      'El archivo no contiene datos de eventos válidos con coordenadas.'
-    );
+  if (allEvents.length === 0) {
+    throw new Error('No se encontraron eventos con coordenadas válidas.');
   }
 
-  // Función para calcular la distancia total de una ruta
-  const getPathDistance = (
-    path: Array<{ lat: number; lng: number }>
-  ): number => {
-    let distance = 0;
-    for (let i = 1; i < path.length; i++) {
-      const prev = path[i - 1];
-      const curr = path[i];
-      distance += calculateDistance(prev.lat, prev.lng, curr.lat, curr.lng);
-    }
-    return distance;
+  // 2. Calcular datos para la "Vista Completa"
+  const initialState: ProcessedTrip['initialState'] =
+    allEvents[0].speed > 0 ? 'En movimiento' : 'Apagado';
+  const firstMovingEvent = allEvents.find((e) => e.speed > 0);
+  const lastMovingEvent = allEvents
+    .slice()
+    .reverse()
+    .find((e) => e.speed > 0);
+
+  // Comprueba si el último evento del reporte tenía el vehículo en movimiento.
+  const isTripOngoing = allEvents[allEvents.length - 1].speed > 0;
+
+  // 3. Decidir qué método de procesamiento usar y ejecutarlo
+  const hasStartEndEvents = allEvents.some((e) =>
+    e.description.toLowerCase().includes('inicio de viaje')
+  );
+
+  let coreTripData: Omit<
+    ProcessedTrip,
+    'initialState' | 'workStartTime' | 'workEndTime'
+  >;
+
+  if (hasStartEndEvents) {
+    coreTripData = processByEventMarkers(allEvents);
+  } else {
+    coreTripData = processBySpeedAndMovement(allEvents);
+  }
+
+  // 4. Construir el objeto final combinando los resultados
+  const finalTripData: ProcessedTrip = {
+    ...coreTripData,
+    initialState: initialState,
+    isTripOngoing: isTripOngoing,
+    // Por defecto, usamos los tiempos de las banderas de inicio/fin
+    workStartTime: coreTripData.flags.find((f) => f.type === 'start')?.time,
+    workEndTime: coreTripData.flags.find((f) => f.type === 'end')?.time,
   };
 
-  const hasStartEndEvents =
-    events.some((e) =>
-      e.description.toLowerCase().includes('inicio de viaje')
-    ) &&
-    events.some((e) => e.description.toLowerCase().includes('fin de viaje'));
-
-  // METODO #1 = Archivos que contienen incio y fin de viaje
-  if (hasStartEndEvents) {
-    console.log('Procesando con eventos de Inicio/Fin de Viaje.');
-    const flags: ProcessedTrip['flags'] = [];
-    const routes: ProcessedTrip['routes'] = [{ path: [] }];
-    let stopCounter = 0;
-
-    const firstStartEvent = events.find((event) =>
-      event.description.toLowerCase().includes('inicio de viaje')
-    );
-    if (!firstStartEvent) throw new Error("No se encontró 'Inicio de Viaje'.");
-
-    const lastEndEventIndex = events
-      .map((e) => e.description.toLowerCase().includes('fin de viaje'))
-      .lastIndexOf(true);
-    const lastEndEvent =
-      lastEndEventIndex !== -1 ? events[lastEndEventIndex] : null;
-    if (!lastEndEvent) throw new Error("No se encontró 'Fin de Viaje'.");
-
-    const startIndex = events.findIndex((e) => e.id === firstStartEvent.id);
-    flags.push({
-      lat: firstStartEvent.lat,
-      lng: firstStartEvent.lng,
-      type: 'start',
-      time: firstStartEvent.time,
-      description: `Inicio del Recorrido`,
-    });
-
-    for (let i = startIndex; i < events.length; i++) {
-      const currentEvent = events[i];
-      if (
-        currentEvent.description.toLowerCase().includes('fin de viaje') &&
-        currentEvent.id !== lastEndEvent.id
-      ) {
-        stopCounter++;
-        const stopFlag: ProcessedTrip['flags'][0] = {
-          lat: currentEvent.lat,
-          lng: currentEvent.lng,
-          type: 'stop',
-          time: currentEvent.time,
-          description: `Parada ${stopCounter}: ${currentEvent.description}`,
-          duration: 0,
-          stopNumber: stopCounter,
-        };
-        const nextStartEvent = events.find(
-          (event, j) =>
-            j > i && event.description.toLowerCase().includes('inicio de viaje')
-        );
-        if (nextStartEvent) {
-          const stopEndTime = parseTimeToMinutes(currentEvent.time);
-          const moveStartTime = parseTimeToMinutes(nextStartEvent.time);
-          let duration = moveStartTime - stopEndTime;
-          if (duration < 0) {
-            duration += 24 * 60;
-          }
-          stopFlag.duration = duration;
-        }
-        flags.push(stopFlag);
-      }
-    }
-    flags.push({
-      lat: lastEndEvent.lat,
-      lng: lastEndEvent.lng,
-      type: 'end',
-      time: lastEndEvent.time,
-      description: `Fin del Recorrido`,
-    });
-
-    const endIndex = events.findIndex((e) => e.id === lastEndEvent.id);
-    if (startIndex !== -1 && endIndex !== -1) {
-      routes[0].path = events
-        .slice(startIndex, endIndex + 1)
-        .map((e) => ({ lat: e.lat, lng: e.lng }));
-    }
-    const totalDistance = getPathDistance(routes[0].path);
-    return {
-      events,
-      routes,
-      flags,
-      totalDistance,
-      processingMethod: 'event-based',
-    };
-
-    // METODO #2 = Archivos que NO contienen incio y fin de viaje
-  } else {
-    console.log(
-      'Eventos de Inicio/Fin no encontrados. Procesando por velocidad.'
-    );
-
-    let lastMovementIndex = -1;
-    for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].speed > 0) {
-        lastMovementIndex = i;
-        break;
-      }
-    }
-    if (lastMovementIndex === -1) {
-      throw new Error(
-        'No se encontraron eventos con velocidad mayor a 0. No se puede definir un recorrido.'
-      );
-    }
-
-    const trueEndIndex = Math.min(lastMovementIndex + 1, events.length - 1);
-    const relevantEvents = events.slice(0, trueEndIndex + 1);
-
-    const flags: ProcessedTrip['flags'] = [];
-    const routes: ProcessedTrip['routes'] = [{ path: [] }];
-    let stopCounter = 0;
-
-    flags.push({
-      lat: relevantEvents[0].lat,
-      lng: relevantEvents[0].lng,
-      type: 'start',
-      time: relevantEvents[0].time,
-      description: 'Inicio del Recorrido (Detectado)',
-    });
-
-    let stopStartInfo: TripEvent | null = null;
-    for (let i = 1; i < relevantEvents.length - 1; i++) {
-      const prevEvent = relevantEvents[i - 1];
-      const currentEvent = relevantEvents[i];
-
-      if (currentEvent.speed === 0 && prevEvent.speed > 0) {
-        stopStartInfo = currentEvent;
-      }
-
-      if (currentEvent.speed > 0 && prevEvent.speed === 0 && stopStartInfo) {
-        const stopStartTime = parseTimeToMinutes(stopStartInfo.time);
-        const lastStopTime = parseTimeToMinutes(prevEvent.time);
-        let duration = lastStopTime - stopStartTime;
-        if (duration < 0) {
-          duration += 24 * 60;
-        }
-
-        if (duration >= 2) {
-          // Considera paradas de al menos 2 minutos
-          stopCounter++;
-          flags.push({
-            lat: stopStartInfo.lat,
-            lng: stopStartInfo.lng,
-            type: 'stop',
-            time: stopStartInfo.time,
-            description: `Parada ${stopCounter} (Detectada por velocidad)`,
-            duration: duration,
-            stopNumber: stopCounter,
-          });
-        }
-        stopStartInfo = null;
-      }
-    }
-
-    const lastTripEvent = relevantEvents[relevantEvents.length - 1];
-    flags.push({
-      lat: lastTripEvent.lat,
-      lng: lastTripEvent.lng,
-      type: 'end',
-      time: lastTripEvent.time,
-      description: 'Fin del Recorrido (Detectado)',
-    });
-
-    routes[0].path = relevantEvents.map((e) => ({ lat: e.lat, lng: e.lng }));
-    const totalDistance = getPathDistance(routes[0].path);
-
-    return {
-      events: relevantEvents,
-      routes,
-      flags,
-      totalDistance,
-      processingMethod: 'speed-based',
-    };
+  // Si el modo es 'new', sobreescribimos con la información más completa
+  if (processingMode === 'new') {
+    finalTripData.workStartTime = firstMovingEvent?.time;
+    finalTripData.workEndTime = lastMovingEvent?.time;
   }
+
+  return finalTripData;
 };
