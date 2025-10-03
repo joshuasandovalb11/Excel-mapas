@@ -861,8 +861,8 @@ export default function VehicleTracker() {
           <p><strong>Distancia Tramo:</strong></p>
           <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
           
-          <p style="border-bottom: 1px solid #ddd; padding-bottom: 5px;"><strong>Distancia Total:</strong></p>
-          <p style="text-align: left; border-bottom: 1px solid #ddd; padding-bottom: 5px;"><span id="total-distance">0.00 km</span></p>
+          <p><strong>Distancia Total:</strong></p>
+          <p style="text-align: left;"><span id="total-distance">0.00 km</span></p>
           
           <p><strong>Fin de labores:</strong></p>
           <p style="text-align: left;"><strong>${viewMode === 'new' && tripData.isTripOngoing ? (tripData.workEndTime || 'N/A') + ' En movimiento...' : tripData.workEndTime || 'N/A'}</strong></p>
@@ -874,14 +874,19 @@ export default function VehicleTracker() {
       <!DOCTYPE html>
       <html>
         <head>
+          <link
+            rel="stylesheet"
+            href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
+          />
+
           <style>
             #map { height: 100%; width: 100%; } body, html { height: 100%; margin: 0; padding: 0; } .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 12px !important; } h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } h3 span { font-size: 20px; margin-right: 8px; } p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
             #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
             #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
             #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
             .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 270px; }
-            .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #0000FF}
-            .info-card p { margin: 3px 0; font-size: 12px; color: #0000FF}
+            .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #00004F}
+            .info-card p { margin: 3px 0; font-size: 12px; color: #00004F}
           </style>
         </head>
         <body>
@@ -958,25 +963,25 @@ export default function VehicleTracker() {
             function createClientInfoWindow(client) {
               const branchInfo = client.branchNumber ? 
                 (client.branchName ? 
-                  \`<p style="margin: 2px 0; font-weight: 500; color: #2563eb;">Suc. \${client.branchNumber} (\${client.branchName})</p>\` : 
-                  \`<p style="margin: 2px 0; font-weight: 500; color: #2563eb;">Suc. \${client.branchNumber}</p>\`) 
+                  \`<p style="margin: 2px 0; font-weight: 600; color: #2563eb; font-size: 12px;">Suc. \${client.branchName}</p>\` : 
+                  \`<p style="margin: 2px 0; font-weight: 600; color: #2563eb; font-size: 12px;">Suc. \${client.branchNumber}</p>\`) 
                 : '';
               const googleMapsLink = \`https://www.google.com/maps/search/?api=1&query=\${client.lat},\${client.lng}\`;
               const coordinatesText = \`\${client.lat.toFixed(6)}, \${client.lng.toFixed(6)}\`;
 
               const content = \`
                 <div>
-                  <h3 style="display:flex; align-items:center;">
-                    <span style="margin-right: 8px;">
-                       <svg fill="#000000" width="20" height="20" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"></path></svg>
+                  <h3 style="display:flex; align-items:center; font-size: 15px;">
+                    <span style="margin-right: 8px; font-size:15px;">
+                       <i class="fa-solid fa-house"></i>
                     </span>
                     Cliente
                   </h3>
-                  <p style="margin: 2px 0 0 0; color: #059669;"><strong>#</strong> <strong> \${client.key} </strong></p>
-                  <p style="margin: 2px 0 0 0; color: #059669;"><strong> \${client.displayName} </strong></p>
-                  \${branchInfo}
-                  <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-                  <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                  <strong><p style="margin: 2px 0 0 0; color: #059669; font-size: 12px;"><strong>#</strong> <strong> \${client.key} </strong></p></strong>
+                  <strong><p style="margin: 2px 0 0 0; color: #059669; font-size: 12px;"><strong> \${client.displayName} </strong></p></strong>
+                  <strong>\${branchInfo}</strong>
+                  <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                  <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
                     <strong>View on Google Maps</strong>
                   </a>
                 </div>\`;
@@ -1066,12 +1071,15 @@ export default function VehicleTracker() {
                     case 'start': 
                         content = \`
                             <div style="\${containerStyle} padding: 4px;">
-                                <h3 style="color: \${titleColor};">
-                                    <span style="color: #22c55e;">&#127937;</span> \${flag.description}
+                                <h3 style="color: \${titleColor}; font-size: 15px;">
+                                    <span style="color: #22c55e;">
+                                      <i class="fa-solid fa-road-circle-check"></i>
+                                    </span> 
+                                    \${flag.description}
                                 </h3>
-                                <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
-                                <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
+                                <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
                                     <strong>View on Google Maps</strong>
                                 </a>
                             </div>\`; 
@@ -1080,12 +1088,15 @@ export default function VehicleTracker() {
                     case 'end': 
                         content = \`
                             <div style="\${containerStyle} padding: 4px;">
-                                <h3 style="color: \${titleColor};">
-                                    <span style="color: #ef4444;">&#127937;</span> \${flag.description}
+                                <h3 style="color: \${titleColor}; font-size: 15px;">
+                                    <span style="color: #ef4444;">
+                                      <i class="fa-solid fa-road-circle-xmark"></i>
+                                    </span>
+                                    \${flag.description}
                                 </h3>
-                                <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
-                                <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
+                                <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
                                     <strong>View on Google Maps</strong>
                                 </a>
                             </div>\`; 
@@ -1098,39 +1109,39 @@ export default function VehicleTracker() {
                             const clientBaseName = flag.clientName;
                             const branchInfo = flag.clientBranchNumber ? 
                                 (flag.clientBranchName ? 
-                                    \`Suc. \${flag.clientBranchNumber} (\${flag.clientBranchName})\` : 
+                                    \`Suc. \${flag.clientBranchName}\` : 
                                     \`Suc. \${flag.clientBranchNumber}\`) 
                                 : null;
                             
                             clientInfo = \`
                                 <div style="color:\${clientMatchColor};">
-                                    <p style="margin: 2px 0; font-weight: 500;">
+                                    <p style="margin: 2px 0; font-weight: 500; font-size: 12px;">
                                         <strong>#</strong> <strong>\${clientKey}</strong>
                                     </p>
-                                    <p style="margin: 2px 0; font-weight: 500;">
-                                        <strong>\${clientBaseName}</strong>
-                                    </p>
-                                    <strong>\${branchInfo ? \`<p style="margin: 2px 0; font-weight: 500; color: \${branchColor};">\${branchInfo}</p>\` : ''}</strong>
+                                    <strong><p style="margin: 2px 0; font-weight: 600; font-size: 12px;">\${clientBaseName}</p></strong>
+                                    <strong>\${branchInfo ? \`<p style="margin: 2px 0; font-weight: 600; font-size: 12px; color: \${branchColor};">\${branchInfo}</p>\` : ''}</strong>
                                 </div>\`;
                         } else {
-                            clientInfo = \`<p style="color:\${clientNoMatchColor}; font-weight: 500;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
-                        }
+                            clientInfo = \`<p style="color:\${clientNoMatchColor}; font-weight: 500; font-size: 12px;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
+                        } 
                         
-                        const timeWarning = !inWorkingHours 
-                            ? \`<p style="color: #fbbf24; font-weight: 600; margin-top: 4px;">⚠️ Fuera de horario laboral</p>\`
-                            : '';
+                        const stopIcon = !inWorkingHours
+                          ? \`<i class="fa-solid fa-triangle-exclamation"></i>\`
+                          : \`<i class="fa-solid fa-flag"></i>\`;
                         
                         content = \`
                             <div style="\${containerStyle} padding: 4px;">
-                                <h3 style="color: \${titleColor};">
-                                    <span style="color: \${squareColor};">&#9209;</span> Parada \${flag.stopNumber}
+                                <h3 style="color: \${titleColor}; font-size: 15px;">
+                                  <span style="color: \${squareColor}; font-size: 15px;">
+                                    \${stopIcon}
+                                  </span> 
+                                  Parada \${flag.stopNumber}
                                 </h3>
-                                \${timeWarning}
-                                <p style="color: \${labelColor};"><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p>
-                                <p style="color: \${labelColor};"><strong>Hora:</strong> \${flag.time}</p>
+                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p>
+                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
                                 \${clientInfo}
-                                <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center; margin-top: 4px;">
+                                <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
                                     <strong>View on Google Maps</strong>
                                 </a>
                             </div>\`;

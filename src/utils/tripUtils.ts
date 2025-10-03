@@ -336,7 +336,7 @@ export const processMasterClientFile = (
 export const formatBranchInfo = (client: Client): string | null => {
   if (client.branchNumber && client.branchNumber !== '0') {
     if (client.branchName) {
-      return `Suc. ${client.branchNumber} (${client.branchName})`;
+      return `Suc. ${client.branchName}`;
     }
     return `Suc. ${client.branchNumber}`;
   }
@@ -347,17 +347,13 @@ export const formatBranchInfo = (client: Client): string | null => {
 const matchStopsWithClients = (
   flags: ProcessedTrip['flags'],
   clients: Client[] | null,
-  // Distancia en metros para considerar una parada como visita
   matchingThreshold = 50
 ): ProcessedTrip['flags'] => {
-  // Si no hay clientes o paradas, no hay nada que hacer
   if (!clients || clients.length === 0) {
     return flags;
   }
 
-  // Mapeamos solo las paradas para encontrar el cliente más cercano
   return flags.map((flag) => {
-    // Solo nos interesan las paradas ('stop')
     if (flag.type !== 'stop') {
       return flag;
     }
@@ -365,7 +361,6 @@ const matchStopsWithClients = (
     let closestClient: Client | null = null;
     let minDistance = Infinity;
 
-    // Iteramos sobre cada cliente para encontrar el más cercano a la parada
     for (const client of clients) {
       const distance = calculateDistance(
         flag.lat,
@@ -380,18 +375,15 @@ const matchStopsWithClients = (
       }
     }
 
-    // Si el cliente más cercano está dentro de nuestro umbral, lo asignamos
     if (closestClient && minDistance <= matchingThreshold) {
       return {
         ...flag,
         clientKey: closestClient.key,
         clientName: closestClient.name,
         clientBranchNumber: closestClient.branchNumber,
-        clientBranchName: closestClient.name, // O el nombre de la sucursal si lo tienes
+        clientBranchName: closestClient.name,
       };
     }
-
-    // Si no se encontró un cliente cercano, devolvemos la parada sin cambios
     return flag;
   });
 };
@@ -684,16 +676,25 @@ export const processTripData = (
 
   // 4. Construir el objeto final combinando los resultados
   const firstClientVisit = coreTripData.flags.find(
-    (flag) => flag.type === 'stop' && flag.clientKey
+    (flag) =>
+      flag.type === 'stop' &&
+      flag.clientKey &&
+      flag.clientName &&
+      flag.clientName !== 'Sin coincidencia'
   );
+
+  let workStartTime: string | undefined;
+  if (firstClientVisit) {
+    workStartTime = firstClientVisit.time;
+  } else {
+    workStartTime = coreTripData.flags.find((f) => f.type === 'start')?.time;
+  }
 
   const finalTripData: ProcessedTrip = {
     ...coreTripData,
     initialState: initialState,
     isTripOngoing: isTripOngoing,
-    workStartTime:
-      firstClientVisit?.time ||
-      coreTripData.flags.find((f) => f.type === 'start')?.time,
+    workStartTime: workStartTime,
     workEndTime: coreTripData.flags.find((f) => f.type === 'end')?.time,
   };
 
@@ -706,8 +707,16 @@ export const processTripData = (
   }
 
   if (processingMode === 'new') {
+    const firstClientVisitNew = coreTripData.flags.find(
+      (flag) =>
+        flag.type === 'stop' &&
+        flag.clientKey &&
+        flag.clientName &&
+        flag.clientName !== 'Sin coincidencia'
+    );
+
     finalTripData.workStartTime =
-      firstClientVisit?.time || firstMovingEvent?.time;
+      firstClientVisitNew?.time || firstMovingEvent?.time;
     finalTripData.workEndTime = lastMovingEvent?.time;
   }
 
