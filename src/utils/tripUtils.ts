@@ -381,7 +381,7 @@ const matchStopsWithClients = (
         clientKey: closestClient.key,
         clientName: closestClient.name,
         clientBranchNumber: closestClient.branchNumber,
-        clientBranchName: closestClient.name,
+        clientBranchName: closestClient.branchName,
       };
     }
     return flag;
