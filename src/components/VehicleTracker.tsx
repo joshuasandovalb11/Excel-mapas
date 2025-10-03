@@ -865,7 +865,15 @@ export default function VehicleTracker() {
           <p style="text-align: left;"><span id="total-distance">0.00 km</span></p>
           
           <p><strong>Fin de labores:</strong></p>
-          <p style="text-align: left;"><strong>${viewMode === 'new' && tripData.isTripOngoing ? (tripData.workEndTime || 'N/A') + ' En movimiento...' : tripData.workEndTime || 'N/A'}</strong></p>
+          <p style="text-align: left;">
+            <strong>
+              ${
+                viewMode === 'new' && tripData.isTripOngoing
+                  ? `(${tripData.workEndTime || 'N/A'}) En movimiento...`
+                  : tripData.workEndTime || 'N/A'
+              }
+            </strong>
+          </p>
         </div>
       </div>
     `;

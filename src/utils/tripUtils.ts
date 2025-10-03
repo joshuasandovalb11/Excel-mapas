@@ -595,21 +595,35 @@ const processBySpeedAndMovement = (
  * Determina qué método de procesamiento usar y enriquece los datos
  * según el modo de vista seleccionado ('current' o 'new').
  */
+// tripUtils.ts
+
+// ... (El resto de tus funciones se mantienen exactamente igual)
+
+/**
+ * --- FUNCIÓN PRINCIPAL Y PUNTO DE ENTRADA ---
+ * Determina qué método de procesamiento usar y enriquece los datos
+ * según el modo de vista seleccionado ('current' o 'new').
+ */
+// tripUtils.ts
+
+// ... (todas las demás funciones como las tienes actualmente)
+
 export const processTripData = (
   rawData: any[],
   processingMode: 'current' | 'new',
   tripDate: string,
   clientData: Client[] | null
 ): ProcessedTrip => {
-  // 1. Parsear todos los eventos del archivo (común para ambos métodos)
+  // 1. Lectura y saneamiento de datos (tu código actual está bien aquí)
   const findTimeColumn = (row: any): string | null => {
     if (!row) return null;
     const timePattern = /^\d{1,2}:\d{2}(:\d{2})?(\s?(AM|PM))?$/i;
     for (const key in row) {
-      if (typeof row[key] === 'string' && timePattern.test(row[key].trim())) {
+      const value = row[key];
+      if (typeof value === 'string' && timePattern.test(value.trim())) {
         return key;
       }
-      if (typeof row[key] === 'number' && row[key] < 1) {
+      if (typeof value === 'number' && value > 0 && value < 1) {
         return key;
       }
     }
@@ -623,40 +637,61 @@ export const processTripData = (
     }
     return null;
   };
+
   const timeColumn = rawData.length > 0 ? findTimeColumn(rawData[0]) : null;
-  if (!timeColumn) throw new Error('No se encontró columna de tiempo.');
+  if (!timeColumn) {
+    throw new Error(
+      'No se pudo encontrar una columna de tiempo válida en el archivo.'
+    );
+  }
 
   const allEvents: TripEvent[] = rawData
     .map((row: any, index: number) => {
-      const originalTime = row[timeColumn]
-        ? String(row[timeColumn]).trim()
-        : '00:00:00';
+      const excelTimeValue = row[timeColumn];
+      let originalTime = '00:00:00';
+      const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/;
+
+      if (typeof excelTimeValue === 'number' && excelTimeValue > 0) {
+        const date = XLSX.SSF.parse_date_code(excelTimeValue);
+        const pad = (num: number) => num.toString().padStart(2, '0');
+        if (date) {
+          originalTime = `${pad(date.H)}:${pad(date.M)}:${pad(date.S)}`;
+        }
+      } else if (typeof excelTimeValue === 'string') {
+        originalTime = excelTimeValue.trim();
+      }
+
+      // Si el formato de hora no es válido, se ignora la fila
+      if (!timeRegex.test(originalTime)) {
+        return null;
+      }
+
+      const convertedTime = convertToTijuanaTime(originalTime, tripDate);
+      if (!convertedTime) {
+        return null; // Ignorar si la conversión de zona horaria falla
+      }
+
       return {
         id: index + 1,
-        time: convertToTijuanaTime(originalTime, tripDate),
+        time: convertedTime,
         description: row['Descripción de Evento:'] || 'Sin descripción',
         speed: Number(row['Velocidad(km)']) || 0,
         lat: Number(row['Latitud']),
         lng: Number(row['Longitud']),
       };
     })
-    .filter((event) => event.lat && event.lng);
+    .filter(
+      (event): event is TripEvent =>
+        event !== null && !!event.lat && !!event.lng
+    );
 
   if (allEvents.length === 0) {
-    throw new Error('No se encontraron eventos con coordenadas válidas.');
+    throw new Error(
+      'No se encontraron eventos con coordenadas válidas en el archivo.'
+    );
   }
 
-  // 2. Calcular datos para la "Vista Completa"
-  const initialState: ProcessedTrip['initialState'] =
-    allEvents[0].speed > 0 ? 'En movimiento' : 'Apagado';
-  const firstMovingEvent = allEvents.find((e) => e.speed > 0);
-  const lastMovingEvent = allEvents
-    .slice()
-    .reverse()
-    .find((e) => e.speed > 0);
-  const isTripOngoing = allEvents[allEvents.length - 1].speed > 0;
-
-  // 3. Decidir qué método de procesamiento usar y ejecutarlo
+  // 2. Procesamiento del viaje (sin cambios)
   const hasStartEndEvents = allEvents.some((e) =>
     e.description.toLowerCase().includes('inicio de viaje')
   );
@@ -666,59 +701,72 @@ export const processTripData = (
     'initialState' | 'workStartTime' | 'workEndTime'
   >;
 
-  if (hasStartEndEvents) {
-    coreTripData = processByEventMarkers(allEvents);
-  } else {
+  try {
+    if (hasStartEndEvents) {
+      coreTripData = processByEventMarkers(allEvents);
+    } else {
+      coreTripData = processBySpeedAndMovement(allEvents);
+    }
+  } catch (error) {
+    console.warn(
+      'Fallo el método por eventos, usando método por velocidad como respaldo:',
+      error
+    );
     coreTripData = processBySpeedAndMovement(allEvents);
   }
 
   coreTripData.flags = matchStopsWithClients(coreTripData.flags, clientData);
 
-  // 4. Construir el objeto final combinando los resultados
+  // 3. Determinar estado y horas de trabajo (LÓGICA CORREGIDA)
+  const initialState: ProcessedTrip['initialState'] =
+    allEvents[0].speed > 0 ? 'En movimiento' : 'Apagado';
+  const isTripOngoing = allEvents[allEvents.length - 1].speed > 0;
+
+  const firstMovingEvent = allEvents.find((e) => e.speed > 0);
   const firstClientVisit = coreTripData.flags.find(
     (flag) =>
       flag.type === 'stop' &&
       flag.clientKey &&
-      flag.clientName &&
       flag.clientName !== 'Sin coincidencia'
   );
 
   let workStartTime: string | undefined;
-  if (firstClientVisit) {
-    workStartTime = firstClientVisit.time;
+  let workEndTime: string | undefined;
+
+  // --- 👇 AQUÍ ESTÁ LA LÓGICA CLAVE CORREGIDA ---
+
+  // Asignar hora de inicio
+  if (processingMode === 'new') {
+    // Vista Completa
+    workStartTime = firstClientVisit?.time || firstMovingEvent?.time;
   } else {
-    workStartTime = coreTripData.flags.find((f) => f.type === 'start')?.time;
+    // Vista Actual
+    workStartTime =
+      firstClientVisit?.time ||
+      coreTripData.flags.find((f) => f.type === 'start')?.time;
   }
 
+  // Asignar hora de fin para CÁLCULOS
+  // Para la Vista Completa, el fin es SIEMPRE la hora del último evento.
+  // Para la Vista Actual, es el "Fin de viaje" o, si no existe, la hora del último evento.
+  if (processingMode === 'new') {
+    workEndTime = allEvents[allEvents.length - 1].time;
+  } else {
+    workEndTime =
+      coreTripData.flags.find((f) => f.type === 'end')?.time ||
+      allEvents[allEvents.length - 1].time;
+  }
+
+  // 4. Construir el objeto final
   const finalTripData: ProcessedTrip = {
     ...coreTripData,
     initialState: initialState,
-    isTripOngoing: isTripOngoing,
+    isTripOngoing: isTripOngoing, // La UI usará esto para decidir si muestra la hora o "En movimiento"
     workStartTime: workStartTime,
-    workEndTime: coreTripData.flags.find((f) => f.type === 'end')?.time,
+    workEndTime: workEndTime, // Este valor siempre existirá para que los cálculos funcionen
   };
 
-  if (!finalTripData.workEndTime && lastMovingEvent && !isTripOngoing) {
-    finalTripData.workEndTime = lastMovingEvent.time;
-  }
-
-  if (isTripOngoing) {
-    finalTripData.workEndTime = undefined;
-  }
-
-  if (processingMode === 'new') {
-    const firstClientVisitNew = coreTripData.flags.find(
-      (flag) =>
-        flag.type === 'stop' &&
-        flag.clientKey &&
-        flag.clientName &&
-        flag.clientName !== 'Sin coincidencia'
-    );
-
-    finalTripData.workStartTime =
-      firstClientVisitNew?.time || firstMovingEvent?.time;
-    finalTripData.workEndTime = lastMovingEvent?.time;
-  }
+  // (Ya no necesitas los logs de depuración, los puedes quitar)
 
   return finalTripData;
 };
