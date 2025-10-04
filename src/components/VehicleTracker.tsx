@@ -839,41 +839,50 @@ export default function VehicleTracker() {
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
       <h4>Resumen del Viaje</h4>
-        <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1px;">
+        <div style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
           <p><strong>Estado inicial:</strong></p>
           <p style="text-align: left;">${tripData.initialState}</p>
+          <p></p>
           
           <p><strong>Inicio de labores:</strong></p>
           <p style="text-align: left;"><strong>${tripData.workStartTime || 'N/A'}</strong></p>
+          <p></p>
           
           <p><strong>Clientes Visitados:</strong></p>
           <p style="text-align: left;"><span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
+          <p></p>
           
           <p><strong>Tiempo con Clientes:</strong></p>
           <p style="text-align: left;">${formatDuration(summaryStats.timeWithClients)}</p>
+          <p style="text-align: left;"><strong>${((summaryStats.timeWithClients / (summaryStats.timeWithClients + summaryStats.timeWithNonClients + summaryStats.travelTime)) * 100).toFixed(1)}%</strong></p>
           
-          <p><strong>Tiempo con NO Clientes:</strong></p>
-          <p style="text-align: left;">${formatDuration(summaryStats.timeWithNonClients)}</p>
+          <p style="color: #FF0000;"><strong>Tiempo con NO Clientes:</strong></p>
+          <p style="text-align: left; color: #FF0000;">${formatDuration(summaryStats.timeWithNonClients)}</p>
+          <p style="text-align: left; color: #FF0000;"><strong>${((summaryStats.timeWithNonClients / (summaryStats.timeWithClients + summaryStats.timeWithNonClients + summaryStats.travelTime)) * 100).toFixed(1)}%</strong></p>
           
           <p><strong>Tiempo en Traslados:</strong></p>
           <p style="text-align: left;">${formatDuration(summaryStats.travelTime)}</p>
+          <p style="text-align: left;"><strong>${((summaryStats.travelTime / (summaryStats.timeWithClients + summaryStats.timeWithNonClients + summaryStats.travelTime)) * 100).toFixed(1)}%</strong></p>
           
           <p><strong>Distancia Tramo:</strong></p>
           <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
+          <p></p>
           
           <p><strong>Distancia Total:</strong></p>
           <p style="text-align: left;"><span id="total-distance">0.00 km</span></p>
+          <p></p>
           
           <p><strong>Fin de labores:</strong></p>
           <p style="text-align: left;">
             <strong>
               ${
                 viewMode === 'new' && tripData.isTripOngoing
-                  ? `(${tripData.workEndTime || 'N/A'}) En movimiento...`
+                  ? 'En movimiento...'
                   : tripData.workEndTime || 'N/A'
               }
             </strong>
           </p>
+          <p></p>
         </div>
       </div>
     `;
@@ -892,7 +901,7 @@ export default function VehicleTracker() {
             #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
             #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
             #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
-            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 270px; }
+            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 280px; }
             .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #00004F}
             .info-card p { margin: 3px 0; font-size: 12px; color: #00004F}
           </style>
@@ -1403,11 +1412,15 @@ export default function VehicleTracker() {
   };
 
   // Función para descargar el mapa HTML
+  // Función para descargar el mapa HTML
   const downloadMap = () => {
     const summaryStats = {
       timeWithClients: 0,
       timeWithNonClients: 0,
       travelTime: 0,
+      percentageClients: 0,
+      percentageNonClients: 0,
+      percentageTravel: 0,
     };
 
     if (tripData) {
@@ -1417,26 +1430,45 @@ export default function VehicleTracker() {
         return h * 60 + m;
       };
 
-      const startTimeFlag = tripData.flags.find((f) => f.type === 'start');
-      const endTimeFlag = tripData.flags.find((f) => f.type === 'end');
+      const startTime = tripData.workStartTime;
+      const endTime = tripData.workEndTime;
 
-      if (startTimeFlag && endTimeFlag) {
-        const totalTripDuration =
-          timeToMinutes(endTimeFlag.time) - timeToMinutes(startTimeFlag.time);
+      if (startTime && endTime) {
+        let totalTripDuration =
+          timeToMinutes(endTime) - timeToMinutes(startTime);
+        if (totalTripDuration < 0) {
+          totalTripDuration += 24 * 60;
+        }
+
         let totalStopTime = 0;
 
         tripData.flags.forEach((flag) => {
           if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
-            totalStopTime += flag.duration || 0;
+            const duration = flag.duration || 0;
+            totalStopTime += duration;
+
             if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
-              summaryStats.timeWithClients += flag.duration || 0;
+              summaryStats.timeWithClients += duration;
             } else {
-              summaryStats.timeWithNonClients += flag.duration || 0;
+              summaryStats.timeWithNonClients += duration;
             }
           }
         });
 
-        summaryStats.travelTime = totalTripDuration - totalStopTime;
+        summaryStats.travelTime = Math.max(
+          0,
+          totalTripDuration - totalStopTime
+        );
+
+        // Calcular porcentajes
+        if (totalTripDuration > 0) {
+          summaryStats.percentageClients =
+            (summaryStats.timeWithClients / totalTripDuration) * 100;
+          summaryStats.percentageNonClients =
+            (summaryStats.timeWithNonClients / totalTripDuration) * 100;
+          summaryStats.percentageTravel =
+            (summaryStats.travelTime / totalTripDuration) * 100;
+        }
       }
     }
 
@@ -1464,6 +1496,9 @@ export default function VehicleTracker() {
       timeWithClients: 0,
       timeWithNonClients: 0,
       travelTime: 0,
+      percentageClients: 0,
+      percentageNonClients: 0,
+      percentageTravel: 0,
     };
 
     if (!tripData) return stats;
@@ -1474,7 +1509,6 @@ export default function VehicleTracker() {
       return h * 60 + m;
     };
 
-    // Lógica modificada para usar los datos correctos según el viewMode
     const startTime = tripData.workStartTime;
     const endTime = tripData.workEndTime;
 
@@ -1501,6 +1535,15 @@ export default function VehicleTracker() {
     });
 
     stats.travelTime = Math.max(0, totalTripDuration - totalStopTime);
+
+    // Calcular porcentajes
+    if (totalTripDuration > 0) {
+      stats.percentageClients =
+        (stats.timeWithClients / totalTripDuration) * 100;
+      stats.percentageNonClients =
+        (stats.timeWithNonClients / totalTripDuration) * 100;
+      stats.percentageTravel = (stats.travelTime / totalTripDuration) * 100;
+    }
 
     return stats;
   };

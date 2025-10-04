@@ -533,15 +533,20 @@ const processBySpeedAndMovement = (
     const prevEvent = relevantEvents[i - 1];
     const currentEvent = relevantEvents[i];
 
+    // Detectar inicio de parada: cambio de velocidad > 0 a velocidad = 0
     if (currentEvent.speed === 0 && prevEvent.speed > 0) {
       stopStartInfo = currentEvent;
     }
 
+    // Detectar fin de parada: cambio de velocidad = 0 a velocidad > 0
     if (currentEvent.speed > 0 && prevEvent.speed === 0 && stopStartInfo) {
       const stopStartTime = parseTimeToMinutes(stopStartInfo.time);
-      const lastStopTime = parseTimeToMinutes(prevEvent.time);
-      let duration = lastStopTime - stopStartTime;
+      const stopEndTime = parseTimeToMinutes(prevEvent.time);
+      let duration = stopEndTime - stopStartTime;
       if (duration < 0) duration += 24 * 60;
+
+      // CAMBIO CRÍTICO: Solo agregar paradas con duración >= 2 minutos
+      // Esto evita paradas instantáneas y problemas de cálculo
       if (duration >= 2) {
         stopCounter++;
         flags.push({
@@ -557,6 +562,9 @@ const processBySpeedAndMovement = (
       stopStartInfo = null;
     }
   }
+
+  // NUEVO: Si hay una parada sin terminar al final (el vehículo terminó detenido)
+  // NO la agregamos porque no sabemos cuándo terminó realmente
 
   const lastTripEvent = relevantEvents[relevantEvents.length - 1];
   flags.push({
@@ -595,19 +603,6 @@ const processBySpeedAndMovement = (
  * Determina qué método de procesamiento usar y enriquece los datos
  * según el modo de vista seleccionado ('current' o 'new').
  */
-// tripUtils.ts
-
-// ... (El resto de tus funciones se mantienen exactamente igual)
-
-/**
- * --- FUNCIÓN PRINCIPAL Y PUNTO DE ENTRADA ---
- * Determina qué método de procesamiento usar y enriquece los datos
- * según el modo de vista seleccionado ('current' o 'new').
- */
-// tripUtils.ts
-
-// ... (todas las demás funciones como las tienes actualmente)
-
 export const processTripData = (
   rawData: any[],
   processingMode: 'current' | 'new',
@@ -685,13 +680,14 @@ export const processTripData = (
         event !== null && !!event.lat && !!event.lng
     );
 
+  allEvents.sort((a, b) => a.time.localeCompare(b.time));
+
   if (allEvents.length === 0) {
     throw new Error(
       'No se encontraron eventos con coordenadas válidas en el archivo.'
     );
   }
 
-  // 2. Procesamiento del viaje (sin cambios)
   const hasStartEndEvents = allEvents.some((e) =>
     e.description.toLowerCase().includes('inicio de viaje')
   );
@@ -723,6 +719,7 @@ export const processTripData = (
   const isTripOngoing = allEvents[allEvents.length - 1].speed > 0;
 
   const firstMovingEvent = allEvents.find((e) => e.speed > 0);
+  const lastMovingEvent = [...allEvents].reverse().find((e) => e.speed > 0);
   const firstClientVisit = coreTripData.flags.find(
     (flag) =>
       flag.type === 'stop' &&
@@ -733,40 +730,25 @@ export const processTripData = (
   let workStartTime: string | undefined;
   let workEndTime: string | undefined;
 
-  // --- 👇 AQUÍ ESTÁ LA LÓGICA CLAVE CORREGIDA ---
-
-  // Asignar hora de inicio
   if (processingMode === 'new') {
-    // Vista Completa
     workStartTime = firstClientVisit?.time || firstMovingEvent?.time;
+    workEndTime = lastMovingEvent?.time || allEvents[allEvents.length - 1].time;
   } else {
-    // Vista Actual
     workStartTime =
       firstClientVisit?.time ||
       coreTripData.flags.find((f) => f.type === 'start')?.time;
-  }
-
-  // Asignar hora de fin para CÁLCULOS
-  // Para la Vista Completa, el fin es SIEMPRE la hora del último evento.
-  // Para la Vista Actual, es el "Fin de viaje" o, si no existe, la hora del último evento.
-  if (processingMode === 'new') {
-    workEndTime = allEvents[allEvents.length - 1].time;
-  } else {
     workEndTime =
       coreTripData.flags.find((f) => f.type === 'end')?.time ||
       allEvents[allEvents.length - 1].time;
   }
 
-  // 4. Construir el objeto final
   const finalTripData: ProcessedTrip = {
     ...coreTripData,
     initialState: initialState,
-    isTripOngoing: isTripOngoing, // La UI usará esto para decidir si muestra la hora o "En movimiento"
+    isTripOngoing: isTripOngoing,
     workStartTime: workStartTime,
-    workEndTime: workEndTime, // Este valor siempre existirá para que los cálculos funcionen
+    workEndTime: workEndTime,
   };
-
-  // (Ya no necesitas los logs de depuración, los puedes quitar)
 
   return finalTripData;
 };
