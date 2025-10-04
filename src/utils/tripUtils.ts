@@ -680,8 +680,6 @@ export const processTripData = (
         event !== null && !!event.lat && !!event.lng
     );
 
-  allEvents.sort((a, b) => a.time.localeCompare(b.time));
-
   if (allEvents.length === 0) {
     throw new Error(
       'No se encontraron eventos con coordenadas válidas en el archivo.'
