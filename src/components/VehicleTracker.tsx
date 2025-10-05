@@ -800,6 +800,9 @@ export default function VehicleTracker() {
       timeWithClients: number;
       timeWithNonClients: number;
       travelTime: number;
+      percentageClients: number;
+      percentageNonClients: number;
+      percentageTravel: number;
     }
   ): string => {
     if (!tripData) return '';
@@ -854,16 +857,16 @@ export default function VehicleTracker() {
           
           <p><strong>Tiempo con Clientes:</strong></p>
           <p style="text-align: left;">${formatDuration(summaryStats.timeWithClients)}</p>
-          <p style="text-align: left;"><strong>${((summaryStats.timeWithClients / (summaryStats.timeWithClients + summaryStats.timeWithNonClients + summaryStats.travelTime)) * 100).toFixed(1)}%</strong></p>
+          <p style="text-align: left;"><strong>${summaryStats.percentageClients.toFixed(1)}%</strong></p>
           
           <p style="color: #FF0000;"><strong>Tiempo con NO Clientes:</strong></p>
           <p style="text-align: left; color: #FF0000;">${formatDuration(summaryStats.timeWithNonClients)}</p>
-          <p style="text-align: left; color: #FF0000;"><strong>${((summaryStats.timeWithNonClients / (summaryStats.timeWithClients + summaryStats.timeWithNonClients + summaryStats.travelTime)) * 100).toFixed(1)}%</strong></p>
-          
+          <p style="text-align: left; color: #FF0000;"><strong>${summaryStats.percentageNonClients.toFixed(1)}%</strong></p>
+
           <p><strong>Tiempo en Traslados:</strong></p>
           <p style="text-align: left;">${formatDuration(summaryStats.travelTime)}</p>
-          <p style="text-align: left;"><strong>${((summaryStats.travelTime / (summaryStats.timeWithClients + summaryStats.timeWithNonClients + summaryStats.travelTime)) * 100).toFixed(1)}%</strong></p>
-          
+          <p style="text-align: left;"><strong>${summaryStats.percentageTravel.toFixed(1)}%</strong></p>
+
           <p><strong>Distancia Tramo:</strong></p>
           <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
           <p></p>
@@ -1503,22 +1506,28 @@ export default function VehicleTracker() {
 
     if (!tripData) return stats;
 
+    // Calcular duración TOTAL real del viaje usando los eventos de inicio y fin
     const timeToMinutes = (timeStr: string): number => {
       if (!timeStr) return 0;
       const [h, m] = timeStr.split(':').map(Number);
       return h * 60 + m;
     };
 
-    const startTime = tripData.workStartTime;
-    const endTime = tripData.workEndTime;
+    // ENCONTRAR el primer y último evento real del viaje (no workStartTime/workEndTime)
+    const startEvent = tripData.flags.find(flag => flag.type === 'start');
+    const endEvent = tripData.flags.find(flag => flag.type === 'end');
+    
+    if (!startEvent || !endEvent) return stats;
 
-    if (!startTime || !endTime) return stats;
-
-    let totalTripDuration = timeToMinutes(endTime) - timeToMinutes(startTime);
+    const startTimeMinutes = timeToMinutes(startEvent.time);
+    const endTimeMinutes = timeToMinutes(endEvent.time);
+    
+    let totalTripDuration = endTimeMinutes - startTimeMinutes;
     if (totalTripDuration < 0) {
-      totalTripDuration += 24 * 60;
+      totalTripDuration += 24 * 60; // Ajustar para viajes que cruzan medianoche
     }
 
+    // Calcular tiempos de parada por categoría
     let totalStopTime = 0;
 
     tripData.flags.forEach((flag) => {
@@ -1534,16 +1543,33 @@ export default function VehicleTracker() {
       }
     });
 
+    // El tiempo de traslado es el tiempo total MENOS el tiempo total de paradas
     stats.travelTime = Math.max(0, totalTripDuration - totalStopTime);
+
+    // Verificar que la suma sea consistente
+    const totalCalculatedTime = stats.timeWithClients + stats.timeWithNonClients + stats.travelTime;
+    
+    // Si hay discrepancia por redondeo, ajustar el tiempo de traslado
+    if (Math.abs(totalCalculatedTime - totalTripDuration) > 1) {
+      stats.travelTime = Math.max(0, totalTripDuration - stats.timeWithClients - stats.timeWithNonClients);
+    }
 
     // Calcular porcentajes
     if (totalTripDuration > 0) {
-      stats.percentageClients =
-        (stats.timeWithClients / totalTripDuration) * 100;
-      stats.percentageNonClients =
-        (stats.timeWithNonClients / totalTripDuration) * 100;
+      stats.percentageClients = (stats.timeWithClients / totalTripDuration) * 100;
+      stats.percentageNonClients = (stats.timeWithNonClients / totalTripDuration) * 100;
       stats.percentageTravel = (stats.travelTime / totalTripDuration) * 100;
     }
+
+    // DEBUG: Log para verificar cálculos (puedes remover esto después)
+    console.log('Resumen de tiempos:', {
+      totalTripDuration,
+      timeWithClients: stats.timeWithClients,
+      timeWithNonClients: stats.timeWithNonClients,
+      travelTime: stats.travelTime,
+      totalCalculated: totalCalculatedTime,
+      totalStops: totalStopTime
+    });
 
     return stats;
   };
