@@ -120,22 +120,16 @@ export default function VehicleTracker() {
   ): boolean => {
     if (!time || !tripDate) return true;
 
-    const dateParts = tripDate.split(/[-/]/);
-    const year = parseInt(dateParts[0], 10);
-    const month = parseInt(dateParts[1], 10) - 1;
-    const dayOfMonth = parseInt(dateParts[2], 10);
-
     const [hours, minutes] = time.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes;
 
-    const date = new Date(year, month, dayOfMonth, hours, minutes);
+    // Horario laboral: 8:30 (510 minutos) a 19:00 (1140 minutos)
+    const WORK_START_MINUTES = 8 * 60 + 30; // 510
+    const WORK_END_MINUTES = 19 * 60; // 1140
 
-    const day = date.getDay();
-    const hour = date.getHours();
-
-    const isWeekday = day >= 1 && day <= 5;
-    const isWorkingTime = hour >= 7 && hour < 19;
-
-    return isWeekday && isWorkingTime;
+    return (
+      totalMinutes >= WORK_START_MINUTES && totalMinutes < WORK_END_MINUTES
+    );
   };
 
   // Efecto para establecer si hay match con respecto a la ubicacion y al cliente
@@ -803,6 +797,9 @@ export default function VehicleTracker() {
       percentageClients: number;
       percentageNonClients: number;
       percentageTravel: number;
+      timeWithClientsAfterHours: number;
+      timeWithNonClientsAfterHours: number;
+      travelTimeAfterHours: number;
     }
   ): string => {
     if (!tripData) return '';
@@ -816,11 +813,12 @@ export default function VehicleTracker() {
       filteredFlags.length > 0
         ? `{lat: ${filteredFlags[0].lat}, lng: ${filteredFlags[0].lng}}`
         : '{lat: 25.0, lng: -100.0}';
+
     const infoBoxHTML = vehicleInfo
       ? `
         <div id="info-box" class="info-card">
         <h4>Información del Viaje</h4>
-          <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 1px;">
+          <div style="display: grid; grid-template-columns: 1.5fr 1.4fr; gap: 1px;">
               <p><strong>Descripción:</strong></p>
               <p style="text-align: left;">${vehicleInfo.descripcion}</p>
 
@@ -841,7 +839,7 @@ export default function VehicleTracker() {
 
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
-      <h4>Resumen del Viaje</h4>
+      <h4>Resumen del Viaje (8:30 - 19:00)</h4>
         <div style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
           <p><strong>Estado inicial:</strong></p>
           <p style="text-align: left;">${tripData.initialState}</p>
@@ -862,11 +860,28 @@ export default function VehicleTracker() {
           <p style="color: #FF0000;"><strong>Tiempo con NO Clientes:</strong></p>
           <p style="text-align: left; color: #FF0000;">${formatDuration(summaryStats.timeWithNonClients)}</p>
           <p style="text-align: left; color: #FF0000;"><strong>${summaryStats.percentageNonClients.toFixed(1)}%</strong></p>
-
+          
           <p><strong>Tiempo en Traslados:</strong></p>
           <p style="text-align: left;">${formatDuration(summaryStats.travelTime)}</p>
           <p style="text-align: left;"><strong>${summaryStats.percentageTravel.toFixed(1)}%</strong></p>
-
+          
+          <!-- TIEMPOS FUERA DE HORARIO LABORAL -->
+          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"><strong>Fuera de Horario:</strong></p>
+          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
+          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
+          
+          <p style="color: #888;"><strong>• Con Clientes:</strong></p>
+          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithClientsAfterHours)}</p>
+          <p style="text-align: left; color: #888;"></p>
+          
+          <p style="color: #888;"><strong>• Con NO Clientes:</strong></p>
+          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithNonClientsAfterHours)}</p>
+          <p style="text-align: left; color: #888;"></p>
+          
+          <p style="color: #888;"><strong>• En Traslados:</strong></p>
+          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.travelTimeAfterHours)}</p>
+          <p style="text-align: left; color: #888;"></p>
+          
           <p><strong>Distancia Tramo:</strong></p>
           <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
           <p></p>
@@ -903,7 +918,7 @@ export default function VehicleTracker() {
             #map { height: 100%; width: 100%; } body, html { height: 100%; margin: 0; padding: 0; } .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 12px !important; } h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } h3 span { font-size: 20px; margin-right: 8px; } p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
             #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
             #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
-            #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(20%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
+            #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(10%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
             .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 280px; }
             .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #00004F}
             .info-card p { margin: 3px 0; font-size: 12px; color: #00004F}
@@ -1415,65 +1430,8 @@ export default function VehicleTracker() {
   };
 
   // Función para descargar el mapa HTML
-  // Función para descargar el mapa HTML
   const downloadMap = () => {
-    const summaryStats = {
-      timeWithClients: 0,
-      timeWithNonClients: 0,
-      travelTime: 0,
-      percentageClients: 0,
-      percentageNonClients: 0,
-      percentageTravel: 0,
-    };
-
-    if (tripData) {
-      const timeToMinutes = (timeStr: string): number => {
-        if (!timeStr) return 0;
-        const [h, m] = timeStr.split(':').map(Number);
-        return h * 60 + m;
-      };
-
-      const startTime = tripData.workStartTime;
-      const endTime = tripData.workEndTime;
-
-      if (startTime && endTime) {
-        let totalTripDuration =
-          timeToMinutes(endTime) - timeToMinutes(startTime);
-        if (totalTripDuration < 0) {
-          totalTripDuration += 24 * 60;
-        }
-
-        let totalStopTime = 0;
-
-        tripData.flags.forEach((flag) => {
-          if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
-            const duration = flag.duration || 0;
-            totalStopTime += duration;
-
-            if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
-              summaryStats.timeWithClients += duration;
-            } else {
-              summaryStats.timeWithNonClients += duration;
-            }
-          }
-        });
-
-        summaryStats.travelTime = Math.max(
-          0,
-          totalTripDuration - totalStopTime
-        );
-
-        // Calcular porcentajes
-        if (totalTripDuration > 0) {
-          summaryStats.percentageClients =
-            (summaryStats.timeWithClients / totalTripDuration) * 100;
-          summaryStats.percentageNonClients =
-            (summaryStats.timeWithNonClients / totalTripDuration) * 100;
-          summaryStats.percentageTravel =
-            (summaryStats.travelTime / totalTripDuration) * 100;
-        }
-      }
-    }
+    const summaryStats = calculateSummaryStats();
 
     const htmlContent = generateMapHTML(
       vehicleInfo,
@@ -1496,80 +1454,173 @@ export default function VehicleTracker() {
   // Función auxiliar para calcular estadísticas del viaje
   const calculateSummaryStats = () => {
     const stats = {
+      // Tiempos dentro de horario laboral (8:30 - 19:00)
       timeWithClients: 0,
       timeWithNonClients: 0,
       travelTime: 0,
+
+      // Tiempos fuera de horario laboral
+      timeWithClientsAfterHours: 0,
+      timeWithNonClientsAfterHours: 0,
+      travelTimeAfterHours: 0,
+
+      // Totales
+      totalWorkingTime: 0,
+      totalAfterHoursTime: 0,
+
+      // Porcentajes (solo del horario laboral)
       percentageClients: 0,
       percentageNonClients: 0,
       percentageTravel: 0,
     };
 
-    if (!tripData) return stats;
+    if (!tripData || !vehicleInfo?.fecha) return stats;
 
-    // Calcular duración TOTAL real del viaje usando los eventos de inicio y fin
     const timeToMinutes = (timeStr: string): number => {
       if (!timeStr) return 0;
-      const [h, m] = timeStr.split(':').map(Number);
-      return h * 60 + m;
+      const [h, m, s] = timeStr.split(':').map(Number);
+      return h * 60 + m + (s || 0) / 60;
     };
 
-    // ENCONTRAR el primer y último evento real del viaje (no workStartTime/workEndTime)
-    const startEvent = tripData.flags.find(flag => flag.type === 'start');
-    const endEvent = tripData.flags.find(flag => flag.type === 'end');
-    
-    if (!startEvent || !endEvent) return stats;
+    // Horario laboral: 8:30 (510 minutos) a 19:00 (1140 minutos)
+    const WORK_START_MINUTES = 8 * 60 + 30; // 510
+    const WORK_END_MINUTES = 19 * 60; // 1140
 
-    const startTimeMinutes = timeToMinutes(startEvent.time);
-    const endTimeMinutes = timeToMinutes(endEvent.time);
-    
-    let totalTripDuration = endTimeMinutes - startTimeMinutes;
-    if (totalTripDuration < 0) {
-      totalTripDuration += 24 * 60; // Ajustar para viajes que cruzan medianoche
-    }
+    // Función para calcular cuántos minutos de una duración caen dentro del horario laboral
+    const splitDurationByWorkingHours = (
+      startTime: string,
+      durationMinutes: number
+    ): { withinHours: number; outsideHours: number } => {
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = startMinutes + durationMinutes;
 
-    // Calcular tiempos de parada por categoría
-    let totalStopTime = 0;
+      let withinHours = 0;
+      let outsideHours = 0;
 
+      // Iterar minuto por minuto para determinar si está dentro o fuera del horario
+      for (let minute = startMinutes; minute < endMinutes; minute++) {
+        const currentMinute = minute % (24 * 60); // Manejar cruce de medianoche
+
+        if (
+          currentMinute >= WORK_START_MINUTES &&
+          currentMinute < WORK_END_MINUTES
+        ) {
+          withinHours++;
+        } else {
+          outsideHours++;
+        }
+      }
+
+      return { withinHours, outsideHours };
+    };
+
+    // Obtener eventos de inicio y fin reales del viaje
+    const startEvents = tripData.flags.filter((flag) => flag.type === 'start');
+    const endEvents = tripData.flags.filter((flag) => flag.type === 'end');
+
+    if (startEvents.length === 0 || endEvents.length === 0) return stats;
+
+    const firstStartEvent = startEvents[0];
+    const lastEndEvent = endEvents[endEvents.length - 1];
+
+    // CALCULAR TIEMPO TOTAL DEL VIAJE
+    const calculateWorkingTimeBetween = (
+      startTime: string,
+      endTime: string
+    ): {
+      totalMinutes: number;
+      workingMinutes: number;
+      afterHoursMinutes: number;
+    } => {
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+
+      let totalMinutes = 0;
+      let workingMinutes = 0;
+      let afterHoursMinutes = 0;
+
+      if (endMinutes >= startMinutes) {
+        totalMinutes = endMinutes - startMinutes;
+        for (let minute = startMinutes; minute < endMinutes; minute++) {
+          if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
+            workingMinutes++;
+          } else {
+            afterHoursMinutes++;
+          }
+        }
+      } else {
+        // Viaje que cruza medianoche
+        totalMinutes = 24 * 60 - startMinutes + endMinutes;
+
+        // Primera parte: desde startTime hasta medianoche
+        for (let minute = startMinutes; minute < 24 * 60; minute++) {
+          if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
+            workingMinutes++;
+          } else {
+            afterHoursMinutes++;
+          }
+        }
+        // Segunda parte: desde medianoche hasta endTime
+        for (let minute = 0; minute < endMinutes; minute++) {
+          if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
+            workingMinutes++;
+          } else {
+            afterHoursMinutes++;
+          }
+        }
+      }
+
+      return { totalMinutes, workingMinutes, afterHoursMinutes };
+    };
+
+    const tripTimes = calculateWorkingTimeBetween(
+      firstStartEvent.time,
+      lastEndEvent.time
+    );
+
+    stats.totalWorkingTime = tripTimes.workingMinutes;
+    stats.totalAfterHoursTime = tripTimes.afterHoursMinutes;
+
+    // CALCULAR TIEMPOS DE PARADA (dividiendo según horario)
     tripData.flags.forEach((flag) => {
       if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
         const duration = flag.duration || 0;
-        totalStopTime += duration;
+        const split = splitDurationByWorkingHours(flag.time, duration);
 
         if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
-          stats.timeWithClients += duration;
+          stats.timeWithClients += split.withinHours;
+          stats.timeWithClientsAfterHours += split.outsideHours;
         } else {
-          stats.timeWithNonClients += duration;
+          stats.timeWithNonClients += split.withinHours;
+          stats.timeWithNonClientsAfterHours += split.outsideHours;
         }
       }
     });
 
-    // El tiempo de traslado es el tiempo total MENOS el tiempo total de paradas
-    stats.travelTime = Math.max(0, totalTripDuration - totalStopTime);
+    // CALCULAR TIEMPO DE TRASLADO
+    const totalStopTimeWorkingHours =
+      stats.timeWithClients + stats.timeWithNonClients;
+    stats.travelTime = Math.max(
+      0,
+      stats.totalWorkingTime - totalStopTimeWorkingHours
+    );
 
-    // Verificar que la suma sea consistente
-    const totalCalculatedTime = stats.timeWithClients + stats.timeWithNonClients + stats.travelTime;
-    
-    // Si hay discrepancia por redondeo, ajustar el tiempo de traslado
-    if (Math.abs(totalCalculatedTime - totalTripDuration) > 1) {
-      stats.travelTime = Math.max(0, totalTripDuration - stats.timeWithClients - stats.timeWithNonClients);
+    const totalStopTimeAfterHours =
+      stats.timeWithClientsAfterHours + stats.timeWithNonClientsAfterHours;
+    stats.travelTimeAfterHours = Math.max(
+      0,
+      stats.totalAfterHoursTime - totalStopTimeAfterHours
+    );
+
+    // CALCULAR PORCENTAJES (solo del horario laboral)
+    if (stats.totalWorkingTime > 0) {
+      stats.percentageClients =
+        (stats.timeWithClients / stats.totalWorkingTime) * 100;
+      stats.percentageNonClients =
+        (stats.timeWithNonClients / stats.totalWorkingTime) * 100;
+      stats.percentageTravel =
+        (stats.travelTime / stats.totalWorkingTime) * 100;
     }
-
-    // Calcular porcentajes
-    if (totalTripDuration > 0) {
-      stats.percentageClients = (stats.timeWithClients / totalTripDuration) * 100;
-      stats.percentageNonClients = (stats.timeWithNonClients / totalTripDuration) * 100;
-      stats.percentageTravel = (stats.travelTime / totalTripDuration) * 100;
-    }
-
-    // DEBUG: Log para verificar cálculos (puedes remover esto después)
-    console.log('Resumen de tiempos:', {
-      totalTripDuration,
-      timeWithClients: stats.timeWithClients,
-      timeWithNonClients: stats.timeWithNonClients,
-      travelTime: stats.travelTime,
-      totalCalculated: totalCalculatedTime,
-      totalStops: totalStopTime
-    });
 
     return stats;
   };
