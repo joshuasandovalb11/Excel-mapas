@@ -800,6 +800,7 @@ export default function VehicleTracker() {
       timeWithClientsAfterHours: number;
       timeWithNonClientsAfterHours: number;
       travelTimeAfterHours: number;
+      totalAfterHoursTime: number;
     }
   ): string => {
     if (!tripData) return '';
@@ -865,23 +866,6 @@ export default function VehicleTracker() {
           <p style="text-align: left;">${formatDuration(summaryStats.travelTime)}</p>
           <p style="text-align: left;"><strong>${summaryStats.percentageTravel.toFixed(1)}%</strong></p>
           
-          <!-- TIEMPOS FUERA DE HORARIO LABORAL -->
-          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"><strong>Fuera de Horario:</strong></p>
-          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
-          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
-          
-          <p style="color: #888;"><strong>• Con Clientes:</strong></p>
-          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithClientsAfterHours)}</p>
-          <p style="text-align: left; color: #888;"></p>
-          
-          <p style="color: #888;"><strong>• Con NO Clientes:</strong></p>
-          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithNonClientsAfterHours)}</p>
-          <p style="text-align: left; color: #888;"></p>
-          
-          <p style="color: #888;"><strong>• En Traslados:</strong></p>
-          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.travelTimeAfterHours)}</p>
-          <p style="text-align: left; color: #888;"></p>
-          
           <p><strong>Distancia Tramo:</strong></p>
           <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
           <p></p>
@@ -901,6 +885,24 @@ export default function VehicleTracker() {
             </strong>
           </p>
           <p></p>
+
+          <!-- TIEMPOS FUERA DE HORARIO LABORAL -->
+          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"><strong>Fuera de Horario:</strong></p>
+          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
+          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
+          
+          <p style="color: #888;"><strong>• Con Clientes:</strong></p>
+          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithClientsAfterHours)}</p>
+          <p style="text-align: left; color: #888;"></p>
+          
+          <p style="color: #888;"><strong>• Con NO Clientes:</strong></p>
+          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithNonClientsAfterHours)}</p>
+          <p style="text-align: left; color: #888;"></p>
+          
+          <p style="color: #888;"><strong>• En Traslados:</strong></p>
+          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.travelTimeAfterHours)}</p>
+          <p style="text-align: left; color: #888;"></p>
+          
         </div>
       </div>
     `;
@@ -1499,7 +1501,7 @@ export default function VehicleTracker() {
 
       // Iterar minuto por minuto para determinar si está dentro o fuera del horario
       for (let minute = startMinutes; minute < endMinutes; minute++) {
-        const currentMinute = minute % (24 * 60); // Manejar cruce de medianoche
+        const currentMinute = minute % (24 * 60);
 
         if (
           currentMinute >= WORK_START_MINUTES &&
@@ -1549,10 +1551,8 @@ export default function VehicleTracker() {
           }
         }
       } else {
-        // Viaje que cruza medianoche
         totalMinutes = 24 * 60 - startMinutes + endMinutes;
 
-        // Primera parte: desde startTime hasta medianoche
         for (let minute = startMinutes; minute < 24 * 60; minute++) {
           if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
             workingMinutes++;
@@ -1560,7 +1560,6 @@ export default function VehicleTracker() {
             afterHoursMinutes++;
           }
         }
-        // Segunda parte: desde medianoche hasta endTime
         for (let minute = 0; minute < endMinutes; minute++) {
           if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
             workingMinutes++;
