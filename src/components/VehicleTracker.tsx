@@ -9,6 +9,7 @@ import {
   UserCheck,
   Truck,
   FileText,
+  ExternalLink,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 
@@ -1498,6 +1499,31 @@ export default function VehicleTracker() {
     URL.revokeObjectURL(url);
   };
 
+  // FUNCIÓN PARA ABRIR EL MAPA EN UNA NUEVA PESTAÑA (PARA MÓVILES)
+  const openMapInTab = () => {
+    // 1. Llama a tu función existente para generar el contenido HTML del mapa
+    const summaryStats = calculateSummaryStats();
+    const htmlContent = generateMapHTML(
+      vehicleInfo,
+      clientData,
+      matchedStopsCount,
+      selection.value,
+      summaryStats
+    );
+
+    // 2. Crea un "Blob", que es como un archivo temporal en la memoria del navegador
+    const blob = new Blob([htmlContent], { type: 'text/html' });
+
+    // 3. Crea una URL segura y temporal para ese Blob
+    const url = URL.createObjectURL(blob);
+
+    // 4. Abre esa URL en una nueva pestaña del navegador
+    window.open(url, '_blank');
+
+    // 5. Opcional: Se libera la memoria de la URL después de un breve instante
+    setTimeout(() => URL.revokeObjectURL(url), 100);
+  };
+
   // Función auxiliar para calcular estadísticas del viaje
   const calculateSummaryStats = () => {
     const stats = {
@@ -1905,13 +1931,26 @@ export default function VehicleTracker() {
                 {isGeneratingReport ? 'Generando...' : 'Descargar Reporte'}
               </button>
 
-              <button
-                onClick={downloadMap}
-                className="flex items-center justify-center w-full px-6 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
-              >
-                <Download className="h-5 w-5 mr-2" />
-                Descargar Mapa HTML
-              </button>
+              {/* Contenedor para los botones de mapa */}
+              <div className="w-full">
+                {/* BOTÓN SOLO PARA MÓVILES (visible por defecto, oculto desde 'sm' en adelante) */}
+                <button
+                  onClick={openMapInTab}
+                  className="flex sm:hidden items-center justify-center w-full px-4 py-3 bg-teal-500 text-white font-bold rounded-lg hover:bg-teal-600 transition-transform transform hover:scale-105"
+                >
+                  <ExternalLink className="h-5 w-5 mr-2" />
+                  Abrir Mapa
+                </button>
+
+                {/* BOTÓN SOLO PARA ESCRITORIO (oculto por defecto, visible desde 'sm' en adelante) */}
+                <button
+                  onClick={downloadMap}
+                  className="hidden sm:flex items-center justify-center w-full px-4 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
+                >
+                  <Download className="h-5 w-5 mr-2" />
+                  Descargar Mapa
+                </button>
+              </div>
             </div>
           </div>
         )}
