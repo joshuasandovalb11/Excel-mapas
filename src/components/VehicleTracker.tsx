@@ -1933,7 +1933,7 @@ export default function VehicleTracker() {
 
               {/* Contenedor para los botones de mapa */}
               <div className="w-full">
-                {/* BOTÓN SOLO PARA MÓVILES (visible por defecto, oculto desde 'sm' en adelante) */}
+                {/* BOTÓN SOLO PARA MÓVILES */}
                 <button
                   onClick={openMapInTab}
                   className="flex sm:hidden items-center justify-center w-full px-4 py-3 bg-teal-500 text-white font-bold rounded-lg hover:bg-teal-600 transition-transform transform hover:scale-105"
@@ -1942,7 +1942,7 @@ export default function VehicleTracker() {
                   Abrir Mapa
                 </button>
 
-                {/* BOTÓN SOLO PARA ESCRITORIO (oculto por defecto, visible desde 'sm' en adelante) */}
+                {/* BOTÓN SOLO PARA ESCRITORIO */}
                 <button
                   onClick={downloadMap}
                   className="hidden sm:flex items-center justify-center w-full px-4 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
