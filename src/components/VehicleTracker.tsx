@@ -911,6 +911,7 @@ export default function VehicleTracker() {
       <!DOCTYPE html>
       <html>
         <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <link
             rel="stylesheet"
             href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"
@@ -924,6 +925,50 @@ export default function VehicleTracker() {
             .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 280px; }
             .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #00004F}
             .info-card p { margin: 3px 0; font-size: 12px; color: #00004F}
+
+            @media (max-width: 768px) {
+              body, html {
+                height: auto; /* Permite que el body crezca para alojar el contenido */
+              }
+
+              body {
+                display: flex;
+                flex-direction: column;
+              }
+
+              #map {
+                position: relative; /* Quita el posicionamiento absoluto */
+                height: 90vh; /* Asigna una altura, por ejemplo 60% del alto de la pantalla */
+                width: 100%;
+                order: 1; /* El mapa aparecerá primero */
+              }
+
+              #controls {
+                position: relative; /* Quita el posicionamiento absoluto */
+                order: 2; /* Los controles aparecerán después del mapa */
+                top: auto;
+                left: auto;
+                transform: none; /* Resetea la transformación */
+                margin: 10px auto; /* Centra los controles */
+                width: fit-content;
+              }
+
+              #info-container {
+                position: static; /* Quita el posicionamiento absoluto */
+                order: 3; /* Las tarjetas aparecerán al final */
+                transform: none; /* Resetea la transformación */
+                width: 95%; /* Ocupa casi todo el ancho */
+                margin: 10px auto 20px auto; /* Centra y añade espacio */
+                right: auto;
+                top: auto;
+                gap: 15px;
+              }
+
+              .info-card {
+                width: 100%; /* Las tarjetas ocupan el ancho del contenedor */
+                box-sizing: border-box; /* Asegura que el padding no cause desbordamiento */
+              }
+            }
           </style>
         </head>
         <body>
@@ -1850,7 +1895,7 @@ export default function VehicleTracker() {
                 <span className="text-sm text-gray-500">metros</span>
               </div>
             </div>
-            <div className="flex gap-4">
+            <div className="grid gap-2 md:grid-cols-1 lg:flex lg:gap-4">
               <button
                 onClick={downloadReport}
                 disabled={isGeneratingReport || !selection.value}
