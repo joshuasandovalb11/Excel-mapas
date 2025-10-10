@@ -820,7 +820,7 @@ export default function VehicleTracker() {
       ? `
         <div id="info-box" class="info-card">
         <h4>Información del Viaje</h4>
-          <div style="display: grid; grid-template-columns: 1.5fr 1.4fr; gap: 1px;">
+          <div class="info-grid" style="display: grid; grid-template-columns: 1.5fr 1.4fr; gap: 1px;">
               <p><strong>Descripción:</strong></p>
               <p style="text-align: left;">${vehicleInfo.descripcion}</p>
 
@@ -842,7 +842,7 @@ export default function VehicleTracker() {
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
       <h4>Resumen del Viaje (8:30 - 19:00)</h4>
-        <div style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
+        <div class="summary-grid" style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
           <p><strong>Estado inicial:</strong></p>
           <p style="text-align: left;">${tripData.initialState}</p>
           <p></p>
@@ -912,6 +912,7 @@ export default function VehicleTracker() {
       <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <link
             rel="stylesheet"
@@ -919,87 +920,453 @@ export default function VehicleTracker() {
           />
 
           <style>
-            #map { height: 100%; width: 100%; } body, html { height: 100%; margin: 0; padding: 0; } .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 12px !important; } h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } h3 span { font-size: 20px; margin-right: 8px; } p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
-            #controls { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: white; padding: 8px; border: 1px solid #ccc; border-radius: 8px; display: flex; gap: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
-            #controls button { font-family: sans-serif; font-size: 12px; padding: 8px 12px; cursor: pointer; border-radius: 5px; border: 1px solid #aaa; } #controls button:disabled { cursor: not-allowed; background-color: #f0f0f0; color: #aaa; }
-            #info-container { position: absolute; top: 10px; right: 10px; transform: translateY(10%); z-index: 10; display: flex; flex-direction: column; gap: 10px; }
-            .info-card { background: rgba(255, 255, 255, 0.9); padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; box-shadow: 0 1px 4px rgba(0,0,0,0.2); font-family: sans-serif; font-size: 12px; width: 280px; }
-            .info-card h4 { font-size: 14px; font-weight: bold; margin: 0 0 5px 0; padding-bottom: 4px; border-bottom: 1px solid #ddd; color: #00004F}
-            .info-card p { margin: 3px 0; font-size: 12px; color: #00004F}
+            #map { height: 100%; width: 100%; } 
+            body, html { height: 100%; margin: 0; padding: 0; } 
+            .gm-style-iw-d { overflow: hidden !important; } 
+            .gm-style-iw-c { padding: 12px !important; } 
+            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } 
+            h3 span { font-size: 20px; margin-right: 8px; } 
+            p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
+            
+            #controls { 
+              position: absolute; 
+              top: 10px; 
+              left: 50%; 
+              transform: translateX(-50%); 
+              z-index: 10; 
+              background: white; 
+              padding: 8px; 
+              border: 1px solid #ccc; 
+              border-radius: 8px; 
+              display: flex; 
+              gap: 8px; 
+              box-shadow: 0 2px 6px rgba(0,0,0,0.3); 
+            }
+
+            #controls button { 
+              font-family: sans-serif; 
+              font-size: 12px; 
+              padding: 8px 12px; 
+              cursor: pointer; 
+              border-radius: 5px; 
+              border: 1px solid #aaa; 
+              background: white;
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            } 
+
+            #controls button:disabled { 
+              cursor: not-allowed; 
+              background-color: #f0f0f0; 
+              color: #aaa; 
+            }
+
+            #controls .btn-icon {
+              display: none;
+              font-size: 14px;
+              font-weight: bold;
+            }
+
+            #controls .btn-text {
+              display: inline;
+            }
+            
+            #info-container { 
+              position: absolute; 
+              top: 10px; 
+              right: 10px; 
+              transform: translateY(10%); 
+              z-index: 10; 
+              display: flex; 
+              flex-direction: column; 
+              gap: 10px; 
+            }
+            
+            .info-card { 
+              background: rgba(255, 255, 255, 0.9); 
+              padding: 8px 12px; 
+              border-radius: 6px; 
+              border: 1px solid #ccc; 
+              box-shadow: 0 1px 4px rgba(0,0,0,0.2); 
+              font-family: sans-serif; 
+              font-size: 12px; 
+              width: 280px; 
+            }
+            
+            .info-card h4 { 
+              font-size: 14px; 
+              font-weight: bold; 
+              margin: 0 0 5px 0; 
+              padding-bottom: 4px; 
+              border-bottom: 1px solid #ddd; 
+              color: #00004F
+            }
+            
+            .info-card p { 
+              margin: 3px 0; 
+              font-size: 12px; 
+              color: #00004F
+            }
+
+            /* Botón de información para móvil */
+            #info-toggle-btn {
+              display: none;
+              position: absolute;
+              top: 10px;
+              left: 10px;
+              z-index: 15;
+              background: white;
+              border: 2px solid #0275D8;
+              border-radius: 50%;
+              width: 38px;
+              height: 38px;
+              cursor: pointer;
+              box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+              align-items: center;
+              justify-content: center;
+              font-size: 24px;
+              color: #0275D8;
+              transition: all 0.3s ease;
+            }
+
+            #info-toggle-btn:active {
+              transform: scale(0.95);
+              background: #f0f0f0;
+            }
+
+            /* Modal para información en móvil */
+            #info-modal {
+              display: none;
+              position: fixed;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: rgba(0, 0, 0, 0.5);
+              z-index: 20;
+              align-items: center;
+              justify-content: center;
+              padding: 20px;
+            }
+
+            #info-modal.active {
+              display: flex;
+            }
+
+            #info-modal-content {
+              background: white;
+              border-radius: 12px;
+              max-height: 85vh;
+              width: 100%;
+              max-width: 400px;
+              box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+              padding: 16px;
+              display: flex;
+              flex-direction: column;
+              overflow: hidden;
+            }
+
+            #info-modal-content > div:last-child {
+              overflow-y: auto;
+              flex: 1;
+              margin-top: 10px;
+            }
+
+            #info-modal-close {
+              float: right;
+              font-size: 28px;
+              font-weight: bold;
+              color: #666;
+              cursor: pointer;
+              line-height: 20px;
+            }
+
+            #info-modal-close:hover {
+              color: #000;
+            }
 
             @media (max-width: 768px) {
               body, html {
-                height: auto; /* Permite que el body crezca para alojar el contenido */
+                height: 100vh;
+                overflow: hidden;
               }
 
-              body {
+              #map {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                height: 100vh !important;
+                width: 100vw !important;
+              }
+
+              #controls {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                top: auto;
+                transform: translateX(-50%);
+                flex-direction: row;
+                gap: 10px;
+                padding: 8px;
+                background: rgba(255, 255, 255, 0.95);
+              }
+
+              #controls button {
+                padding: 6px 10px;
+                min-width: 30px;
+                min-height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+
+              #controls .btn-text {
+                display: none;
+              }
+
+              #controls .btn-icon {
+                display: inline;
+                font-size: 18px;
+              }
+
+              #info-container {
+                display: none !important;
+              }
+
+              #info-toggle-btn {
+                display: flex !important;
+              }
+
+              #info-modal-content {
+                max-height: 80vh;
+                overflow: hidden;
+                padding: 12px;
+              }
+
+              .info-card {
+                width: 90%;
+                margin-bottom: 10px;
+                padding: 8px 10px;
+                font-size: 10px;
+              }
+
+              .info-card h4 {
+                font-size: 12px;
+                margin: 0 0 4px 0;
+                padding-bottom: 3px;
+              }
+
+              .info-card p {
+                margin: 2px 0;
+                font-size: 10px;
+                line-height: 1.3;
+              }
+
+              #info-modal-content {
+                display: flex;
+                flex-direction: column;
+                max-height: 80vh;
+              }
+
+              #info-modal-content > div {
+                overflow-y: auto;
+                flex: 1;
+              }
+
+              .info-card .summary-grid {
+                grid-template-columns: 1.7fr 1fr 0.5fr !important;
+                font-size: 9px !important;
+              }
+
+              .info-card .summary-grid p {
+                font-size: 9px !important;
+                word-break: break-word;
+              }
+
+              .info-card .summary-grid strong {
+                font-size: 9px !important;
+              }
+
+              .info-card .info-grid {
+                grid-template-columns: 1fr 0.9fr !important;
+                font-size: 9px !important;
+              }
+
+              .info-card .info-grid p {
+                font-size: 9px !important;
+                word-break: break-word;
+              }
+
+              .info-card .info-grid strong {
+                font-size: 9px !important;
+              }
+            }
+
+            @media (min-width: 768px) and (max-width: 1024px) {
+              body, html {
+                height: 100vh;
+                overflow: hidden;
+              }
+
+              #map {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                height: 100vh !important;
+                width: 100vw !important;
+              }
+
+              #controls {
+                position: fixed;
+                bottom: 20px;
+                left: 50%;
+                top: auto;
+                transform: translateX(-50%);
+                flex-direction: row;
+                gap: 12px;
+                padding: 10px;
+                background: rgba(255, 255, 255, 0.95);
+              }
+
+              #controls button {
+                padding: 8px 12px;
+                min-width: 40px;
+                min-height: 40px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+              }
+
+              #controls .btn-text {
+                display: none;
+              }
+
+              #controls .btn-icon {
+                display: inline;
+                font-size: 24px;
+              }
+
+              #info-container {
+                display: none !important;
+              }
+
+              #info-toggle-btn {
+                display: flex !important;
+              }
+
+              #info-modal-content {
+                max-height: 80vh;
+                overflow: hidden;
+                padding: 14px;
                 display: flex;
                 flex-direction: column;
               }
 
-              #map {
-                position: relative; /* Quita el posicionamiento absoluto */
-                height: 90vh; /* Asigna una altura, por ejemplo 60% del alto de la pantalla */
-                width: 100%;
-                order: 1; /* El mapa aparecerá primero */
-              }
-
-              #controls {
-                position: relative; /* Quita el posicionamiento absoluto */
-                order: 2; /* Los controles aparecerán después del mapa */
-                top: auto;
-                left: auto;
-                transform: none; /* Resetea la transformación */
-                margin: 10px auto; /* Centra los controles */
-                width: fit-content;
-              }
-
-              #info-container {
-                position: static; /* Quita el posicionamiento absoluto */
-                order: 3; /* Las tarjetas aparecerán al final */
-                transform: none; /* Resetea la transformación */
-                width: 95%; /* Ocupa casi todo el ancho */
-                margin: 10px auto 20px auto; /* Centra y añade espacio */
-                right: auto;
-                top: auto;
-                gap: 15px;
+              #info-modal-content > div {
+                overflow-y: auto;
+                flex: 1;
               }
 
               .info-card {
-                width: 100%; /* Las tarjetas ocupan el ancho del contenedor */
-                box-sizing: border-box; /* Asegura que el padding no cause desbordamiento */
+                width: 90%;
+                margin-bottom: 12px;
+                padding: 10px 12px;
+                font-size: 12px;
+              }
+
+              .info-card h4 {
+                font-size: 14px;
+                margin: 0 0 6px 0;
+                padding-bottom: 4px;
+              }
+
+              .info-card p {
+                margin: 3px 0;
+                font-size: 11px;
+                line-height: 1.4;
+              }
+
+              .info-card .summary-grid {
+                grid-template-columns: 1.7fr 1fr 0.5fr !important;
+                font-size: 10px !important;
+              }
+
+              .info-card .summary-grid p,
+              .info-card .summary-grid strong,
+              .info-card .info-grid p,
+              .info-card .info-grid strong {
+                font-size: 10px !important;
+                word-break: break-word;
+              }
+
+              .info-card .info-grid {
+                grid-template-columns: 1fr 0.9fr !important;
               }
             }
           </style>
         </head>
         <body>
           <div id="map"></div>
+          
+          <!-- Botón de información para móvil -->
+          <button id="info-toggle-btn" aria-label="Ver información">
+            <i class="fa-solid fa-info"></i>
+          </button>
+
+          <!-- Modal de información para móvil -->
+          <div id="info-modal">
+            <div id="info-modal-content">
+              <div style="position: sticky; top: 0; background: white; z-index: 1; padding-bottom: 5px;">
+                <span id="info-modal-close">&times;</span>
+              </div>
+              <div>
+                ${infoBoxHTML}
+                ${summaryCardHTML}
+              </div>
+            </div>
+          </div>
+
+          <!-- Contenedor de información para desktop -->
           <div id="info-container">
             ${infoBoxHTML}
             ${summaryCardHTML}
-            <!--<div id="distance-box" class="info-card">
-              <h4>Kilometraje</h4>
-              <p><strong>Recorrido del Tramo:</strong> <span id="segment-distance">0.00 km</span></p>
-              <p><strong>Recorrido Total:</strong> <span id="total-distance">0.00 km</span></p>
-            </div>-->
-
-            <!--<div id="clients-box" class="info-card">
-              <h4>Clientes Visitados</h4>
-              <p style="font-size: 16px; text-align: center; font-weight: bold; margin-top: 8px;">
-                <span id="visited-clients-count">0</span> / ${totalMatchedStops}
-              </p>
-            </div>-->
           </div>
 
           <div id="controls">
-            <!--<button id="playPauseBtn">Ruta completa</button>-->
-            <button id="resetBtn">Reiniciar</button>
-            <button id="prevStopBtn" disabled>Anterior Parada</button>
-            <button id="nextStopBtn">Siguiente Parada</button>
+            <button id="resetBtn">
+              <span class="btn-icon">⭯</span>
+              <span class="btn-text">Reiniciar</span>
+            </button>
+            <button id="prevStopBtn" disabled>
+              <span class="btn-icon">🡨</span>
+              <span class="btn-text">Anterior Parada</span>
+            </button>
+            <button id="nextStopBtn">
+              <span class="btn-icon">🡪</span>
+              <span class="btn-text">Siguiente Parada</span>
+            </button>
           </div>
           
           <script>
             let map, markers = [], infowindows = [], openInfoWindow = null, stopInfo = [];
+            // Toggle del modal de información (móvil)
+            const toggleInfoModal = () => {
+              const modal = document.getElementById('info-modal');
+              modal.classList.toggle('active');
+            };
+
+            // Cerrar modal al hacer clic fuera de él
+            window.onclick = (event) => {
+              const modal = document.getElementById('info-modal');
+              if (event.target === modal) {
+                modal.classList.remove('active');
+              }
+            };
             const routePath = ${JSON.stringify(routes[0]?.path || [])};
             const allFlags = ${JSON.stringify(filteredFlags)};
             const allClients = ${JSON.stringify(clientsToRender)};
@@ -1072,7 +1439,13 @@ export default function VehicleTracker() {
             }
 
             function initMap() {
-                map = new google.maps.Map(document.getElementById('map'), { center: ${mapCenter}, zoom: 12, mapTypeControl: false, streetViewControl: true });
+                map = new google.maps.Map(document.getElementById('map'), { 
+                  center: ${mapCenter}, 
+                  zoom: 12, 
+                  mapTypeControl: false, 
+                  streetViewControl: true,
+                  gestureHandling: 'greedy'
+                });
                 const bounds = new google.maps.LatLngBounds();
 
                 allFlags.forEach((flag, index) => {
@@ -1119,6 +1492,9 @@ export default function VehicleTracker() {
                 document.getElementById('resetBtn').addEventListener('click', resetRoute);
                 document.getElementById('prevStopBtn').addEventListener('click', animateToPreviousStop);
                 document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
+                // Event listeners para el modal de información
+                document.getElementById('info-toggle-btn').addEventListener('click', toggleInfoModal);
+                document.getElementById('info-modal-close').addEventListener('click', toggleInfoModal);
             }
 
             function createMarker(flag) {
