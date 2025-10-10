@@ -1339,15 +1339,15 @@ export default function VehicleTracker() {
 
           <div id="controls">
             <button id="resetBtn">
-              <span class="btn-icon">⭯</span>
+              <span class="btn-icon">⟲</span>
               <span class="btn-text">Reiniciar</span>
             </button>
             <button id="prevStopBtn" disabled>
-              <span class="btn-icon">🡨</span>
+              <span class="btn-icon">◀</span>
               <span class="btn-text">Anterior Parada</span>
             </button>
             <button id="nextStopBtn">
-              <span class="btn-icon">🡪</span>
+              <span class="btn-icon">▶</span>
               <span class="btn-text">Siguiente Parada</span>
             </button>
           </div>
