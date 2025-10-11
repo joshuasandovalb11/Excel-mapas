@@ -1890,7 +1890,6 @@ export default function VehicleTracker() {
 
   // FUNCIÓN PARA ABRIR EL MAPA EN UNA NUEVA PESTAÑA (PARA MÓVILES)
   const openMapInTab = () => {
-    // 1. Llama a tu función existente para generar el contenido HTML del mapa
     const summaryStats = calculateSummaryStats();
     const htmlContent = generateMapHTML(
       vehicleInfo,
@@ -1900,16 +1899,9 @@ export default function VehicleTracker() {
       summaryStats
     );
 
-    // 2. Crea un "Blob", que es como un archivo temporal en la memoria del navegador
     const blob = new Blob([htmlContent], { type: 'text/html' });
-
-    // 3. Crea una URL segura y temporal para ese Blob
     const url = URL.createObjectURL(blob);
-
-    // 4. Abre esa URL en una nueva pestaña del navegador
     window.open(url, '_blank');
-
-    // 5. Opcional: Se libera la memoria de la URL después de un breve instante
     setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
@@ -2040,13 +2032,19 @@ export default function VehicleTracker() {
     stats.totalWorkingTime = tripTimes.workingMinutes;
     stats.totalAfterHoursTime = tripTimes.afterHoursMinutes;
 
+    const specialNonClientKeys = ['3689', '6395'];
+
     // CALCULAR TIEMPOS DE PARADA (dividiendo según horario)
     tripData.flags.forEach((flag) => {
       if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
         const duration = flag.duration || 0;
         const split = splitDurationByWorkingHours(flag.time, duration);
 
-        if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
+        if (
+          flag.clientName &&
+          flag.clientName !== 'Sin coincidencia' &&
+          !specialNonClientKeys.includes(flag.clientKey || '')
+        ) {
           stats.timeWithClients += split.withinHours;
           stats.timeWithClientsAfterHours += split.outsideHours;
         } else {
