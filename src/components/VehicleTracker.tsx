@@ -1399,8 +1399,18 @@ export default function VehicleTracker() {
             }
 
             function updateDistanceCard(segmentMeters, totalMeters) {
-              document.getElementById('segment-distance').textContent = formatDistance(segmentMeters);
-              document.getElementById('total-distance').textContent = formatDistance(totalMeters);
+              console.log('Actualizando distancias - Segmento:', segmentMeters, 'Total:', totalMeters);
+              
+              const segmentElements = document.querySelectorAll('#segment-distance');
+              const totalElements = document.querySelectorAll('#total-distance');
+              
+              segmentElements.forEach(el => {
+                if (el) el.textContent = formatDistance(segmentMeters);
+              });
+              
+              totalElements.forEach(el => {
+                if (el) el.textContent = formatDistance(totalMeters);
+              });
             }
 
             function createClientMarker(client) {
@@ -1487,9 +1497,8 @@ export default function VehicleTracker() {
                 });
 
                 let lastPathIndex = 0;
-                for (let i = 0; i < stopInfo.length; i++) {
+                for (let i = 1; i < stopInfo.length; i++) {
                   const stop = stopInfo[i];
-                  if (stop.type === 'start') continue;
                   const segmentPath = routePath.slice(lastPathIndex, stop.pathIndex + 1);
                   const segmentLength = google.maps.geometry.spherical.computeLength(segmentPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
                   segmentDistances.push(segmentLength);
@@ -1733,9 +1742,12 @@ export default function VehicleTracker() {
                     if (openInfoWindow) openInfoWindow.close();
                     infowindow.open(map, marker);
                     openInfoWindow = infowindow;
+
                     const segmentMeters = segmentDistances[currentStopIndex] || 0;
                     cumulativeDistance += segmentMeters;
-                    updateDistanceCard(segmentMeters, cumulativeDistance);
+
+                    let currentSegmentMeters = segmentMeters;
+                    updateDistanceCard(currentSegmentMeters, cumulativeDistance);
 
                     const currentFlag = allFlags[nextStop.markerIndex];
                     if (currentFlag && currentFlag.type === 'stop' && currentFlag.clientKey && !countedClientKeys.has(currentFlag.clientKey)) {
@@ -1760,9 +1772,9 @@ export default function VehicleTracker() {
                 } else {
                     animateSmoothly(nextStop.pathIndex, onSegmentComplete);
                 }
+                console.log('Avanzando a parada:', currentStopIndex, 'Segment distance:', segmentDistances[currentStopIndex]);
             }
 
-            // CAMBIO: NUEVA FUNCIÓN para ir a la parada anterior
             function animateToPreviousStop() {
                 if (currentStopIndex <= 0) return;
 
@@ -1789,7 +1801,6 @@ export default function VehicleTracker() {
                 // Lógica para decrementar el contador de clientes visitados
                 if (lastStopFlag && lastStopFlag.type === 'stop' && lastStopFlag.clientKey) {
                     const clientKeyToRemove = lastStopFlag.clientKey;
-                    // Verificar si este cliente fue visitado en otra parada anterior que aún está en la ruta
                     let isStillVisited = false;
                     for (let i = 0; i <= currentStopIndex; i++) {
                         const flag = allFlags[stopInfo[i].markerIndex];
@@ -1798,14 +1809,18 @@ export default function VehicleTracker() {
                             break;
                         }
                     }
-                    // Si no hay otra visita a este cliente, lo eliminamos del set
                     if (!isStillVisited && countedClientKeys.has(clientKeyToRemove)) {
                         countedClientKeys.delete(clientKeyToRemove);
                         document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
                     }
                 }
 
-                updateDistanceCard(segmentMetersToUndo, cumulativeDistance);
+                let currentSegmentMeters = 0;
+                if (currentStopIndex > 0) {
+                    currentSegmentMeters = segmentDistances[currentStopIndex - 1] || 0;
+                }
+
+                updateDistanceCard(currentSegmentMeters, cumulativeDistance);
 
                 const marker = markers[previousStop.markerIndex];
                 const infowindow = infowindows[previousStop.markerIndex];
