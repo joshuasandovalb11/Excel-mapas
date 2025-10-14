@@ -1366,20 +1366,22 @@ export default function VehicleTracker() {
           </div>
           
           <script>
-            let map, markers = [], infowindows = [], openInfoWindow = null, stopInfo = [];
-            // Toggle del modal de información (móvil)
+            let map, markers = [], infowindows = [], openInfoWindows = new Set(), stopInfo = [];
+            let lastNavigationTime = 0;
+            const NAVIGATION_COOLDOWN = 100;
+
             const toggleInfoModal = () => {
               const modal = document.getElementById('info-modal');
               modal.classList.toggle('active');
             };
 
-            // Cerrar modal al hacer clic fuera de él
             window.onclick = (event) => {
               const modal = document.getElementById('info-modal');
               if (event.target === modal) {
                 modal.classList.remove('active');
               }
             };
+
             const routePath = ${JSON.stringify(routes[0]?.path || [])};
             const allFlags = ${JSON.stringify(filteredFlags)};
             const allClients = ${JSON.stringify(clientsToRender)};
@@ -1411,6 +1413,40 @@ export default function VehicleTracker() {
               totalElements.forEach(el => {
                 if (el) el.textContent = formatDistance(totalMeters);
               });
+            }
+
+            function closeAllInfoWindows() {
+              openInfoWindows.forEach(infoWindow => {
+                infoWindow.close();
+              });
+              openInfoWindows.clear();
+            }
+
+            function closeAllInfoWindowsExcept(exceptInfoWindow = null) {
+              openInfoWindows.forEach(infoWindow => {
+                if (infoWindow !== exceptInfoWindow) {
+                  infoWindow.close();
+                  openInfoWindows.delete(infoWindow);
+                }
+              });
+            }
+
+            function openInfoWindow(marker, infowindow) {
+              infowindow.open(map, marker);
+              openInfoWindows.add(infowindow);
+            }
+
+            function closeInfoWindow(infowindow) {
+              infowindow.close();
+              openInfoWindows.delete(infowindow);
+            }
+
+            function toggleInfoWindow(marker, infowindow) {
+              if (openInfoWindows.has(infowindow)) {
+                closeInfoWindow(infowindow);
+              } else {
+                openInfoWindow(marker, infowindow);
+              }
             }
 
             function createClientMarker(client) {
@@ -1446,7 +1482,7 @@ export default function VehicleTracker() {
                 <div>
                   <h3 style="display:flex; align-items:center; font-size: 15px;">
                     <span style="margin-right: 8px; font-size:15px;">
-                       <i class="fa-solid fa-house"></i>
+                      <i class="fa-solid fa-house"></i>
                     </span>
                     Cliente
                   </h3>
@@ -1462,417 +1498,371 @@ export default function VehicleTracker() {
             }
 
             function initMap() {
-                map = new google.maps.Map(document.getElementById('map'), { 
-                  center: ${mapCenter}, 
-                  zoom: 12, 
-                  mapTypeControl: false, 
-                  streetViewControl: true,
-                  gestureHandling: 'greedy'
-                });
-                const bounds = new google.maps.LatLngBounds();
+              map = new google.maps.Map(document.getElementById('map'), { 
+                center: ${mapCenter}, 
+                zoom: 12, 
+                mapTypeControl: false, 
+                streetViewControl: true,
+                gestureHandling: 'greedy'
+              });
+              const bounds = new google.maps.LatLngBounds();
 
-                allFlags.forEach((flag, index) => {
-                    if (!flag) return;
-                    const marker = createMarker(flag); const infowindow = createInfoWindow(flag);
-                    markers.push(marker); infowindows.push(infowindow);
-                    marker.addListener('click', () => { if (openInfoWindow) openInfoWindow.close(); infowindow.open(map, marker); openInfoWindow = infowindow; });
-                    if (flag.type === 'start' || flag.type === 'stop' || flag.type === 'end') {
-                        const flagLatLng = new google.maps.LatLng(flag.lat, flag.lng);
-                        let closestPathIndex = -1; let minDistance = Infinity;
-                        routePath.forEach((pathPoint, i) => { const pathLatLng = new google.maps.LatLng(pathPoint.lat, pathPoint.lng); const distance = google.maps.geometry.spherical.computeDistanceBetween(flagLatLng, pathLatLng); if (distance < minDistance) { minDistance = distance; closestPathIndex = i; } });
-                        stopInfo.push({ markerIndex: index, pathIndex: closestPathIndex, type: flag.type });
-                    }
-                    bounds.extend(marker.getPosition());
-                });
-
-                allClients.forEach(client => {
-                  const clientMarker = createClientMarker(client);
-                  const clientInfoWindow = createClientInfoWindow(client);
-                  clientMarker.addListener('click', () => {
-                    if (openInfoWindow) openInfoWindow.close();
-                    clientInfoWindow.open(map, clientMarker);
-                    openInfoWindow = clientInfoWindow;
-                  });
-                  bounds.extend(clientMarker.getPosition());
-                });
-
-                let lastPathIndex = 0;
-                for (let i = 1; i < stopInfo.length; i++) {
-                  const stop = stopInfo[i];
-                  const segmentPath = routePath.slice(lastPathIndex, stop.pathIndex + 1);
-                  const segmentLength = google.maps.geometry.spherical.computeLength(segmentPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
-                  segmentDistances.push(segmentLength);
-                  lastPathIndex = stop.pathIndex;
-                }
+              allFlags.forEach((flag, index) => {
+                if (!flag) return;
+                const marker = createMarker(flag);
+                const infowindow = createInfoWindow(flag);
+                markers.push(marker);
+                infowindows.push(infowindow);
                 
-                totalTripDistanceMeters = google.maps.geometry.spherical.computeLength(routePath.map(p => new google.maps.LatLng(p.lat, p.lng)));
-                updateDistanceCard(0, cumulativeDistance);
+                marker.addListener('click', () => {
+                  toggleInfoWindow(marker, infowindow);
+                });
+                
+                if (flag.type === 'start' || flag.type === 'stop' || flag.type === 'end') {
+                  const flagLatLng = new google.maps.LatLng(flag.lat, flag.lng);
+                  let closestPathIndex = -1;
+                  let minDistance = Infinity;
+                  routePath.forEach((pathPoint, i) => {
+                    const pathLatLng = new google.maps.LatLng(pathPoint.lat, pathPoint.lng);
+                    const distance = google.maps.geometry.spherical.computeDistanceBetween(flagLatLng, pathLatLng);
+                    if (distance < minDistance) {
+                      minDistance = distance;
+                      closestPathIndex = i;
+                    }
+                  });
+                  stopInfo.push({ markerIndex: index, pathIndex: closestPathIndex, type: flag.type });
+                }
+                bounds.extend(marker.getPosition());
+              });
 
-                map.fitBounds(bounds);
-                animatedPolyline = new google.maps.Polyline({ path: [], strokeColor: '#3b82f6', strokeOpacity: 0.8, strokeWeight: 5, map: map });
-                // document.getElementById('playPauseBtn').addEventListener('click', togglePlayPause);
-                document.getElementById('resetBtn').addEventListener('click', resetRoute);
-                document.getElementById('prevStopBtn').addEventListener('click', animateToPreviousStop);
-                document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
-                // Event listeners para el modal de información
-                document.getElementById('info-toggle-btn').addEventListener('click', toggleInfoModal);
-                document.getElementById('info-modal-close').addEventListener('click', toggleInfoModal);
+              allClients.forEach(client => {
+                const clientMarker = createClientMarker(client);
+                const clientInfoWindow = createClientInfoWindow(client);
+                clientMarker.addListener('click', () => {
+                  toggleInfoWindow(clientMarker, clientInfoWindow);
+                });
+                bounds.extend(clientMarker.getPosition());
+              });
+
+              let lastPathIndex = 0;
+              for (let i = 1; i < stopInfo.length; i++) {
+                const stop = stopInfo[i];
+                const segmentPath = routePath.slice(lastPathIndex, stop.pathIndex + 1);
+                const segmentLength = google.maps.geometry.spherical.computeLength(segmentPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+                segmentDistances.push(segmentLength);
+                lastPathIndex = stop.pathIndex;
+              }
+              
+              totalTripDistanceMeters = google.maps.geometry.spherical.computeLength(routePath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+              updateDistanceCard(0, cumulativeDistance);
+
+              map.fitBounds(bounds);
+              animatedPolyline = new google.maps.Polyline({ path: [], strokeColor: '#3b82f6', strokeOpacity: 0.8, strokeWeight: 5, map: map });
+              
+              document.getElementById('resetBtn').addEventListener('click', resetRoute);
+              document.getElementById('prevStopBtn').addEventListener('click', animateToPreviousStop);
+              document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
+              document.getElementById('info-toggle-btn').addEventListener('click', toggleInfoModal);
+              document.getElementById('info-modal-close').addEventListener('click', toggleInfoModal);
             }
 
             function createMarker(flag) {
-                const colors = { start: '#22c55e', stop: '#4F4E4E', end: '#ef4444' };
-                const icon = { path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z', fillColor: colors[flag.type], fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 24) };
-                return new google.maps.Marker({ position: { lat: flag.lat, lng: flag.lng }, map, icon, title: flag.description });
+              const colors = { start: '#22c55e', stop: '#4F4E4E', end: '#ef4444' };
+              const icon = { path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z', fillColor: colors[flag.type], fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 24) };
+              return new google.maps.Marker({ position: { lat: flag.lat, lng: flag.lng }, map, icon, title: flag.description });
             }
 
             function createInfoWindow(flag) {
-                // Determinar si está en horario laboral
-                const isWorkingHoursFlag = ${isWorkingHours.toString()};
-                const tripDate = '${vehicleInfo?.fecha || ''}';
-                const inWorkingHours = flag.type === 'stop' ? isWorkingHoursFlag(flag.time, tripDate) : true;
-                
-                // Estilos base y condicionales
-                const containerStyle = inWorkingHours 
-                    ? 'background: white; color: black;' 
-                    : 'background: white; color: #FF0000;';
-                const titleColor = inWorkingHours ? '#000' : '#C40000';
-                const squareColor = inWorkingHours ? '#4F4E4E' : '#C40000';
-                const labelColor = inWorkingHours ? '#374151' : '#C40000';
-                const clientMatchColor = inWorkingHours ? '#059669' : '#10b981';
-                const clientNoMatchColor = inWorkingHours ? '#FC2121' : '#C40000';
-                const branchColor = inWorkingHours ? '#2563eb' : '#60a5fa';
-                
-                // Crear enlace a Google Maps
-                const googleMapsLink = \`https://www.google.com/maps/search/?api=1&query=\${flag.lat},\${flag.lng}\`;
-                const coordinatesText = \`\${flag.lat.toFixed(6)}, \${flag.lng.toFixed(6)}\`;
-                
-                let content = '';
-                
-                switch (flag.type) {
-                    case 'start': 
-                        content = \`
-                            <div style="\${containerStyle} padding: 4px;">
-                                <h3 style="color: \${titleColor}; font-size: 15px;">
-                                    <span style="color: #22c55e;">
-                                      <i class="fa-solid fa-road-circle-check"></i>
-                                    </span> 
-                                    \${flag.description}
-                                </h3>
-                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
-                                <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
-                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-                                    <strong>View on Google Maps</strong>
-                                </a>
-                            </div>\`; 
-                        break;
-                        
-                    case 'end': 
-                        content = \`
-                            <div style="\${containerStyle} padding: 4px;">
-                                <h3 style="color: \${titleColor}; font-size: 15px;">
-                                    <span style="color: #ef4444;">
-                                      <i class="fa-solid fa-road-circle-xmark"></i>
-                                    </span>
-                                    \${flag.description}
-                                </h3>
-                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
-                                <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
-                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-                                    <strong>View on Google Maps</strong>
-                                </a>
-                            </div>\`; 
-                        break;
-                        
-                    case 'stop':
-                        let clientInfo = '';
-                        if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
-                            const clientKey = flag.clientKey || 'N/A';
-                            const clientBaseName = flag.clientName;
-                            const branchInfo = flag.clientBranchNumber ? 
-                                (flag.clientBranchName ? 
-                                    \`Suc. \${flag.clientBranchName}\` : 
-                                    \`Suc. \${flag.clientBranchNumber}\`) 
-                                : null;
-                            
-                            clientInfo = \`
-                                <div style="color:\${clientMatchColor};">
-                                    <p style="margin: 2px 0; font-weight: 500; font-size: 12px;">
-                                        <strong>#</strong> <strong>\${clientKey}</strong>
-                                    </p>
-                                    <strong><p style="margin: 2px 0; font-weight: 600; font-size: 12px;">\${clientBaseName}</p></strong>
-                                    <strong>\${branchInfo ? \`<p style="margin: 2px 0; font-weight: 600; font-size: 12px; color: \${branchColor};">\${branchInfo}</p>\` : ''}</strong>
-                                </div>\`;
-                        } else {
-                            clientInfo = \`<p style="color:\${clientNoMatchColor}; font-weight: 500; font-size: 12px;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
-                        } 
-                        
-                        const stopIcon = !inWorkingHours
-                          ? \`<i class="fa-solid fa-triangle-exclamation"></i>\`
-                          : \`<i class="fa-solid fa-flag"></i>\`;
-                        
-                        content = \`
-                            <div style="\${containerStyle} padding: 4px;">
-                                <h3 style="color: \${titleColor}; font-size: 15px;">
-                                  <span style="color: \${squareColor}; font-size: 15px;">
-                                    \${stopIcon}
-                                  </span> 
-                                  Parada \${flag.stopNumber}
-                                </h3>
-                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p>
-                                <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
-                                \${clientInfo}
-                                <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
-                                <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-                                    <strong>View on Google Maps</strong>
-                                </a>
-                            </div>\`;
-                        break;
-                }
-                
-                return new google.maps.InfoWindow({ content });
+              const isWorkingHoursFlag = ${isWorkingHours.toString()};
+              const tripDate = '${vehicleInfo?.fecha || ''}';
+              const inWorkingHours = flag.type === 'stop' ? isWorkingHoursFlag(flag.time, tripDate) : true;
+              
+              const containerStyle = inWorkingHours 
+                ? 'background: white; color: black;' 
+                : 'background: white; color: #FF0000;';
+              const titleColor = inWorkingHours ? '#000' : '#C40000';
+              const squareColor = inWorkingHours ? '#4F4E4E' : '#C40000';
+              const labelColor = inWorkingHours ? '#374151' : '#C40000';
+              const clientMatchColor = inWorkingHours ? '#059669' : '#10b981';
+              const clientNoMatchColor = inWorkingHours ? '#FC2121' : '#C40000';
+              const branchColor = inWorkingHours ? '#2563eb' : '#60a5fa';
+              
+              const googleMapsLink = \`https://www.google.com/maps/search/?api=1&query=\${flag.lat},\${flag.lng}\`;
+              const coordinatesText = \`\${flag.lat.toFixed(6)}, \${flag.lng.toFixed(6)}\`;
+              
+              let content = '';
+              
+              switch (flag.type) {
+                case 'start': 
+                  content = \`
+                    <div style="\${containerStyle} padding: 4px;">
+                      <h3 style="color: \${titleColor}; font-size: 15px;">
+                        <span style="color: #22c55e;">
+                          <i class="fa-solid fa-road-circle-check"></i>
+                        </span> 
+                        \${flag.description}
+                      </h3>
+                      <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
+                      <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                      <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
+                        <strong>View on Google Maps</strong>
+                      </a>
+                    </div>\`; 
+                  break;
+                  
+                case 'end': 
+                  content = \`
+                    <div style="\${containerStyle} padding: 4px;">
+                      <h3 style="color: \${titleColor}; font-size: 15px;">
+                        <span style="color: #ef4444;">
+                          <i class="fa-solid fa-road-circle-xmark"></i>
+                        </span>
+                        \${flag.description}
+                      </h3>
+                      <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
+                      <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                      <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
+                        <strong>View on Google Maps</strong>
+                      </a>
+                    </div>\`; 
+                  break;
+                  
+                case 'stop':
+                  let clientInfo = '';
+                  if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
+                    const clientKey = flag.clientKey || 'N/A';
+                    const clientBaseName = flag.clientName;
+                    const branchInfo = flag.clientBranchNumber ? 
+                      (flag.clientBranchName ? 
+                        \`Suc. \${flag.clientBranchName}\` : 
+                        \`Suc. \${flag.clientBranchNumber}\`) 
+                      : null;
+                    
+                    clientInfo = \`
+                      <div style="color:\${clientMatchColor};">
+                        <p style="margin: 2px 0; font-weight: 500; font-size: 12px;">
+                          <strong>#</strong> <strong>\${clientKey}</strong>
+                        </p>
+                        <strong><p style="margin: 2px 0; font-weight: 600; font-size: 12px;">\${clientBaseName}</p></strong>
+                        <strong>\${branchInfo ? \`<p style="margin: 2px 0; font-weight: 600; font-size: 12px; color: \${branchColor};">\${branchInfo}</p>\` : ''}</strong>
+                      </div>\`;
+                  } else {
+                    clientInfo = \`<p style="color:\${clientNoMatchColor}; font-weight: 500; font-size: 12px;"><strong>Cliente:</strong> Sin coincidencia</p>\`;
+                  } 
+                  
+                  const stopIcon = !inWorkingHours
+                    ? \`<i class="fa-solid fa-triangle-exclamation"></i>\`
+                    : \`<i class="fa-solid fa-flag"></i>\`;
+                  
+                  content = \`
+                    <div style="\${containerStyle} padding: 4px;">
+                      <h3 style="color: \${titleColor}; font-size: 15px;">
+                        <span style="color: \${squareColor}; font-size: 15px;">
+                          \${stopIcon}
+                        </span> 
+                        Parada \${flag.stopNumber}
+                      </h3>
+                      <p style="color: \${labelColor}; font-size: 12px;"><strong>Duración:</strong> \${formatDuration(flag.duration || 0)}</p>
+                      <p style="color: \${labelColor}; font-size: 12px;"><strong>Hora:</strong> \${flag.time}</p>
+                      \${clientInfo}
+                      <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
+                      <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
+                        <strong>View on Google Maps</strong>
+                      </a>
+                    </div>\`;
+                  break;
+              }
+              
+              return new google.maps.InfoWindow({ content });
             }
 
             function resetRoute() {
-              if (openInfoWindow) openInfoWindow.close();
+              if (Date.now() - lastNavigationTime < NAVIGATION_COOLDOWN) return;
+              lastNavigationTime = Date.now();
               
-              // Resetear el polyline a vacío
+              closeAllInfoWindows();
+              
               animatedPolyline.setPath([]);
               currentPathIndex = 0;
               currentStopIndex = 0;
               cumulativeDistance = 0;
               isAnimating = false;
               
-              // Limpiar el set de clientes visitados
               countedClientKeys.clear();
               document.getElementById('visited-clients-count').textContent = '0';
               
-              // Resetear las distancias
               updateDistanceCard(0, 0);
               
-              // Cancelar cualquier animación en curso
               if (animationFrameId) {
                 cancelAnimationFrame(animationFrameId);
               }
               
-              // Habilitar/deshabilitar botones apropiadamente
               document.getElementById('resetBtn').disabled = false;
               document.getElementById('nextStopBtn').disabled = false;
               document.getElementById('prevStopBtn').disabled = true;
               
-              // Abrir el InfoWindow del inicio
               const startMarker = markers[0];
               const startInfowindow = infowindows[0];
               if (startMarker && startInfowindow) {
                 startMarker.setAnimation(google.maps.Animation.BOUNCE);
                 setTimeout(() => startMarker.setAnimation(null), 1400);
-                startInfowindow.open(map, startMarker);
-                openInfoWindow = startInfowindow;
+                openInfoWindow(startMarker, startInfowindow);
               }
               
-              // Recentrar el mapa en el punto de inicio
               if (allFlags.length > 0) {
                 map.setCenter({ lat: allFlags[0].lat, lng: allFlags[0].lng });
                 map.setZoom(14);
               }
             }
 
-            function drawEntireRoute() {
-                if (openInfoWindow) openInfoWindow.close();
-                animatedPolyline.setPath(routePath.map(p => new google.maps.LatLng(p.lat, p.lng)));
-                currentPathIndex = routePath.length;
-                updateDistanceCard(0, totalTripDistanceMeters);
-                document.getElementById('playPauseBtn').disabled = true;
-                document.getElementById('nextStopBtn').disabled = true;
-                // CAMBIO: Deshabilitar también el botón de parada anterior
-                document.getElementById('prevStopBtn').disabled = true;
-                const endMarker = markers[markers.length - 1];
-                if (endMarker) {
-                    endMarker.setAnimation(google.maps.Animation.BOUNCE);
-                    setTimeout(() => endMarker.setAnimation(null), 1400);
-                    infowindows[infowindows.length - 1].open(map, endMarker);
-                }
-            }
-
-            function togglePlayPause() {
-                if (processingMethod === 'speed-based') {
-                    drawEntireRoute();
-                    return;
-                }
-                
-                const btn = document.getElementById('playPauseBtn');
-                isAnimating = !isAnimating;
-                if (isAnimating) {
-                    btn.textContent = 'Pausa';
-                    document.getElementById('nextStopBtn').disabled = true;
-                    // CAMBIO: Deshabilitar también el botón de parada anterior durante la animación
-                    document.getElementById('prevStopBtn').disabled = true;
-                    if (openInfoWindow) openInfoWindow.close();
-                    animateSmoothly(routePath.length - 1, () => {
-                        updateDistanceCard(0, totalTripDistanceMeters);
-                    });
-                } else {
-                    btn.textContent = 'Reproducir';
-                    if (currentStopIndex < stopInfo.length - 1) {
-                       document.getElementById('nextStopBtn').disabled = false;
-                    }
-                    // CAMBIO: Habilitar el botón de parada anterior si no estamos en el inicio
-                    if (currentStopIndex > 0) {
-                        document.getElementById('prevStopBtn').disabled = false;
-                    }
-                    cancelAnimationFrame(animationFrameId);
-                }
-            }
-            
             function animateToNextStop() {
-                if (currentStopIndex >= stopInfo.length - 1) return;
-                const nextStop = stopInfo[currentStopIndex + 1];
-                isAnimating = true;
-                if (openInfoWindow) openInfoWindow.close();
-                // document.getElementById('playPauseBtn').disabled = true;
-                document.getElementById('resetBtn').disabled = true;
-                document.getElementById('nextStopBtn').disabled = true;
-                document.getElementById('prevStopBtn').disabled = true;
+              if (currentStopIndex >= stopInfo.length - 1) return;
+              if (Date.now() - lastNavigationTime < NAVIGATION_COOLDOWN) return;
+              lastNavigationTime = Date.now();
+              
+              const nextStop = stopInfo[currentStopIndex + 1];
+              isAnimating = true;
+              
+              closeAllInfoWindows();
+              
+              document.getElementById('resetBtn').disabled = true;
+              document.getElementById('nextStopBtn').disabled = true;
+              document.getElementById('prevStopBtn').disabled = true;
+              
+              const onSegmentComplete = () => {
+                isAnimating = false;
+                const marker = markers[nextStop.markerIndex];
+                const infowindow = infowindows[nextStop.markerIndex];
+                marker.setAnimation(google.maps.Animation.BOUNCE);
+                setTimeout(() => marker.setAnimation(null), 1400);
                 
-                const onSegmentComplete = () => {
-                    isAnimating = false;
-                    const marker = markers[nextStop.markerIndex];
-                    const infowindow = infowindows[nextStop.markerIndex];
-                    marker.setAnimation(google.maps.Animation.BOUNCE);
-                    setTimeout(() => marker.setAnimation(null), 1400);
-                    if (openInfoWindow) openInfoWindow.close();
-                    infowindow.open(map, marker);
-                    openInfoWindow = infowindow;
+                openInfoWindow(marker, infowindow);
 
-                    const segmentMeters = segmentDistances[currentStopIndex] || 0;
-                    cumulativeDistance += segmentMeters;
+                const segmentMeters = segmentDistances[currentStopIndex] || 0;
+                cumulativeDistance += segmentMeters;
 
-                    let currentSegmentMeters = segmentMeters;
-                    updateDistanceCard(currentSegmentMeters, cumulativeDistance);
+                let currentSegmentMeters = segmentMeters;
+                updateDistanceCard(currentSegmentMeters, cumulativeDistance);
 
-                    const currentFlag = allFlags[nextStop.markerIndex];
-                    if (currentFlag && currentFlag.type === 'stop' && currentFlag.clientKey && !countedClientKeys.has(currentFlag.clientKey)) {
-                        countedClientKeys.add(currentFlag.clientKey);
-                        document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
-                    }
-                    currentStopIndex++;
-                    // document.getElementById('playPauseBtn').disabled = false;
-                    document.getElementById('resetBtn').disabled = false;
-                    document.getElementById('prevStopBtn').disabled = false;
-
-                    if (currentStopIndex >= stopInfo.length - 1) {
-                        document.getElementById('nextStopBtn').disabled = true;
-                        updateDistanceCard(segmentMeters, totalTripDistanceMeters);
-                    } else {
-                        document.getElementById('nextStopBtn').disabled = false;
-                    }
-                };
-
-                if (processingMethod === 'speed-based') {
-                    animateVeryFast(nextStop.pathIndex, onSegmentComplete);
-                } else {
-                    animateSmoothly(nextStop.pathIndex, onSegmentComplete);
+                const currentFlag = allFlags[nextStop.markerIndex];
+                if (currentFlag && currentFlag.type === 'stop' && currentFlag.clientKey && !countedClientKeys.has(currentFlag.clientKey)) {
+                  countedClientKeys.add(currentFlag.clientKey);
+                  document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
                 }
-                console.log('Avanzando a parada:', currentStopIndex, 'Segment distance:', segmentDistances[currentStopIndex]);
+                currentStopIndex++;
+                
+                document.getElementById('resetBtn').disabled = false;
+                document.getElementById('prevStopBtn').disabled = false;
+
+                if (currentStopIndex >= stopInfo.length - 1) {
+                  document.getElementById('nextStopBtn').disabled = true;
+                  updateDistanceCard(segmentMeters, totalTripDistanceMeters);
+                } else {
+                  document.getElementById('nextStopBtn').disabled = false;
+                }
+              };
+
+              if (processingMethod === 'speed-based') {
+                animateVeryFast(nextStop.pathIndex, onSegmentComplete);
+              } else {
+                animateSmoothly(nextStop.pathIndex, onSegmentComplete);
+              }
             }
 
             function animateToPreviousStop() {
-                if (currentStopIndex <= 0) return;
+              if (currentStopIndex <= 0) return;
+              if (Date.now() - lastNavigationTime < NAVIGATION_COOLDOWN) return;
+              lastNavigationTime = Date.now();
 
-                if (openInfoWindow) openInfoWindow.close();
-                // document.getElementById('playPauseBtn').disabled = true;
-                document.getElementById('resetBtn').disabled = true;
-                document.getElementById('nextStopBtn').disabled = true;
-                document.getElementById('prevStopBtn').disabled = true;
+              const lastStopFlag = allFlags[stopInfo[currentStopIndex].markerIndex];
+              
+              currentStopIndex--;
+              
+              closeAllInfoWindows();
+              
+              document.getElementById('resetBtn').disabled = true;
+              document.getElementById('nextStopBtn').disabled = true;
+              document.getElementById('prevStopBtn').disabled = true;
 
-                // Identificar el cliente de la parada que estamos "deshaciendo"
-                const lastStopFlag = allFlags[stopInfo[currentStopIndex].markerIndex];
-                
-                currentStopIndex--;
-                
-                const previousStop = stopInfo[currentStopIndex];
-                const segmentMetersToUndo = segmentDistances[currentStopIndex] || 0;
-                cumulativeDistance -= segmentMetersToUndo;
+              const previousStop = stopInfo[currentStopIndex];
+              const segmentMetersToUndo = segmentDistances[currentStopIndex] || 0;
+              cumulativeDistance -= segmentMetersToUndo;
 
-                // Recortar el polyline
-                const newPath = routePath.slice(0, previousStop.pathIndex + 1);
-                animatedPolyline.setPath(newPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
-                currentPathIndex = newPath.length - 1;
+              const newPath = routePath.slice(0, previousStop.pathIndex + 1);
+              animatedPolyline.setPath(newPath.map(p => new google.maps.LatLng(p.lat, p.lng)));
+              currentPathIndex = newPath.length - 1;
 
-                // Lógica para decrementar el contador de clientes visitados
-                if (lastStopFlag && lastStopFlag.type === 'stop' && lastStopFlag.clientKey) {
-                    const clientKeyToRemove = lastStopFlag.clientKey;
-                    let isStillVisited = false;
-                    for (let i = 0; i <= currentStopIndex; i++) {
-                        const flag = allFlags[stopInfo[i].markerIndex];
-                        if (flag.clientKey === clientKeyToRemove) {
-                            isStillVisited = true;
-                            break;
-                        }
-                    }
-                    if (!isStillVisited && countedClientKeys.has(clientKeyToRemove)) {
-                        countedClientKeys.delete(clientKeyToRemove);
-                        document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
-                    }
+              if (lastStopFlag && lastStopFlag.type === 'stop' && lastStopFlag.clientKey) {
+                const clientKeyToRemove = lastStopFlag.clientKey;
+                let isStillVisited = false;
+                for (let i = 0; i <= currentStopIndex; i++) {
+                  const flag = allFlags[stopInfo[i].markerIndex];
+                  if (flag.clientKey === clientKeyToRemove) {
+                    isStillVisited = true;
+                    break;
+                  }
                 }
-
-                let currentSegmentMeters = 0;
-                if (currentStopIndex > 0) {
-                    currentSegmentMeters = segmentDistances[currentStopIndex - 1] || 0;
+                if (!isStillVisited && countedClientKeys.has(clientKeyToRemove)) {
+                  countedClientKeys.delete(clientKeyToRemove);
+                  document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
                 }
+              }
 
-                updateDistanceCard(currentSegmentMeters, cumulativeDistance);
+              let currentSegmentMeters = 0;
+              if (currentStopIndex > 0) {
+                currentSegmentMeters = segmentDistances[currentStopIndex - 1] || 0;
+              }
 
-                const marker = markers[previousStop.markerIndex];
-                const infowindow = infowindows[previousStop.markerIndex];
-                marker.setAnimation(google.maps.Animation.BOUNCE);
-                setTimeout(() => marker.setAnimation(null), 1400);
-                infowindow.open(map, marker);
-                openInfoWindow = infowindow;
+              updateDistanceCard(currentSegmentMeters, cumulativeDistance);
 
-                // Reactivar botones
-                // document.getElementById('playPauseBtn').disabled = false;
-                document.getElementById('resetBtn').disabled = false;
-                document.getElementById('nextStopBtn').disabled = false;
-                if (currentStopIndex > 0) {
-                    document.getElementById('prevStopBtn').disabled = false;
-                }
+              const marker = markers[previousStop.markerIndex];
+              const infowindow = infowindows[previousStop.markerIndex];
+              marker.setAnimation(google.maps.Animation.BOUNCE);
+              setTimeout(() => marker.setAnimation(null), 1400);
+              
+              openInfoWindow(marker, infowindow);
+
+              document.getElementById('resetBtn').disabled = false;
+              document.getElementById('nextStopBtn').disabled = false;
+              if (currentStopIndex > 0) {
+                document.getElementById('prevStopBtn').disabled = false;
+              }
             }
 
-
             function runAnimation(targetPathIndex, onComplete, animationStep) {
-                function step() {
-                    if (!isAnimating) {
-                        cancelAnimationFrame(animationFrameId);
-                        return;
-                    }
-                    
-                    const end = Math.min(currentPathIndex + animationStep, targetPathIndex);
-                    
-                    if (end > currentPathIndex) {
-                        const newPathSegment = routePath.slice(currentPathIndex, end + 1);
-                        if (newPathSegment.length > 0) {
-                            const existingPath = animatedPolyline.getPath();
-                            newPathSegment.forEach(p => existingPath.push(new google.maps.LatLng(p.lat, p.lng)));
-                        }
-                    }
-                    
-                    currentPathIndex = end;
+              function step() {
+                if (!isAnimating) {
+                  cancelAnimationFrame(animationFrameId);
+                  return;
+                }
+                
+                const end = Math.min(currentPathIndex + animationStep, targetPathIndex);
+                
+                if (end > currentPathIndex) {
+                  const newPathSegment = routePath.slice(currentPathIndex, end + 1);
+                  if (newPathSegment.length > 0) {
+                    const existingPath = animatedPolyline.getPath();
+                    newPathSegment.forEach(p => existingPath.push(new google.maps.LatLng(p.lat, p.lng)));
+                  }
+                }
+                
+                currentPathIndex = end;
 
-                    if (currentPathIndex >= targetPathIndex) {
-                        onComplete();
-                        return;
-                    }
-                    animationFrameId = requestAnimationFrame(step);
+                if (currentPathIndex >= targetPathIndex) {
+                  onComplete();
+                  return;
                 }
                 animationFrameId = requestAnimationFrame(step);
+              }
+              animationFrameId = requestAnimationFrame(step);
             }
 
             function animateVeryFast(targetPathIndex, onComplete) {
-                runAnimation(targetPathIndex, onComplete, 35);
+              runAnimation(targetPathIndex, onComplete, 35);
             }
 
             function animateSmoothly(targetPathIndex, onComplete = () => {}) {
-                runAnimation(targetPathIndex, onComplete, 1);
+              runAnimation(targetPathIndex, onComplete, 1);
             }
           </script>
           <script async defer src="https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&callback=initMap&libraries=geometry"></script>
