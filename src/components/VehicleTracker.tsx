@@ -819,8 +819,13 @@ export default function VehicleTracker() {
     const infoBoxHTML = vehicleInfo
       ? `
         <div id="info-box" class="info-card">
-        <h4>Información del Viaje</h4>
-          <div class="info-grid" style="display: grid; grid-template-columns: 1.5fr 1.4fr; gap: 1px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <h4 style="margin: 0;">Información del Viaje</h4>
+            <button class="toggle-btn toggle-info-btn" aria-label="Minimizar/Maximizar">
+              <i class="fa-solid fa-chevron-up"></i>
+            </button>
+          </div>
+          <div class="info-content info-grid" style="display: grid; grid-template-columns: 1.5fr 1.4fr; gap: 1px;">
               <p><strong>Descripción:</strong></p>
               <p style="text-align: left;">${vehicleInfo.descripcion}</p>
 
@@ -841,8 +846,13 @@ export default function VehicleTracker() {
 
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
-      <h4>Resumen del Viaje (8:30 - 19:00)</h4>
-        <div class="summary-grid" style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+          <h4 style="margin: 0;">Resumen del Viaje (8:30 - 19:00)</h4>
+          <button class="toggle-btn toggle-summary-btn" aria-label="Minimizar/Maximizar">
+            <i class="fa-solid fa-chevron-up"></i>
+          </button>
+        </div>
+        <div class="summary-content summary-grid" style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
           <p><strong>Estado inicial:</strong></p>
           <p style="text-align: left;">${tripData.initialState}</p>
           <p></p>
@@ -997,10 +1007,44 @@ export default function VehicleTracker() {
             .info-card h4 { 
               font-size: 14px; 
               font-weight: bold; 
-              margin: 0 0 5px 0; 
+              margin: 0; 
               padding-bottom: 4px; 
               border-bottom: 1px solid #ddd; 
               color: #00004F
+            }
+
+            .toggle-btn {
+              display: none;
+              background: transparent;
+              border: none;
+              cursor: pointer;
+              padding: 4px;
+              color: #00004F;
+              transition: transform 0.3s ease;
+            }
+
+            .toggle-btn:hover {
+              color: #0275D8;
+            }
+
+            .toggle-btn.collapsed i {
+              transform: rotate(360deg);
+            }
+
+            .info-grid, .summary-grid {
+              transition: all 0.3s ease;
+              overflow: hidden;
+              max-height: 500px;
+              opacity: 1;
+            }
+
+            .info-grid.collapsed, .summary-grid.collapsed {
+              max-height: 0 !important;
+              opacity: 0;
+              padding-top: 0 !important;
+              padding-bottom: 0 !important;
+              margin: 0 !important;
+              visibility: hidden;
             }
             
             .info-card p { 
@@ -1205,6 +1249,18 @@ export default function VehicleTracker() {
               }
             }
 
+            @media (min-width: 1025px) {
+              .toggle-btn {
+                display: inline-flex !important;
+                align-items: center;
+                justify-content: center;
+              }
+
+              .info-grid, .summary-grid {
+                max-height: 1000px;
+              }
+            }
+
             @media (min-width: 768px) and (max-width: 1024px) {
               body, html {
                 height: 100vh;
@@ -1333,8 +1389,8 @@ export default function VehicleTracker() {
 
           <!-- Contenedor de información para desktop -->
           <div id="info-container">
-            ${infoBoxHTML}
-            ${summaryCardHTML}
+            <div class="card-position-wrapper">${infoBoxHTML}</div>
+            <div class="card-position-wrapper">${summaryCardHTML}</div>
           </div>
 
           <div id="controls">
@@ -1373,6 +1429,48 @@ export default function VehicleTracker() {
             const toggleInfoModal = () => {
               const modal = document.getElementById('info-modal');
               modal.classList.toggle('active');
+            };
+
+            const toggleInfoCard = () => {
+              const content = document.getElementById('info-content');
+              const btn = document.getElementById('toggle-info-btn');
+              
+              if (content && btn) {
+                const icon = btn.querySelector('i');
+                const isCollapsed = content.classList.contains('collapsed');
+                
+                if (isCollapsed) {
+                  content.classList.remove('collapsed');
+                  btn.classList.remove('collapsed');
+                  if (icon) icon.className = 'fa-solid fa-chevron-up';
+                } else {
+                  content.classList.add('collapsed');
+                  btn.classList.add('collapsed');
+                  if (icon) icon.className = 'fa-solid fa-chevron-down';
+                }
+                console.log('Info card toggled, collapsed:', !isCollapsed);
+              }
+            };
+
+            const toggleSummaryCard = () => {
+              const content = document.getElementById('summary-content');
+              const btn = document.getElementById('toggle-summary-btn');
+              
+              if (content && btn) {
+                const icon = btn.querySelector('i');
+                const isCollapsed = content.classList.contains('collapsed');
+                
+                if (isCollapsed) {
+                  content.classList.remove('collapsed');
+                  btn.classList.remove('collapsed');
+                  if (icon) icon.className = 'fa-solid fa-chevron-up';
+                } else {
+                  content.classList.add('collapsed');
+                  btn.classList.add('collapsed');
+                  if (icon) icon.className = 'fa-solid fa-chevron-down';
+                }
+                console.log('Summary card toggled, collapsed:', !isCollapsed);
+              }
             };
 
             window.onclick = (event) => {
@@ -1564,6 +1662,29 @@ export default function VehicleTracker() {
               document.getElementById('nextStopBtn').addEventListener('click', animateToNextStop);
               document.getElementById('info-toggle-btn').addEventListener('click', toggleInfoModal);
               document.getElementById('info-modal-close').addEventListener('click', toggleInfoModal);
+
+              // Asigna eventos SOLAMENTE a los botones que están dentro de #info-container (escritorio)
+              document.querySelectorAll('#info-container .toggle-info-btn, #info-container .toggle-summary-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  const card = btn.closest('.info-card');
+                  if (!card) return;
+
+                  // La lógica interna para encontrar el contenido y el ícono sigue siendo la misma
+                  const content = card.querySelector('.info-content, .summary-content');
+                  const icon = btn.querySelector('i');
+
+                  if (content && icon) {
+                    const isCollapsed = content.classList.contains('collapsed');
+
+                    content.classList.toggle('collapsed');
+                    btn.classList.toggle('collapsed');
+
+                    // Cambia el ícono de la flecha
+                    icon.className = isCollapsed ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down';
+                  }
+                });
+              });
             }
 
             function createMarker(flag) {
