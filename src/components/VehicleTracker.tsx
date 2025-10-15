@@ -862,7 +862,7 @@ export default function VehicleTracker() {
           <p></p>
           
           <p><strong>Clientes Visitados:</strong></p>
-          <p style="text-align: left;"><span id="visited-clients-count">0</span> / ${totalMatchedStops}</p>
+          <p style="text-align: left;"><span class="visited-clients-count">0</span> / ${totalMatchedStops}</p>
           <p></p>
           
           <p><strong>Tiempo con Clientes:</strong></p>
@@ -1389,8 +1389,8 @@ export default function VehicleTracker() {
 
           <!-- Contenedor de información para desktop -->
           <div id="info-container">
-            <div class="card-position-wrapper">${infoBoxHTML}</div>
-            <div class="card-position-wrapper">${summaryCardHTML}</div>
+            <div>${infoBoxHTML}</div>
+            <div>${summaryCardHTML}</div>
           </div>
 
           <div id="controls">
@@ -1810,7 +1810,7 @@ export default function VehicleTracker() {
               isAnimating = false;
               
               countedClientKeys.clear();
-              document.getElementById('visited-clients-count').textContent = '0';
+              document.querySelectorAll('.visited-clients-count').forEach(el => el.textContent = '0');
               
               updateDistanceCard(0, 0);
               
@@ -1868,7 +1868,7 @@ export default function VehicleTracker() {
                 const currentFlag = allFlags[nextStop.markerIndex];
                 if (currentFlag && currentFlag.type === 'stop' && currentFlag.clientKey && !countedClientKeys.has(currentFlag.clientKey)) {
                   countedClientKeys.add(currentFlag.clientKey);
-                  document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
+                  document.querySelectorAll('.visited-clients-count').forEach(el => el.textContent = countedClientKeys.size);
                 }
                 currentStopIndex++;
                 
@@ -1925,7 +1925,7 @@ export default function VehicleTracker() {
                 }
                 if (!isStillVisited && countedClientKeys.has(clientKeyToRemove)) {
                   countedClientKeys.delete(clientKeyToRemove);
-                  document.getElementById('visited-clients-count').textContent = countedClientKeys.size;
+                  document.querySelectorAll('.visited-clients-count').forEach(el => el.textContent = countedClientKeys.size);
                 }
               }
 
