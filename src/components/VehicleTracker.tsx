@@ -2268,7 +2268,7 @@ export default function VehicleTracker() {
         } bg-white shadow-lg transition-all duration-300 flex flex-col relative z-20`}
       >
         {/* Header del Sidebar */}
-        <div className="pt-4 pl-4 pd-4 pb-3 border-b border-gray-200 flex items-center justify-between">
+        <div className="pt-4 pl-4 pr-4 pb-2 border-b border-gray-200 flex items-center justify-between">
           {!sidebarCollapsed && (
             <div className="flex items-center gap-2">
               <Car className="w-7 h-7 text-blue-600" />
@@ -2725,15 +2725,6 @@ export default function VehicleTracker() {
         {/* Footer con Acciones */}
         {!sidebarCollapsed && tripData && (
           <div className="pt-2 pl-4 pr-4 border-t border-gray-200 space-y-2">
-            <button
-              onClick={downloadReport}
-              disabled={isGeneratingReport || !selection.value}
-              className="w-full flex items-center text-sm justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              {isGeneratingReport ? 'Generando...' : 'Reporte'}
-            </button>
-
             {/* Botón para móvil */}
             <button
               onClick={openMapInTab}
@@ -2751,6 +2742,15 @@ export default function VehicleTracker() {
               <Download className="w-4 h-4 mr-2" />
               Descargar Mapa
             </button>
+
+            <button
+              onClick={downloadReport}
+              disabled={isGeneratingReport || !selection.value}
+              className="w-full flex items-center text-sm justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed"
+            >
+              <FileText className="w-4 h-4 mr-2" />
+              {isGeneratingReport ? 'Generando...' : 'Reporte'}
+            </button>
           </div>
         )}
 
@@ -2762,10 +2762,10 @@ export default function VehicleTracker() {
                 setSidebarCollapsed(false);
                 setActiveTab('config');
               }}
-              className="p-3 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-3 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
               title="Configuración"
             >
-              <Upload className="w-6 h-6 text-gray-600" />
+              <Upload className="w-6 h-6 text-blue-600" />
             </button>
             {tripData && (
               <button
@@ -2773,10 +2773,10 @@ export default function VehicleTracker() {
                   setSidebarCollapsed(false);
                   setActiveTab('info');
                 }}
-                className="p-3 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-3 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
                 title="Información"
               >
-                <Car className="w-6 h-6 text-gray-600" />
+                <Car className="w-6 h-6 text-green-600" />
               </button>
             )}
           </div>
@@ -2795,7 +2795,7 @@ export default function VehicleTracker() {
           {tripData && (
             <button
               onClick={() => setShowAnalytics(!showAnalytics)}
-              className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+              className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:text-white hover:bg-blue-500 rounded-lg transition-colors flex items-center gap-2"
             >
               <svg
                 className={`w-5 h-5 transition-transform ${
@@ -2848,7 +2848,7 @@ export default function VehicleTracker() {
 
         {/* Panel de Análisis (Expandible) */}
         {showAnalytics && tripData && (
-          <div className="bg-white border-t border-gray-200 h-64 overflow-y-auto">
+          <div className="bg-white h-full overflow-y-auto">
             <div className="p-6">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">
                 Análisis y Gráficas
