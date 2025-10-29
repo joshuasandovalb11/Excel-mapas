@@ -6,10 +6,14 @@ import {
   Download,
   Car,
   Users,
-  UserCheck,
   Truck,
   FileText,
   ExternalLink,
+  Minus,
+  Plus,
+  CarFront,
+  FileClock,
+  Route,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 
@@ -59,6 +63,8 @@ export default function VehicleTracker() {
     50
   );
   const [error, setError] = useState<string | null>(null);
+  const [isToastVisible, setIsToastVisible] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
   const [matchedStopsCount, setMatchedStopsCount] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
@@ -78,6 +84,11 @@ export default function VehicleTracker() {
     'vt_viewMode',
     'current'
   );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeTab, setActiveTab] = useState<'config' | 'info' | 'analytics'>(
+    'config'
+  );
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
@@ -180,6 +191,44 @@ export default function VehicleTracker() {
       });
     }
   }, [clientData, clientRadius, tripData, setTripData]);
+
+  // useEffect para manejar la visibilidad y el temporizador del toast
+  useEffect(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    if (error) {
+      setIsToastVisible(true);
+
+      toastTimerRef.current = window.setTimeout(() => {
+        setIsToastVisible(false);
+
+        setTimeout(() => {
+          setError(null);
+        }, 500);
+      }, 5000);
+    } else {
+      setIsToastVisible(false);
+    }
+
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, [error]);
+
+  // Función para cerrar el toast manualmente
+  const handleCloseToast = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setIsToastVisible(false);
+    setTimeout(() => {
+      setError(null);
+    }, 500);
+  };
 
   // Efecto para reprocesar los datos cuando cambia el modo de vista
   useEffect(() => {
@@ -2211,280 +2260,661 @@ export default function VehicleTracker() {
   const summaryStats = calculateSummaryStats();
 
   return (
-    <div className="flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-2xl bg-white rounded-xl shadow-lg p-8 space-y-6">
-        <div className="text-center">
-          <div className="flex justify-center items-center mb-4">
-            <Car className="w-12 h-12 text-blue-600" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-800">
-            Visualizador de Rutas
-          </h1>
-          <p className="text-gray-500 mt-2">
-            Paso 1: Sube el archivo de eventos de vehículo para generar el mapa.
-          </p>
-        </div>
-        <div>
-          <label
-            htmlFor="dropzone-file"
-            className="flex flex-col items-center justify-center w-full h-64 border-2 border-blue-300 border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 transition-colors"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              const files = e.dataTransfer.files;
-              if (files && files.length > 0) {
-                handleFileUpload({ target: { files } } as any);
-              }
-            }}
-          >
-            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-              <Upload className="w-10 h-10 mb-3 text-blue-500 motion-safe:animate-bounce" />
-              {fileName ? (
-                <p className="font-semibold text-blue-700">{fileName}</p>
-              ) : (
-                <>
-                  <p className="mb-2 text-sm text-gray-600">
-                    <span className="font-semibold">Haz clic para subir</span> o
-                    arrastra y suelta
-                  </p>
-                  <p className="text-xs text-gray-500">XLSX, XLS</p>
-                </>
-              )}
+    <div className="flex h-screen overflow-hidden bg-gray-100">
+      {/* SIDEBAR IZQUIERDO */}
+      <aside
+        className={`${
+          sidebarCollapsed ? 'w-16' : 'w-80'
+        } bg-white shadow-lg transition-all duration-300 flex flex-col relative z-20`}
+      >
+        {/* Header del Sidebar */}
+        <div className="pt-4 pl-4 pd-4 pb-3 border-b border-gray-200 flex items-center justify-between">
+          {!sidebarCollapsed && (
+            <div className="flex items-center gap-2">
+              <Car className="w-7 h-7 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-800">Rutas</h1>
             </div>
-            <input
-              ref={fileInputRef}
-              id="dropzone-file"
-              type="file"
-              className="hidden"
-              onChange={handleFileUpload}
-              accept=".xlsx, .xls"
-            />
-          </label>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label={sidebarCollapsed ? 'Expandir' : 'Colapsar'}
+          >
+            <svg
+              className={`w-5 h-5 transition-transform ${
+                sidebarCollapsed ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
         </div>
 
-        {tripData && (
-          <div className="mt-6">
-            <p className="text-center text-gray-600 mb-2">
-              Paso 2 (Opcional): Sube el archivo de clientes para identificar
-              paradas.
-            </p>
-            <label
-              htmlFor="clients-file"
-              className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors"
-            >
-              <div className="flex flex-col items-center justify-center">
-                <Users className="w-8 h-8 mb-2 text-green-500 motion-safe:animate-bounce" />
-                {clientFileName ? (
-                  <p className="font-semibold text-green-700">
-                    {clientFileName}
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-sm text-gray-600">
-                      <span className="font-semibold">
-                        Subir archivo de Clientes
-                      </span>
-                    </p>
-                    <p className="text-xs text-gray-500">XLSX, XLS</p>
-                  </>
-                )}
+        {/* Tabs de Navegación */}
+        {!sidebarCollapsed && (
+          <>
+            <div className="overflow-x-auto">
+              <div className="flex border-b border-gray-200">
+                <button
+                  onClick={() => setActiveTab('config')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    activeTab === 'config'
+                      ? 'text-blue-600 border-b-2 border-blue-600'
+                      : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                >
+                  Configuración
+                </button>
+                <button
+                  onClick={() => setActiveTab('info')}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    !tripData
+                      ? 'text-gray-300 cursor-not-allowed'
+                      : activeTab === 'info'
+                        ? 'text-blue-600 border-b-2 border-blue-600'
+                        : 'text-gray-600 hover:text-gray-800'
+                  }`}
+                  disabled={!tripData}
+                >
+                  Información
+                </button>
               </div>
-              <input
-                id="clients-file"
-                type="file"
-                className="hidden"
-                onChange={handleClientFileUpload}
-                accept=".xlsx, .xls"
-              />
-            </label>
-          </div>
+            </div>
+          </>
         )}
 
-        {/* SECCIÓN PARA SELECCIONAR VENDEDOR O CHOFER */}
-        {availableVendors.length > 0 && (
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-              <UserCheck className="w-5 h-5 text-gray-500" />
-              Paso 3: Selecciona un vendedor o modo chofer
-            </label>
-            <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2 border-b border-b-gray-300">
-              Vendedores
-            </label>
-            <div className="flex flex-wrap gap-2 mt-2">
-              {availableVendors.map((vendor) => (
-                <button
-                  key={vendor}
-                  onClick={() => handleSelection(vendor)}
-                  className={`
-                            px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
+        {/* Contenido del Sidebar */}
+        {!sidebarCollapsed && (
+          <div className="flex-1 overflow-y-auto">
+            {/* Tab: Configuración */}
+            {activeTab === 'config' && (
+              <div className="p-4 space-y-4">
+                {/* Upload de Ruta */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    1. Archivo de Ruta
+                  </label>
+                  <label
+                    htmlFor="dropzone-file"
+                    className="flex flex-col items-center justify-center w-full h-32 border-2 border-blue-300 border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 transition-colors"
+                  >
+                    <Upload className="w-8 h-8 mb-2 text-blue-500 animate-bounce" />
+                    {fileName ? (
+                      <p className="text-xs font-semibold text-blue-700 text-center px-2">
+                        {fileName}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-600">XLSX, XLS</p>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      id="dropzone-file"
+                      type="file"
+                      className="hidden"
+                      onChange={handleFileUpload}
+                      accept=".xlsx, .xls"
+                    />
+                  </label>
+                </div>
+
+                {/* Upload de Clientes */}
+                {tripData && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      2. Archivo de Clientes (Opcional)
+                    </label>
+                    <label
+                      htmlFor="clients-file"
+                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors"
+                    >
+                      <Users className="w-6 h-6 mb-1 text-green-500 animate-bounce" />
+                      {clientFileName ? (
+                        <p className="text-xs font-semibold text-green-700 text-center px-2">
+                          {clientFileName}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-gray-600">XLSX, XLS</p>
+                      )}
+                      <input
+                        id="clients-file"
+                        type="file"
+                        className="hidden"
+                        onChange={handleClientFileUpload}
+                        accept=".xlsx, .xls"
+                      />
+                    </label>
+                  </div>
+                )}
+
+                {/* Selección de Vendedor */}
+                {availableVendors.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      3. Seleccionar Vendedor
+                    </label>
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {availableVendors.map((vendor) => (
+                          <button
+                            key={vendor}
+                            onClick={() => handleSelection(vendor)}
+                            className={`
+                            px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
                             ${
                               selection.value === vendor
                                 ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-green-100 hover:border-green-400'
+                                : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
                             }
                           `}
-                >
-                  {vendor}
-                </button>
-              ))}
-            </div>
-            <label className="block text-sm font-medium text-gray-700 mb-2 mt-2 items-center gap-2 border-b border-b-gray-300">
-              Modo chofer
-            </label>
+                          >
+                            {vendor}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        onClick={() => handleSelection('chofer')}
+                        className={`w-full px-3 py-2 text-xs font-medium rounded flex items-center justify-center gap-2 transition-all ${
+                          selection.value === 'chofer'
+                            ? 'bg-red-500 text-white border-red-500 shadow-md transform scale-105'
+                            : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-red-100'
+                        }`}
+                      >
+                        <Truck className="w-4 h-4" />
+                        MODO CHOFER
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Modo de Vista */}
+                {tripData && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Modo de Vista
+                    </label>
+                    <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                      <button
+                        onClick={() => setViewMode('current')}
+                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                          viewMode === 'current'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Actual
+                      </button>
+                      <button
+                        onClick={() => setViewMode('new')}
+                        className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
+                          viewMode === 'new'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Completa
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Configuración de Paradas */}
+                {tripData && (
+                  <div className="space-y-3 pt-3 border-t border-gray-200">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Duración mínima de paradas
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label="Disminuir duración"
+                          onClick={() =>
+                            setMinStopDuration((prev) => Math.max(1, prev - 1))
+                          }
+                          className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                          disabled={minStopDuration <= 1}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+
+                        <input
+                          type="range"
+                          min={1}
+                          max={120}
+                          step={1}
+                          value={minStopDuration}
+                          onChange={(e) =>
+                            setMinStopDuration(Number(e.target.value))
+                          }
+                          className="flex-1"
+                          aria-label="Duración mínima de paradas"
+                        />
+
+                        <button
+                          type="button"
+                          aria-label="Aumentar duración"
+                          onClick={() =>
+                            setMinStopDuration((prev) =>
+                              Math.min(120, prev + 1)
+                            )
+                          }
+                          className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                          disabled={minStopDuration >= 120}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+
+                        <span className="text-sm font-semibold text-gray-700 w-16 text-right">
+                          {minStopDuration} min
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">
+                        Radio de detección de cliente
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          aria-label="Disminuir radio"
+                          onClick={() =>
+                            setClientRadius((prev) => Math.max(10, prev - 10))
+                          }
+                          className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                          disabled={clientRadius <= 10}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+
+                        <input
+                          type="range"
+                          min={10}
+                          max={1000}
+                          step={10}
+                          value={clientRadius}
+                          onChange={(e) =>
+                            setClientRadius(Number(e.target.value))
+                          }
+                          className="flex-1"
+                          aria-label="Radio de detección de cliente"
+                        />
+
+                        <button
+                          type="button"
+                          aria-label="Aumentar radio"
+                          onClick={() =>
+                            setClientRadius((prev) => Math.min(1000, prev + 10))
+                          }
+                          className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                          disabled={clientRadius >= 1000}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+
+                        <span className="text-sm font-semibold text-gray-700 w-16 text-right">
+                          {clientRadius} m
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Tab: Información */}
+            {activeTab === 'info' && tripData && vehicleInfo && (
+              <div className="p-4 space-y-4">
+                {/* Info del Vehículo */}
+                <div className="bg-blue-50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <CarFront className="w-3 h-3 font-semibold text-blue-900" />
+                    <h3 className="text-sm font-semibold text-blue-900">
+                      Información del Vehículo
+                    </h3>
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Descripción:</span>
+                      <span className="font-medium">
+                        {vehicleInfo.descripcion}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Placa:</span>
+                      <span className="font-medium">{vehicleInfo.placa}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Fecha:</span>
+                      <span className="font-medium">{vehicleInfo.fecha}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resumen del Viaje */}
+                <div className="bg-green-50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Route className="w-3 h-3 font-semibold text-green-900" />
+                    <h3 className="text-sm font-semibold text-green-900">
+                      Resumen del Viaje
+                    </h3>
+                  </div>
+                  <div className="space-y-1 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Clientes visitados:</span>
+                      <span className="font-medium">{matchedStopsCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Distancia total:</span>
+                      <span className="font-medium">
+                        {Math.round(tripData.totalDistance / 1000)} km
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Inicio:</span>
+                      <span className="font-medium">
+                        {tripData.workStartTime || 'N/A'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Fin:</span>
+                      <span className="font-medium">
+                        {tripData.workEndTime || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Estadísticas de Tiempo */}
+                <div className="bg-yellow-50 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <FileClock className="w-3 h-3 font-semibold text-yellow-900" />
+                    <h3 className="text-sm font-semibold text-yellow-900">
+                      Distribución de Tiempo
+                    </h3>
+                  </div>
+
+                  {/* Información dentro de horario laboral */}
+                  <div className="space-y-1 text-xs pb-2">
+                    <div className="grid grid-cols-3 items-center gap-2">
+                      <span className="text-gray-600 text-left col-span-1">
+                        Con clientes:
+                      </span>
+                      <span className="font-medium text-right col-span-1">
+                        {formatDuration(summaryStats.timeWithClients)}
+                      </span>
+                      <span className="text-green-600 text-sm font-bold text-right col-span-1">
+                        {summaryStats.percentageClients.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 items-center gap-2">
+                      <span className="text-gray-600 text-left col-span-1">
+                        Sin clientes:
+                      </span>
+                      <span className="font-medium text-right col-span-1">
+                        {formatDuration(summaryStats.timeWithNonClients)}
+                      </span>
+                      <span className="text-red-600 text-sm font-bold text-right col-span-1">
+                        {summaryStats.percentageNonClients.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 items-center gap-2">
+                      <span className="text-gray-600 text-left col-span-1">
+                        En traslados:
+                      </span>
+                      <span className="font-medium text-right col-span-1">
+                        {formatDuration(summaryStats.travelTime)}
+                      </span>
+                      <span className="text-blue-600 text-sm font-bold text-right col-span-1">
+                        {summaryStats.percentageTravel.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Información fuera de horario laboral */}
+                  <div className="space-y-1 text-xs pt-2">
+                    <h4 className="font-semibold text-gray-800">
+                      Fuera de Horario Laboral
+                    </h4>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Con clientes:</span>
+                      <div className="text-right">
+                        <span className="font-medium block">
+                          {formatDuration(
+                            summaryStats.timeWithClientsAfterHours
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Sin clientes:</span>
+                      <div className="text-right">
+                        <span className="font-medium block">
+                          {formatDuration(
+                            summaryStats.timeWithNonClientsAfterHours
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">En traslados:</span>
+                      <div className="text-right">
+                        <span className="font-medium block">
+                          {formatDuration(summaryStats.travelTimeAfterHours)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Footer con Acciones */}
+        {!sidebarCollapsed && tripData && (
+          <div className="pt-2 pl-4 pr-4 border-t border-gray-200 space-y-2">
             <button
-              key="chofer"
-              onClick={() => handleSelection('chofer')}
-              className={`
-                            px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out flex items-center gap-2
-                            ${
-                              selection.value === 'chofer'
-                                ? 'bg-red-500 text-white border-red-500 shadow-lg transform scale-105'
-                                : 'bg-white text-gray-700 border-gray-300 hover:bg-red-100 hover:border-red-400'
-                            }
-                          `}
+              onClick={downloadReport}
+              disabled={isGeneratingReport || !selection.value}
+              className="w-full flex items-center text-sm justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed"
             >
-              <Truck className="w-4 h-4" />
-              CHOFER
+              <FileText className="w-4 h-4 mr-2" />
+              {isGeneratingReport ? 'Generando...' : 'Reporte'}
+            </button>
+
+            {/* Botón para móvil */}
+            <button
+              onClick={openMapInTab}
+              className="w-full flex sm:hidden items-center justify-center px-4 py-2.5 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 transition-all"
+            >
+              <ExternalLink className="w-4 h-4 mr-2" />
+              Abrir Mapa
+            </button>
+
+            {/* Botón para desktop */}
+            <button
+              onClick={downloadMap}
+              className="w-full hidden sm:flex items-center text-sm justify-center px-4 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-all"
+            >
+              <Download className="w-4 h-4 mr-2" />
+              Descargar Mapa
             </button>
           </div>
         )}
 
-        {error && (
-          <div className="text-center p-4 bg-red-100 text-red-700 rounded-lg">
-            <p>
-              <strong>Error:</strong> {error}
-            </p>
-          </div>
-        )}
-
-        {tripData && (
-          <div className="border-t border-t-gray-300 pt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
-              Modo de Vista de Jornada
-            </label>
-            <div className="flex justify-center">
-              <div className="flex rounded-lg border border-gray-300 overflow-hidden">
-                <button
-                  onClick={() => setViewMode('current')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    viewMode === 'current'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Vista Actual
-                </button>
-                <button
-                  onClick={() => setViewMode('new')}
-                  className={`px-4 py-2 text-sm font-medium transition-colors ${
-                    viewMode === 'new'
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  Vista Completa
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tripData && (
-          <div className="space-y-4">
-            {/* Input para determinar las paradas mayor a que minutos */}
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor="stop-duration"
-                className="text-sm font-medium text-gray-700"
-              >
-                Mostrar paradas mayores a:
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="number"
-                  id="stop-duration"
-                  min="1"
-                  max="120"
-                  value={minStopDuration}
-                  onChange={(e) => setMinStopDuration(Number(e.target.value))}
-                  className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-                <span className="text-sm text-gray-500">minutos</span>
-              </div>
-            </div>
-            {/* Input para el radio de coincidencia del cliente */}
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor="client-radius"
-                className="text-sm font-medium text-gray-700"
-              >
-                Radio de detección de cliente:
-              </label>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="number"
-                  id="client-radius"
-                  min="10"
-                  max="1000"
-                  step="10"
-                  value={clientRadius}
-                  onChange={(e) => setClientRadius(Number(e.target.value))}
-                  className="w-20 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-                <span className="text-sm text-gray-500">metros</span>
-              </div>
-            </div>
-            <div className="grid gap-2 md:grid-cols-1 lg:flex lg:gap-4">
+        {/* Iconos cuando está colapsado */}
+        {sidebarCollapsed && (
+          <div className="flex-1 flex flex-col items-center justify-center space-y-6 py-8">
+            <button
+              onClick={() => {
+                setSidebarCollapsed(false);
+                setActiveTab('config');
+              }}
+              className="p-3 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Configuración"
+            >
+              <Upload className="w-6 h-6 text-gray-600" />
+            </button>
+            {tripData && (
               <button
-                onClick={downloadReport}
-                disabled={isGeneratingReport || !selection.value}
-                className="flex items-center justify-center w-full px-6 py-3 bg-blue-500 text-white font-bold rounded-lg hover:bg-blue-600 transition-transform transform hover:scale-105 disabled:bg-blue-300 disabled:cursor-not-allowed"
+                onClick={() => {
+                  setSidebarCollapsed(false);
+                  setActiveTab('info');
+                }}
+                className="p-3 hover:bg-gray-100 rounded-lg transition-colors"
+                title="Información"
               >
-                <FileText className="h-5 w-5 mr-2" />
-                {isGeneratingReport ? 'Generando...' : 'Descargar Reporte'}
+                <Car className="w-6 h-6 text-gray-600" />
               </button>
+            )}
+          </div>
+        )}
+      </aside>
 
-              {/* Contenedor para los botones de mapa */}
-              <div className="w-full">
-                {/* BOTÓN SOLO PARA MÓVILES */}
-                <button
-                  onClick={openMapInTab}
-                  className="flex sm:hidden items-center justify-center w-full px-4 py-3 bg-teal-500 text-white font-bold rounded-lg hover:bg-teal-600 transition-transform transform hover:scale-105"
-                >
-                  <ExternalLink className="h-5 w-5 mr-2" />
-                  Abrir Mapa
-                </button>
+      {/* ÁREA PRINCIPAL: MAPA */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Header del Mapa */}
+        <div className="bg-white shadow-sm px-6 py-3 flex items-center justify-between border-b border-gray-200">
+          <h2 className="text-md font-semibold text-gray-800">
+            {tripData
+              ? 'Vista Previa del Mapa'
+              : 'Carga el archivo para comenzar'}
+          </h2>
+          {tripData && (
+            <button
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+            >
+              <svg
+                className={`w-5 h-5 transition-transform ${
+                  showAnalytics ? 'rotate-180' : ''
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+              {showAnalytics ? 'Ocultar' : 'Mostrar'} Análisis
+            </button>
+          )}
+        </div>
 
-                {/* BOTÓN SOLO PARA ESCRITORIO */}
-                <button
-                  onClick={downloadMap}
-                  className="hidden sm:flex items-center justify-center w-full px-4 py-3 bg-green-500 text-white font-bold rounded-lg hover:bg-green-600 transition-transform transform hover:scale-105"
-                >
-                  <Download className="h-5 w-5 mr-2" />
-                  Descargar Mapa
-                </button>
+        {/* Contenedor del Mapa */}
+        <div className="flex-1 overflow-hidden bg-gray-50">
+          {tripData ? (
+            <iframe
+              srcDoc={generateMapHTML(
+                vehicleInfo,
+                clientData,
+                matchedStopsCount,
+                selection.value,
+                summaryStats
+              )}
+              className="w-full h-full border-0"
+              title="Vista Previa del Mapa"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center">
+                <Car className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg">
+                  No hay datos de ruta cargados
+                </p>
+                <p className="text-gray-400 text-sm mt-2">
+                  Sube un archivo desde el panel lateral
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Panel de Análisis (Expandible) */}
+        {showAnalytics && tripData && (
+          <div className="bg-white border-t border-gray-200 h-64 overflow-y-auto">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-800 mb-4">
+                Análisis y Gráficas
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Placeholder para futuras gráficas */}
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <p className="text-sm text-gray-600">
+                    Distribución de tiempo
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <p className="text-sm text-gray-600">Eficiencia de ruta</p>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <p className="text-sm text-gray-600">Cobertura de clientes</p>
+                </div>
               </div>
             </div>
           </div>
         )}
-      </div>
+      </main>
 
-      {tripData && (
-        <div className="relative w-full max-w-6xl mt-8">
-          <h2 className="text-2xl font-bold text-center mb-4">
-            Vista Previa del Mapa
-          </h2>
-          <iframe
-            srcDoc={generateMapHTML(
-              vehicleInfo,
-              clientData,
-              matchedStopsCount,
-              selection.value,
-              summaryStats
-            )}
-            className="w-full h-[600px] border-2 border-gray-300 rounded-lg shadow-md"
-            title="Vista Previa del Mapa"
-          />
+      {/* Error Toast (Opcional) */}
+      {error && (
+        <div
+          className={`
+            fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg 
+            flex items-center gap-3 max-w-md z-50
+            transition-all duration-500 ease-in-out
+            ${
+              isToastVisible
+                ? 'opacity-100 translate-x-0'
+                : 'opacity-0 translate-x-10'
+            }
+          `}
+        >
+          <button
+            onClick={handleCloseToast}
+            className="ml-auto hover:bg-red-600 p-1 rounded-4xl"
+          >
+            <svg
+              className="w-5 h-5 flex-shrink-0"
+              fill="currentColor"
+              viewBox="0 0 20 20"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+          <p className="text-sm">{error}</p>
+          <button
+            onClick={handleCloseToast}
+            className="ml-auto hover:bg-red-600 p-1 rounded"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
         </div>
       )}
     </div>
