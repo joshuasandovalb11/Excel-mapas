@@ -1,10 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react'; // <-- Se añadió useRef y useEffect
 import * as XLSX from 'xlsx-js-style';
 import {
   Upload,
   Users,
-  BarChart,
   Download,
   AlertCircle,
   UserCheck,
@@ -16,6 +15,10 @@ import {
   Flag,
   FlagOff,
   SquareParking,
+  Plus,
+  Minus,
+  ChartNoAxesCombined,
+  ChartBar,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 
@@ -164,6 +167,43 @@ export default function ReportesView() {
   }>('rv_selection', { mode: 'vendor', value: null });
   const [reportMetadata, setReportMetadata] =
     usePersistentState<ReportMetadata | null>('rv_reportMetadata', null);
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isToastVisible, setIsToastVisible] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
+  const [showAllNonVisited, setShowAllNonVisited] = useState(false);
+
+  useEffect(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    if (error) {
+      setIsToastVisible(true);
+      toastTimerRef.current = window.setTimeout(() => {
+        setIsToastVisible(false);
+        setTimeout(() => {
+          setError(null);
+        }, 500);
+      }, 5000);
+    } else {
+      setIsToastVisible(false);
+    }
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, [error]);
+
+  const handleCloseToast = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setIsToastVisible(false);
+    setTimeout(() => {
+      setError(null);
+    }, 500);
+  };
 
   // Función para leer un archivo como cadena binaria
   const readFileAsBinary = (file: File): Promise<string | ArrayBuffer> => {
@@ -1085,22 +1125,49 @@ export default function ReportesView() {
   };
 
   return (
-    <div className="flex flex-col items-center p-4">
-      <div className="w-full max-w-4xl bg-white rounded-xl shadow-lg p-8 space-y-6">
-        <div className="text-center">
-          <BarChart className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-800">
-            Generador de Reportes
-          </h1>
-          <p className="text-gray-500 mt-2">
-            Sube los archivos de viaje de la semana y un archivo de clientes
-            para consolidar la información.
-          </p>
+    <div className="flex h-screen overflow-hidden bg-gray-100">
+      {/* SIDEBAR IZQUIERDO */}
+      <aside
+        className={`${
+          sidebarCollapsed ? 'w-16' : 'w-80'
+        } bg-white shadow-lg transition-all duration-300 flex flex-col relative z-20`}
+      >
+        {/* Header del Sidebar */}
+        <div className="pt-4 pl-4 pr-4 pb-2 border-b border-gray-200 flex items-center justify-between">
+          {!sidebarCollapsed && (
+            <div className="flex items-center gap-2">
+              <ChartNoAxesCombined className="w-7 h-7 text-blue-600" />
+              <h1 className="text-xl font-bold text-gray-800">Reportes</h1>
+            </div>
+          )}
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label={sidebarCollapsed ? 'Expandir' : 'Colapsar'}
+          >
+            <svg
+              className={`w-5 h-5 transition-transform ${
+                sidebarCollapsed ? 'rotate-180' : ''
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
         </div>
-        <div className="space-y-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+
+        {/* Contenido del Sidebar */}
+        {!sidebarCollapsed && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div>
-              <h2 className="text-lg font-semibold text-gray-700 mb-2">
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">
                 1. Cargar Archivos de Viajes
               </h2>
               <label
@@ -1109,11 +1176,11 @@ export default function ReportesView() {
               >
                 <Upload className="w-8 h-8 mb-2 text-blue-500 shrink-0 motion-safe:animate-bounce" />
                 {vehicleFileNames.length > 0 ? (
-                  <div className="text-blue-700 text-center font-medium text-sm overflow-y-auto px-2">
+                  <div className="text-blue-700 text-center font-medium text-xs overflow-y-auto px-2 max-h-16">
                     <p>{vehicleFileNames.join(', ')}</p>
                   </div>
                 ) : (
-                  <span className="text-sm text-gray-600">
+                  <span className="text-xs font-semibold text-blue-600">
                     Seleccionar archivos...
                   </span>
                 )}
@@ -1128,7 +1195,7 @@ export default function ReportesView() {
               </label>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-700 mb-2">
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">
                 2. Cargar Archivo de Clientes
               </h2>
               <label
@@ -1137,11 +1204,11 @@ export default function ReportesView() {
               >
                 <Users className="w-8 h-8 mb-2 text-green-500 motion-safe:animate-bounce" />
                 {clientFileName ? (
-                  <span className="font-semibold text-green-700">
+                  <span className="font-semibold text-green-700 text-xs px-2 text-center">
                     {clientFileName}
                   </span>
                 ) : (
-                  <span className="text-sm text-gray-600">
+                  <span className="text-xs font-semibold text-green-600">
                     Seleccionar archivo...
                   </span>
                 )}
@@ -1154,19 +1221,13 @@ export default function ReportesView() {
                 />
               </label>
             </div>
-          </div>
-          <div className="bg-gray-50 p-4 rounded-lg space-y-4">
-            <h2 className="text-lg font-semibold text-gray-700 mb-3">
-              3. Configurar Reporte
-            </h2>
+
+            {/* Selección de Vendedor o Chofer */}
             {availableVendors.length > 0 && (
               <div>
                 <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
                   <UserCheck className="w-4 h-4" />
-                  Selecciona un vendedor o modo chofer:
-                </label>
-                <label className="block text-sm font-medium text-gray-700 mb-2 items-center gap-2 border-b border-b-gray-300">
-                  Vendedores
+                  Selecciona un vendedor:
                 </label>
                 <div className="flex flex-wrap gap-2 mb-4">
                   {availableVendors.map((vendor) => (
@@ -1175,29 +1236,26 @@ export default function ReportesView() {
                       onClick={() =>
                         setSelection({ mode: 'vendor', value: vendor })
                       }
-                      className={`px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out ${
+                      className={`px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out ${
                         selection.mode === 'vendor' &&
                         selection.value === vendor
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-md transform scale-105'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-100 hover:border-blue-400'
+                          ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
+                          : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
                       }`}
                     >
                       {vendor}
                     </button>
                   ))}
                 </div>
-                <label className="block text-sm font-medium text-gray-700 mb-2 mt-2 items-center gap-2 border-b border-b-gray-300">
-                  Modo chofer
-                </label>
                 <button
                   key="driver-mode"
                   onClick={() =>
                     setSelection({ mode: 'driver', value: 'CHOFER' })
                   }
-                  className={`px-4 py-1.5 text-sm font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out flex items-center gap-2 ${
+                  className={`w-full px-3 py-2 text-xs font-medium rounded flex items-center justify-center gap-2 transition-all ${
                     selection.mode === 'driver'
-                      ? 'bg-red-600 text-white border-red-600 shadow-md transform scale-105'
-                      : 'bg-white text-gray-700 border-gray-300 hover:bg-red-100 hover:border-red-400'
+                      ? 'bg-red-500 text-white border-red-500 shadow-md transform scale-105'
+                      : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-red-100'
                   }`}
                 >
                   <Truck className="w-4 h-4" />
@@ -1205,47 +1263,114 @@ export default function ReportesView() {
                 </button>
               </div>
             )}
-            <div className="flex items-center justify-between pt-2">
-              <label
-                htmlFor="stop-duration-report"
-                className="text-sm font-medium text-gray-700"
-              >
-                Paradas con duración mayor a:
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  id="stop-duration-report"
-                  min="1"
-                  max="120"
-                  value={minStopDuration}
-                  onChange={(e) => setMinStopDuration(Number(e.target.value))}
-                  className="w-20 px-3 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-                <span className="text-sm text-gray-500">min</span>
+
+            {/* Configuración del Reporte */}
+            <div className="space-y-3">
+              <h2 className="text-sm font-semibold text-gray-700 mb-3">
+                3. Configurar Reporte
+              </h2>
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Duración mínima de paradas
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      aria-label="Disminuir duración"
+                      onClick={() =>
+                        setMinStopDuration((prev) => Math.max(1, prev - 1))
+                      }
+                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                      disabled={minStopDuration <= 1}
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+
+                    <input
+                      type="range"
+                      min={1}
+                      max={120}
+                      step={1}
+                      value={minStopDuration}
+                      onChange={(e) =>
+                        setMinStopDuration(Number(e.target.value))
+                      }
+                      className="flex-1"
+                      aria-label="Duración mínima de paradas"
+                    />
+
+                    <button
+                      type="button"
+                      aria-label="Aumentar duración"
+                      onClick={() =>
+                        setMinStopDuration((prev) => Math.min(120, prev + 1))
+                      }
+                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                      disabled={minStopDuration >= 120}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+
+                    <span className="text-sm font-semibold text-gray-700 w-16 text-right">
+                      {minStopDuration} min
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Radio de detección de cliente
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      aria-label="Disminuir radio"
+                      onClick={() =>
+                        setClientRadius((prev) => Math.max(10, prev - 10))
+                      }
+                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                      disabled={clientRadius <= 10}
+                    >
+                      <Minus className="w-3 h-3" />
+                    </button>
+
+                    <input
+                      type="range"
+                      min={10}
+                      max={1000}
+                      step={10}
+                      value={clientRadius}
+                      onChange={(e) => setClientRadius(Number(e.target.value))}
+                      className="flex-1"
+                      aria-label="Radio de detección de cliente"
+                    />
+
+                    <button
+                      type="button"
+                      aria-label="Aumentar radio"
+                      onClick={() =>
+                        setClientRadius((prev) => Math.min(1000, prev + 10))
+                      }
+                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                      disabled={clientRadius >= 1000}
+                    >
+                      <Plus className="w-3 h-3" />
+                    </button>
+
+                    <span className="text-sm font-semibold text-gray-700 w-16 text-right">
+                      {clientRadius} m
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor="client-radius-report"
-                className="text-sm font-medium text-gray-700"
-              >
-                Radio de detección de cliente:
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  id="client-radius-report"
-                  min="10"
-                  max="1000"
-                  step="10"
-                  value={clientRadius}
-                  onChange={(e) => setClientRadius(Number(e.target.value))}
-                  className="w-20 px-3 py-1 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-                <span className="text-sm text-gray-500">mts</span>
-              </div>
-            </div>
+          </div>
+        )}
+
+        {/* Footer con Acciones */}
+        {!sidebarCollapsed && (
+          <div className="pt-2 pl-4 pr-4 border-t border-gray-200 space-y-2">
             <button
               onClick={handleGenerateReport}
               disabled={
@@ -1256,50 +1381,88 @@ export default function ReportesView() {
               }
               className="w-full flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed transform hover:scale-105"
             >
+              <ChartBar className="h-5 w-5 mr-2" />
               {isLoading ? 'Generando...' : 'Generar Reporte'}
             </button>
-          </div>
-        </div>
-        {error && (
-          <div className="mt-6 text-center p-4 bg-red-100 text-red-700 rounded-lg flex items-center justify-center gap-2">
-            <AlertCircle className="h-5 w-5" />{' '}
-            <p>
-              <strong>Error:</strong> {error}
-            </p>
-          </div>
-        )}
-        {warnings.length > 0 && (
-          <div className="mt-4 text-center p-4 bg-yellow-100 text-yellow-800 rounded-lg flex flex-col items-center justify-center gap-2">
-            {warnings.map((warning, index) => (
-              <div key={index} className="flex items-start gap-2 w-full">
-                <AlertCircle className="h-5 w-5 mt-1 shrink-0" />
-                <p className="text-left">
-                  <strong>Advertencia:</strong> {warning}
-                </p>
-              </div>
-            ))}
+            {reportData && (
+              <button
+                onClick={downloadReport}
+                disabled={!reportMetadata}
+                className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300"
+              >
+                <Download className="h-5 w-5" />
+                Descargar Excel
+              </button>
+            )}
           </div>
         )}
-        {reportData && (
-          <div className="space-y-8 pt-8">
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-2xl font-bold text-gray-800">
-                  Resultados del Reporte
-                </h2>
-                <div className="flex">
-                  <button
-                    onClick={downloadReport}
-                    disabled={!reportMetadata}
-                    className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors disabled:bg-green-300"
-                  >
-                    <Download className="h-5 w-5" />
-                    Descargar Excel
-                  </button>
-                </div>
-              </div>
 
-              <div className="p-3 mb-4 bg-blue-50 text-blue-800 rounded-lg flex items-center gap-2 text-sm">
+        {/* Iconos cuando está colapsado */}
+        {sidebarCollapsed && (
+          <div className="flex-1 flex flex-col items-center justify-center space-y-6 py-8">
+            <button
+              onClick={() => setSidebarCollapsed(false)}
+              className="p-3 py-20 bg-blue-100 text-blue-600 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
+              title="Configuración"
+            >
+              <ChartNoAxesCombined className="w-6 h-6" />
+            </button>
+            {reportData && (
+              <button
+                onClick={downloadReport}
+                className="p-3 py-20 bg-green-100 text-green-600 hover:text-white hover:bg-green-500 rounded-lg transition-colors"
+                title="Descargar Reporte"
+              >
+                <Download className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+        )}
+      </aside>
+
+      {/* ÁREA PRINCIPAL: RESULTADOS */}
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Header del Contenido */}
+        <div className="bg-white shadow-sm px-6 py-3 flex items-center justify-between border-b border-gray-200">
+          <h2 className="text-md font-semibold text-gray-800">
+            {isLoading
+              ? 'Generando reporte...'
+              : reportData
+                ? `Mostrando reporte para: ${selection.value}`
+                : 'Configura y genera un reporte para ver los resultados'}
+          </h2>
+          {reportData && (
+            <div className="hidden md:block">
+              <button
+                onClick={downloadReport}
+                disabled={!reportMetadata}
+                className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white text-sm font-semibold rounded-lg hover:bg-green-600 transition-colors disabled:bg-green-300"
+              >
+                <Download className="h-4 w-4" />
+                Descargar Excel
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Contenedor de Resultados (Scrollable) */}
+        <div className="flex-1 overflow-y-auto bg-gray-50 p-6">
+          {reportData ? (
+            <div className="max-w-7xl mx-auto space-y-8">
+              {warnings.length > 0 && (
+                <div className="p-4 bg-yellow-100 text-yellow-800 rounded-lg flex flex-col items-center justify-center gap-2">
+                  {warnings.map((warning, index) => (
+                    <div key={index} className="flex items-start gap-2 w-full">
+                      <AlertCircle className="h-5 w-5 mt-1 shrink-0" />
+                      <p className="text-left text-sm">
+                        <strong>Advertencia:</strong> {warning}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="p-3 bg-blue-50 text-blue-800 rounded-lg flex items-center gap-2 text-sm">
                 <Info className="h-5 w-5 shrink-0" />
                 <span>
                   El inicio, fin y las paradas sin cliente ahora muestran una
@@ -1327,7 +1490,7 @@ export default function ReportesView() {
                       )}
                     </h3>
                     {reportData[day] && reportData[day].visits.length > 0 ? (
-                      <div className="overflow-x-auto border rounded-lg">
+                      <div className="overflow-x-auto border rounded-lg shadow-sm">
                         <table className="min-w-full bg-white">
                           <thead className="bg-gray-100">
                             <tr>
@@ -1397,44 +1560,104 @@ export default function ReportesView() {
                   </div>
                 ))}
               </div>
-            </div>
-            {nonVisitedClients.length > 0 && (
-              <div>
-                <h3 className="text-xl font-semibold text-gray-700 mt-8 mb-2 flex items-center gap-2">
-                  <Users2 className="text-red-600" /> Clientes No Visitados en
-                  el Periodo
-                </h3>
-                <div className="overflow-x-auto border rounded-lg">
-                  <table className="min-w-full bg-white">
-                    <thead className="bg-gray-100">
-                      <tr>
-                        <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
-                          Clave
-                        </th>
-                        <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
-                          Nombre
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {nonVisitedClients.map((client) => (
-                        <tr key={client.key} className="hover:bg-gray-50">
-                          <td className="py-2 px-4 border-b text-sm">
-                            {client.key}
-                          </td>
-                          <td className="py-2 px-4 border-b text-sm">
-                            {client.name}
-                          </td>
+
+              {selection.mode !== 'driver' && nonVisitedClients.length > 0 && (
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-700 mt-8 mb-2 flex items-center gap-2">
+                    <Users2 className="text-red-600" /> Clientes No Visitados en
+                    el Periodo ({nonVisitedClients.length})
+                  </h3>
+                  <div className="overflow-x-auto border rounded-lg shadow-sm">
+                    <table className="min-w-full bg-white">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
+                            Clave
+                          </th>
+                          <th className="py-2 px-4 border-b text-left text-sm font-semibold text-gray-600">
+                            Nombre
+                          </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {(showAllNonVisited
+                          ? nonVisitedClients
+                          : nonVisitedClients.slice(0, 10)
+                        ).map((client) => (
+                          <tr key={client.key} className="hover:bg-gray-50">
+                            <td className="py-2 px-4 border-b text-sm">
+                              {client.key}
+                            </td>
+                            <td className="py-2 px-4 border-b text-sm">
+                              {client.name}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {nonVisitedClients.length > 10 && (
+                    <button
+                      onClick={() => setShowAllNonVisited(!showAllNonVisited)}
+                      className="flex mt-2 p-2 text-sm rounded-2xl font-bold text-blue-600 bg-blue-200 hover:text-white hover:bg-blue-600 hover:underline text-center mx-auto"
+                    >
+                      {showAllNonVisited
+                        ? 'Ver menos...'
+                        : `Ver ${nonVisitedClients.length - 10} más...`}
+                    </button>
+                  )}
                 </div>
+              )}
+            </div>
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="text-center">
+                <ChartNoAxesCombined className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg">
+                  {isLoading
+                    ? 'Generando reporte, esto puede tardar...'
+                    : 'Aún no se ha generado ningún reporte'}
+                </p>
+                {!isLoading && (
+                  <p className="text-gray-400 text-sm mt-2">
+                    Sube los archivos y haz clic en "Generar Reporte"
+                  </p>
+                )}
               </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Error Toast (Opcional) */}
+      {error && (
+        <div
+          className={`
+            fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg 
+            flex items-center gap-3 max-w-md z-50
+            transition-all duration-500 ease-in-out
+            ${
+              isToastVisible
+                ? 'opacity-100 translate-x-0'
+                : 'opacity-0 translate-x-10'
+            }
+          `}
+        >
+          <p className="text-sm">{error}</p>
+          <button
+            onClick={handleCloseToast}
+            className="ml-auto hover:bg-red-600 p-1 rounded"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path
+                fillRule="evenodd"
+                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

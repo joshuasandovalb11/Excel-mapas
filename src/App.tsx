@@ -1,10 +1,9 @@
 import { useState, lazy, Suspense } from 'react';
-// import VehicleTracker from './components/VehicleTracker';
-// import ReportesView from './components/ReportesView';
-import { Map, FileText, RotateCw } from 'lucide-react';
+import { Map, FileText, RefreshCcw, MapPinHouse } from 'lucide-react';
 
 const VehicleTracker = lazy(() => import('./components/VehicleTracker'));
 const ReportesView = lazy(() => import('./components/ReportesView'));
+const Routes = lazy(() => import('./components/Routes'));
 
 // Componente de carga
 function LoadingSpinner() {
@@ -17,11 +16,11 @@ function LoadingSpinner() {
 }
 
 export default function App() {
-  const [activeView, setActiveView] = useState<'tracker' | 'reports'>(
-    'tracker'
-  );
+  const [activeView, setActiveView] = useState<
+    'tracker' | 'routes' | 'reports'
+  >('tracker');
 
-  const buttonClasses = (view: 'tracker' | 'reports') =>
+  const buttonClasses = (view: 'tracker' | 'routes' | 'reports') =>
     `flex items-center justify-center px-4 py-2 mx-2 rounded-lg transition-colors ${
       activeView === view
         ? 'bg-blue-600 text-white shadow-md'
@@ -34,10 +33,23 @@ export default function App() {
     window.location.reload();
   };
 
+  const renderActiveView = () => {
+    switch (activeView) {
+      case 'tracker':
+        return <VehicleTracker />;
+      case 'routes':
+        return <Routes />;
+      case 'reports':
+        return <ReportesView />;
+      default:
+        return <VehicleTracker />;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 font-sans">
+    <div className="min-h-screen bg-gray-50 font-sans text-sm">
       <header className="bg-white shadow-sm">
-        <nav className="container mx-auto flex justify-center items-center p-4 relative">
+        <nav className="container mx-auto flex justify-center items-center p-3 relative">
           {/* Boton para el visualizador de rutas */}
           <button
             onClick={() => setActiveView('tracker')}
@@ -46,6 +58,16 @@ export default function App() {
             <Map className="w-5 h-5 mr-2" />
             Visualizador de Rutas
           </button>
+
+          {/* Boton para la visualizacion de rutas y clientes de los vendedores */}
+          <button
+            onClick={() => setActiveView('routes')}
+            className={buttonClasses('routes')}
+          >
+            <MapPinHouse className="w-5 h-5 mr-2" />
+            Mapas de Vendedores
+          </button>
+
           {/* Boton para el generador de reportes */}
           <button
             onClick={() => setActiveView('reports')}
@@ -61,19 +83,17 @@ export default function App() {
               onClick={handleRefresh}
               title="Recargar Aplicación y Limpiar Datos"
               className="
-              p-2 rounded-full text-blue-500 bg-gray-200 hover:bg-blue-500 
+              p-2 rounded-full text-gray-700 bg-gray-200 hover:bg-blue-500 
               hover:text-white transition-colors hover:animate-spin"
             >
-              <RotateCw className="w-6 h-6" />
+              <RefreshCcw className="w-6 h-6" />
             </button>
           </div>
         </nav>
       </header>
 
-      <main className="p-4">
-        <Suspense fallback={<LoadingSpinner />}>
-          {activeView === 'tracker' ? <VehicleTracker /> : <ReportesView />}
-        </Suspense>
+      <main className={activeView === 'tracker' ? 'p-2' : 'p-2'}>
+        <Suspense fallback={<LoadingSpinner />}>{renderActiveView()}</Suspense>
       </main>
     </div>
   );

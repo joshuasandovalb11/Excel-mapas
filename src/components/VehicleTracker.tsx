@@ -2762,10 +2762,10 @@ export default function VehicleTracker() {
                 setSidebarCollapsed(false);
                 setActiveTab('config');
               }}
-              className="p-3 bg-blue-100 hover:bg-blue-200 rounded-lg transition-colors"
+              className="p-3 py-20 bg-blue-100 text-blue-600 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
               title="Configuración"
             >
-              <Upload className="w-6 h-6 text-blue-600" />
+              <Upload className="w-6 h-6" />
             </button>
             {tripData && (
               <button
@@ -2773,10 +2773,10 @@ export default function VehicleTracker() {
                   setSidebarCollapsed(false);
                   setActiveTab('info');
                 }}
-                className="p-3 bg-green-100 hover:bg-green-200 rounded-lg transition-colors"
+                className="p-3 py-20 bg-green-100 text-green-600 hover:text-white hover:bg-green-500 rounded-lg transition-colors"
                 title="Información"
               >
-                <Car className="w-6 h-6 text-green-600" />
+                <Car className="w-6 h-6" />
               </button>
             )}
           </div>
