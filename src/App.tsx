@@ -1,9 +1,16 @@
 import { useState, lazy, Suspense } from 'react';
-import { Map, FileText, RefreshCcw, MapPinHouse } from 'lucide-react';
+import {
+  Map,
+  FileText,
+  RefreshCcw,
+  MapPinHouse,
+  HandCoins,
+} from 'lucide-react';
 
 const VehicleTracker = lazy(() => import('./components/VehicleTracker'));
 const ReportesView = lazy(() => import('./components/ReportesView'));
 const Routes = lazy(() => import('./components/Routes'));
+const PedidosTracker = lazy(() => import('./components/PedidosTracker'));
 
 // Componente de carga
 function LoadingSpinner() {
@@ -17,10 +24,10 @@ function LoadingSpinner() {
 
 export default function App() {
   const [activeView, setActiveView] = useState<
-    'tracker' | 'routes' | 'reports'
+    'tracker' | 'routes' | 'pedidos' | 'reports'
   >('tracker');
 
-  const buttonClasses = (view: 'tracker' | 'routes' | 'reports') =>
+  const buttonClasses = (view: 'tracker' | 'routes' | 'pedidos' | 'reports') =>
     `flex items-center justify-center px-4 py-2 mx-2 rounded-lg transition-colors ${
       activeView === view
         ? 'bg-blue-600 text-white shadow-md'
@@ -39,6 +46,8 @@ export default function App() {
         return <VehicleTracker />;
       case 'routes':
         return <Routes />;
+      case 'pedidos':
+        return <PedidosTracker />;
       case 'reports':
         return <ReportesView />;
       default:
@@ -66,6 +75,15 @@ export default function App() {
           >
             <MapPinHouse className="w-5 h-5 mr-2" />
             Mapas de Vendedores
+          </button>
+
+          {/* Boton para la visualizacion de rutas y clientes de los vendedores */}
+          <button
+            onClick={() => setActiveView('pedidos')}
+            className={buttonClasses('pedidos')}
+          >
+            <HandCoins className="w-5 h-5 mr-2" />
+            Pedidos de Vendedores
           </button>
 
           {/* Boton para el generador de reportes */}

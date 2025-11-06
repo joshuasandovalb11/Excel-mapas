@@ -7,13 +7,13 @@ import {
   Car,
   Users,
   Truck,
-  FileText,
   ExternalLink,
   Minus,
   Plus,
   CarFront,
   FileClock,
   Route,
+  ChartBar,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 
@@ -1736,7 +1736,7 @@ export default function VehicleTracker() {
               });
             }
 
-            function createMarker(flag) {
+            function createMarker(flag) { 
               const colors = { start: '#22c55e', stop: '#4F4E4E', end: '#ef4444' };
               const icon = { path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z', fillColor: colors[flag.type], fillOpacity: 1, strokeWeight: 0, scale: 1.5, anchor: new google.maps.Point(12, 24) };
               return new google.maps.Marker({ position: { lat: flag.lat, lng: flag.lng }, map, icon, title: flag.description });
@@ -2340,7 +2340,7 @@ export default function VehicleTracker() {
                 {/* Upload de Ruta */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    1. Archivo de Ruta
+                    1. Cargar Archivo de Ruta del Vendedor
                   </label>
                   <label
                     htmlFor="dropzone-file"
@@ -2422,10 +2422,10 @@ export default function VehicleTracker() {
 
                       <button
                         onClick={() => handleSelection('chofer')}
-                        className={`w-full px-3 py-2 text-xs font-medium rounded flex items-center justify-center gap-2 transition-all ${
+                        className={`w-full px-3 py-2 text-xs font-medium rounded border flex items-center justify-center gap-2 transition-all ${
                           selection.value === 'chofer'
                             ? 'bg-red-500 text-white border-red-500 shadow-md transform scale-105'
-                            : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-red-100'
+                            : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-red-100 hover:border-red-400'
                         }`}
                       >
                         <Truck className="w-4 h-4" />
@@ -2722,38 +2722,6 @@ export default function VehicleTracker() {
           </div>
         )}
 
-        {/* Footer con Acciones */}
-        {!sidebarCollapsed && tripData && (
-          <div className="pt-2 pl-4 pr-4 border-t border-gray-200 space-y-2">
-            {/* Botón para móvil */}
-            <button
-              onClick={openMapInTab}
-              className="w-full flex sm:hidden items-center justify-center px-4 py-2.5 bg-teal-600 text-white font-semibold rounded-lg hover:bg-teal-700 transition-all"
-            >
-              <ExternalLink className="w-4 h-4 mr-2" />
-              Abrir Mapa
-            </button>
-
-            {/* Botón para desktop */}
-            <button
-              onClick={downloadMap}
-              className="w-full hidden sm:flex items-center text-sm justify-center px-4 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-all"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Descargar Mapa
-            </button>
-
-            <button
-              onClick={downloadReport}
-              disabled={isGeneratingReport || !selection.value}
-              className="w-full flex items-center text-sm justify-center px-4 py-2.5 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-all disabled:bg-gray-300 disabled:cursor-not-allowed"
-            >
-              <FileText className="w-4 h-4 mr-2" />
-              {isGeneratingReport ? 'Generando...' : 'Reporte'}
-            </button>
-          </div>
-        )}
-
         {/* Iconos cuando está colapsado */}
         {sidebarCollapsed && (
           <div className="flex-1 flex flex-col items-center justify-center space-y-6 py-8">
@@ -2765,7 +2733,7 @@ export default function VehicleTracker() {
               className="p-3 py-20 bg-blue-100 text-blue-600 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
               title="Configuración"
             >
-              <Upload className="w-6 h-6" />
+              <Upload className="w-6 h-6 animate-bounce" />
             </button>
             {tripData && (
               <button
@@ -2776,7 +2744,7 @@ export default function VehicleTracker() {
                 className="p-3 py-20 bg-green-100 text-green-600 hover:text-white hover:bg-green-500 rounded-lg transition-colors"
                 title="Información"
               >
-                <Car className="w-6 h-6" />
+                <Car className="w-6 h-6 animate-bounce" />
               </button>
             )}
           </div>
@@ -2793,27 +2761,56 @@ export default function VehicleTracker() {
               : 'Carga el archivo para comenzar'}
           </h2>
           {tripData && (
-            <button
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:text-white hover:bg-blue-500 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <svg
-                className={`w-5 h-5 transition-transform ${
-                  showAnalytics ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="flex items-center gap-3">
+              <button
+                onClick={downloadReport}
+                disabled={isGeneratingReport || !selection.value}
+                className="flex items-center text-sm justify-center font-medium px-4 py-2 bg-blue-600 text-white hover:text-blue-600 hover:bg-blue-100 rounded-lg transition-all disabled:bg-gray-300 disabled:text-white disabled:cursor-not-allowed"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-              {showAnalytics ? 'Ocultar' : 'Mostrar'} Análisis
-            </button>
+                <ChartBar className="w-4 h-4 mr-2" />
+                {isGeneratingReport ? 'Generando...' : 'Generar Reporte'}
+              </button>
+
+              {/* Botón para móvil */}
+              <button
+                onClick={openMapInTab}
+                className="flex sm:hidden items-center justify-center font-medium px-4 py-2 bg-teal-500 text-white hover:text-teal-500 hover:bg-teal-100 rounded-lg transition-all"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />
+                Abrir Mapa
+              </button>
+
+              {/* Botón para desktop */}
+              <button
+                onClick={downloadMap}
+                className="hidden sm:flex items-center text-sm font-medium justify-center px-4 py-2 text-white bg-green-500 hover:text-green-600 hover:bg-green-100 rounded-lg transition-all"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Descargar Mapa
+              </button>
+
+              <button
+                onClick={() => setShowAnalytics(!showAnalytics)}
+                className="relative px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg
+                  className={`w-5 h-5 transition-transform ${
+                    showAnalytics ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+                {showAnalytics ? 'Ocultar' : 'Mostrar'} Análisis
+              </button>
+            </div>
           )}
         </div>
 

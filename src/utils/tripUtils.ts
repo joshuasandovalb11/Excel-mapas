@@ -51,7 +51,7 @@ export interface ProcessedTrip {
     clientBranchNumber?: string;
     clientBranchName?: string;
   }>;
-  totalDistance: number; // en metros
+  totalDistance: number;
   processingMethod: 'event-based' | 'speed-based';
   initialState: 'Apagado' | 'En movimiento';
   workStartTime?: string; // Hora de inicio de labores
@@ -66,7 +66,6 @@ export interface VehicleInfo {
   fecha: string;
 }
 
-// Interfaz de Cliente actualizada para incluir sucursales
 export interface Client {
   key: string;
   name: string;
@@ -78,14 +77,12 @@ export interface Client {
   displayName: string; // Nombre para mostrar
 }
 
-// Estructura del resultado del procesamiento del archivo de clientes
 export interface MasterClientData {
   clients: Client[];
   vendors: string[];
 }
 
-// FUNCIONES DE UTILIDAD
-
+// Funcion para convertir una cadena a Title Case
 export const toTitleCase = (str: string): string => {
   if (!str) return '';
   return str.toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
@@ -98,7 +95,7 @@ export const calculateDistance = (
   lat2: number,
   lon2: number
 ) => {
-  const R = 6371e3; // Radio de la Tierra en metros
+  const R = 6371e3;
   const p1 = (lat1 * Math.PI) / 180;
   const p2 = (lat2 * Math.PI) / 180;
   const deltaP = ((lat2 - lat1) * Math.PI) / 180;
@@ -292,19 +289,7 @@ export const processMasterClientFile = (
       const lng = Number(coords[1]?.trim());
       if (isNaN(lat) || isNaN(lng)) return null;
 
-      // Crear nombre para mostrar
       const displayName = toTitleCase(clientName);
-
-      // Si tiene información de sucursal, agregarla al nombre para mostrar
-      /*
-      if (branchNumber && branchNumber !== '' && branchNumber !== '0') {
-        if (branchName && branchName !== '') {
-          displayName += ` - Suc. ${branchNumber} (${toTitleCase(branchName)})`;
-        } else {
-          displayName += ` - Suc. ${branchNumber}`;
-        }
-      }
-      */
 
       return {
         key: clientKey,
@@ -343,7 +328,6 @@ export const formatBranchInfo = (client: Client): string | null => {
   return null;
 };
 
-// --- NUEVA FUNCIÓN PARA UNIR PARADAS CON CLIENTES ---
 const matchStopsWithClients = (
   flags: ProcessedTrip['flags'],
   clients: Client[] | null,
@@ -533,20 +517,16 @@ const processBySpeedAndMovement = (
     const prevEvent = relevantEvents[i - 1];
     const currentEvent = relevantEvents[i];
 
-    // Detectar inicio de parada: cambio de velocidad > 0 a velocidad = 0
     if (currentEvent.speed === 0 && prevEvent.speed > 0) {
       stopStartInfo = currentEvent;
     }
 
-    // Detectar fin de parada: cambio de velocidad = 0 a velocidad > 0
     if (currentEvent.speed > 0 && prevEvent.speed === 0 && stopStartInfo) {
       const stopStartTime = parseTimeToMinutes(stopStartInfo.time);
       const stopEndTime = parseTimeToMinutes(prevEvent.time);
       let duration = stopEndTime - stopStartTime;
       if (duration < 0) duration += 24 * 60;
 
-      // CAMBIO CRÍTICO: Solo agregar paradas con duración >= 2 minutos
-      // Esto evita paradas instantáneas y problemas de cálculo
       if (duration >= 2) {
         stopCounter++;
         flags.push({
@@ -562,9 +542,6 @@ const processBySpeedAndMovement = (
       stopStartInfo = null;
     }
   }
-
-  // NUEVO: Si hay una parada sin terminar al final (el vehículo terminó detenido)
-  // NO la agregamos porque no sabemos cuándo terminó realmente
 
   const lastTripEvent = relevantEvents[relevantEvents.length - 1];
   flags.push({
@@ -609,7 +586,6 @@ export const processTripData = (
   tripDate: string,
   clientData: Client[] | null
 ): ProcessedTrip => {
-  // 1. Lectura y saneamiento de datos (tu código actual está bien aquí)
   const findTimeColumn = (row: any): string | null => {
     if (!row) return null;
     const timePattern = /^\d{1,2}:\d{2}(:\d{2})?(\s?(AM|PM))?$/i;
@@ -656,14 +632,13 @@ export const processTripData = (
         originalTime = excelTimeValue.trim();
       }
 
-      // Si el formato de hora no es válido, se ignora la fila
       if (!timeRegex.test(originalTime)) {
         return null;
       }
 
       const convertedTime = convertToTijuanaTime(originalTime, tripDate);
       if (!convertedTime) {
-        return null; // Ignorar si la conversión de zona horaria falla
+        return null;
       }
 
       return {
@@ -711,7 +686,6 @@ export const processTripData = (
 
   coreTripData.flags = matchStopsWithClients(coreTripData.flags, clientData);
 
-  // 3. Determinar estado y horas de trabajo (LÓGICA CORREGIDA)
   const initialState: ProcessedTrip['initialState'] =
     allEvents[0].speed > 0 ? 'En movimiento' : 'Apagado';
   const isTripOngoing = allEvents[allEvents.length - 1].speed > 0;

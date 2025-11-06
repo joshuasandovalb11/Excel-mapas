@@ -1384,16 +1384,6 @@ export default function ReportesView() {
               <ChartBar className="h-5 w-5 mr-2" />
               {isLoading ? 'Generando...' : 'Generar Reporte'}
             </button>
-            {reportData && (
-              <button
-                onClick={downloadReport}
-                disabled={!reportMetadata}
-                className="w-full flex items-center gap-2 justify-center px-4 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300"
-              >
-                <Download className="h-5 w-5" />
-                Descargar Excel
-              </button>
-            )}
           </div>
         )}
 
@@ -1405,7 +1395,7 @@ export default function ReportesView() {
               className="p-3 py-20 bg-blue-100 text-blue-600 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
               title="Configuración"
             >
-              <ChartNoAxesCombined className="w-6 h-6" />
+              <ChartNoAxesCombined className="w-6 h-6 animate-bounce" />
             </button>
             {reportData && (
               <button
@@ -1413,7 +1403,7 @@ export default function ReportesView() {
                 className="p-3 py-20 bg-green-100 text-green-600 hover:text-white hover:bg-green-500 rounded-lg transition-colors"
                 title="Descargar Reporte"
               >
-                <Download className="w-6 h-6" />
+                <Download className="w-6 h-6 animate-bounce" />
               </button>
             )}
           </div>
@@ -1599,7 +1589,7 @@ export default function ReportesView() {
                   {nonVisitedClients.length > 10 && (
                     <button
                       onClick={() => setShowAllNonVisited(!showAllNonVisited)}
-                      className="flex mt-2 p-2 text-sm rounded-2xl font-bold text-blue-600 bg-blue-200 hover:text-white hover:bg-blue-600 hover:underline text-center mx-auto"
+                      className="flex mt-4 p-2 text-sm rounded-3xl font-semibold text-gray-800 bg-white border border-gray-400 hover:bg-gray-800 hover:text-white text-center mx-auto"
                     >
                       {showAllNonVisited
                         ? 'Ver menos...'

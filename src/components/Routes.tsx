@@ -250,7 +250,7 @@ export default function Routes() {
                     path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
                     fillColor: '#000000',
                     fillOpacity: 1,
-                    strokeColor: 'white',
+                    strokeColor: 0,
                     strokeWeight: 1,
                     scale: 1.3,
                     anchor: new google.maps.Point(12, 24)
@@ -275,7 +275,7 @@ export default function Routes() {
                     path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
                     fillColor: '#FF0000', // Color Rojo
                     fillOpacity: 1,
-                    strokeColor: 'white',
+                    strokeColor: 0,
                     strokeWeight: 1,
                     scale: 1.3,
                     anchor: new google.maps.Point(12, 24)
@@ -414,23 +414,6 @@ export default function Routes() {
           </div>
         )}
 
-        {/* Footer con Acciones */}
-        {!sidebarCollapsed && availableVendors.length > 0 && (
-          <div className="pt-2 pl-4 pr-4 border-t border-gray-200 space-y-2">
-            <button
-              onClick={downloadMap}
-              disabled={
-                !selectedVendor ||
-                (regularClients.length === 0 && !closestSpecialClient)
-              }
-              className="w-full flex items-center justify-center px-4 py-2.5 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300"
-            >
-              <Download className="h-5 w-5 mr-2" />
-              Descargar Mapa
-            </button>
-          </div>
-        )}
-
         {/* Iconos cuando está colapsado */}
         {sidebarCollapsed && (
           <div className="flex-1 flex flex-col items-center justify-center space-y-6 py-8">
@@ -439,13 +422,13 @@ export default function Routes() {
               className="p-3 py-20 bg-green-100 text-green-600 hover:text-white hover:bg-green-500 rounded-lg transition-colors"
               title="Configuración"
             >
-              <MapPinned className="w-6 h-6" />
+              <MapPinned className="w-6 h-6 animate-bounce" />
             </button>
           </div>
         )}
       </aside>
 
-      {/* ÁREA PRINCIPAL: MAPA (NUEVO) */}
+      {/* ÁREA PRINCIPAL */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header del Mapa */}
         <div className="bg-white shadow-sm px-6 py-3 flex items-center justify-between border-b border-gray-200">
@@ -456,6 +439,22 @@ export default function Routes() {
                 ? `Mapa de Vendedor: ${selectedVendor}`
                 : 'Carga un archivo y selecciona un vendedor'}
           </h2>
+
+          {availableVendors.length > 0 && (
+            <div>
+              <button
+                onClick={downloadMap}
+                disabled={
+                  !selectedVendor ||
+                  (regularClients.length === 0 && !closestSpecialClient)
+                }
+                className="flex items-center justify-center px-4 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                <Download className="h-5 w-5 mr-2" />
+                Descargar Mapa
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Contenedor del Mapa */}
