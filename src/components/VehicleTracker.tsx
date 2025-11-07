@@ -2489,13 +2489,13 @@ export default function VehicleTracker() {
                         <input
                           type="range"
                           min={1}
-                          max={120}
+                          max={60}
                           step={1}
                           value={minStopDuration}
                           onChange={(e) =>
                             setMinStopDuration(Number(e.target.value))
                           }
-                          className="flex-1"
+                          className="flex-1 accent-blue-600"
                           aria-label="Duración mínima de paradas"
                         />
 
@@ -2539,13 +2539,13 @@ export default function VehicleTracker() {
                         <input
                           type="range"
                           min={10}
-                          max={1000}
+                          max={500}
                           step={10}
                           value={clientRadius}
                           onChange={(e) =>
                             setClientRadius(Number(e.target.value))
                           }
-                          className="flex-1"
+                          className="flex-1 accent-blue-600"
                           aria-label="Radio de detección de cliente"
                         />
 

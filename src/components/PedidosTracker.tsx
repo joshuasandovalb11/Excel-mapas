@@ -1308,7 +1308,7 @@ export default function PedidosTracker() {
                       step={10}
                       value={matchRadius}
                       onChange={(e) => setMatchRadius(Number(e.target.value))}
-                      className="flex-1"
+                      className="flex-1 accent-blue-600"
                       aria-label="Radio de detección de cliente"
                     />
 

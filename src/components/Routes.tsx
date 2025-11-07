@@ -211,11 +211,26 @@ export default function Routes() {
       <!DOCTYPE html>
       <html>
         <head>
-          <style> #map { height: 100%; } body, html { height: 100%; margin: 0; padding: 0; } </style>
+          <style> 
+            #map { height: 100%; } body, html { height: 100%; margin: 0; padding: 0; }
+            .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 8px !important; }
+            .info-window { font-family: sans-serif; }
+          </style>
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
         </head>
         <body>
           <div id="map"></div>
           <script>
+            function toTitleCase(str) {
+              if (!str) return '';
+              return str.toLowerCase().split(' ').map(function(word) {
+                if (word.length <= 3 && (word === 'de' || word === 'la' || word === 'el' || word === 'y' || word === 'e')) {
+                  return word;
+                }
+                return word.charAt(0).toUpperCase() + word.slice(1);
+              }).join(' ');
+            }
+
             function initMap() {
               const map = new google.maps.Map(document.getElementById('map'), {
                 center: ${mapCenter},
@@ -231,16 +246,46 @@ export default function Routes() {
               const bounds = new google.maps.LatLngBounds();
 
               const createInfoWindowContent = (client, showVendor = false) => {
+                // Coordenadas y Link
+                const coordinatesText = \`\${client.lat.toFixed(6)}, \${client.lng.toFixed(6)}\`;
+                const googleMapsLink = \`http://googleusercontent.com/maps/google.com/1\${client.lat},\${client.lng}\`;
+                
+                // Informacion de la sucursal
                 const branchInfo = client.branchNumber ?
                   (client.branchName ?
-                    \`<br>Sucursal: <strong>\${client.branchName}</strong>\` :
-                    \`<br>Suc. \${client.branchNumber}\`)
+                    \`<p style="margin: 2px 0; font-weight: 600; color: #2563eb; font-size: 12px;">Suc. \${toTitleCase(client.branchName)}</p>\` :
+                    \`<p style="margin: 2px 0; font-weight: 600; color: #2563eb; font-size: 12px;">Suc. \${client.branchNumber}</p>\`)
                   : '';
                 
-                return \`<div><strong>#\${client.key}</strong><br><strong>\${client.name}</strong></br>\${branchInfo}</div>\`;
+                // Vendor Info
+                const vendorInfo = showVendor && client.vendor ?
+                  \`<p style="border-top:2px solid #eee; padding-top:4px; margin-top: 8px; font-size: 12px; margin-bottom: 0;">
+                    Vendedor: <strong style="font-weight: 700; color: #FF0000; font-size: 12px;"> \${client.vendor} </strong>
+                  </p>\` : '';
+                
+                return \`<div class="info-window" style="padding: 4px; color: black; background: white;">
+                  <h3 style="font-size: 15px; margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-user"></i> Cliente
+                  </h3>
+
+                  <div style="color:#059669;">
+                    <p style="margin: 2px 0; font-weight: 500; font-size: 12px;">
+                      <strong># \${client.key}</strong>
+                    </p>
+                    <strong><p style="margin: 2px 0; font-weight: 600; font-size: 12px;">\${toTitleCase(client.name)}</p></strong>
+                    \${branchInfo}
+                  </div>
+
+                  <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
+                  <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
+                    <strong>View on Google Maps</strong>
+                  </a>
+                  
+                  \${vendorInfo}
+                </div>\`;
               };
 
-              // 1. Bucle para clientes regulares (casas negras)
+              // 1. Bucle para clientes regulares
               regularClients.forEach(client => {
                 const marker = new google.maps.Marker({
                   position: { lat: client.lat, lng: client.lng },
@@ -250,14 +295,14 @@ export default function Routes() {
                     path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
                     fillColor: '#000000',
                     fillOpacity: 1,
-                    strokeColor: 0,
-                    strokeWeight: 1,
+                    strokeColor: "white",
+                    strokeWeight: 0,
                     scale: 1.3,
                     anchor: new google.maps.Point(12, 24)
                   }
                 });
                 const infowindow = new google.maps.InfoWindow({
-                    content: createInfoWindowContent(client, true)
+                    content: createInfoWindowContent(client, true) // showVendor = true
                 });
                 marker.addListener('click', () => {
                     infowindow.open(map, marker);
@@ -265,7 +310,7 @@ export default function Routes() {
                 bounds.extend(marker.getPosition());
               });
               
-              // 2. Bucle para cliente especial CERCANO (casa roja)
+              // 2. Bucle para cliente especial mas cercano
               closestSpecialClient.forEach(client => {
                 const marker = new google.maps.Marker({
                   position: { lat: client.lat, lng: client.lng },
@@ -273,24 +318,22 @@ export default function Routes() {
                   title: \`\${client.name} (SEDE MÁS CERCANA)\`,
                   icon: {
                     path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                    fillColor: '#FF0000', // Color Rojo
+                    fillColor: '#FF0000',
                     fillOpacity: 1,
-                    strokeColor: 0,
-                    strokeWeight: 1,
+                    strokeColor: "white",
+                    strokeWeight: 0,
                     scale: 1.3,
                     anchor: new google.maps.Point(12, 24)
                   }
                 });
                 const infowindow = new google.maps.InfoWindow({
-                    content: createInfoWindowContent(client, false)
+                    content: createInfoWindowContent(client, false) // showVendor = false
                 });
                 marker.addListener('click', () => {
                     infowindow.open(map, marker);
                 });
                 bounds.extend(marker.getPosition());
               });
-
-              // 3. Se eliminó el bucle para 'otherSpecialClients'
               
               if (regularClients.length > 0 || closestSpecialClient.length > 0) {
                 map.fitBounds(bounds);
@@ -319,7 +362,7 @@ export default function Routes() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">
-      {/* SIDEBAR IZQUIERDO (NUEVO) */}
+      {/* SIDEBAR IZQUIERDO */}
       <aside
         className={`${
           sidebarCollapsed ? 'w-16' : 'w-80'
