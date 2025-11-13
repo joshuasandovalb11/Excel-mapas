@@ -50,6 +50,7 @@ export interface ProcessedTrip {
     clientName?: string;
     clientBranchNumber?: string;
     clientBranchName?: string;
+    isVendorHome?: boolean;
   }>;
   totalDistance: number;
   processingMethod: 'event-based' | 'speed-based';
@@ -75,12 +76,39 @@ export interface Client {
   branchNumber?: string; // Número de sucursal
   branchName?: string; // Nombre de sucursal
   displayName: string; // Nombre para mostrar
+  isVendorHome?: boolean;
+  vendorHomeInitial?: string;
 }
 
 export interface MasterClientData {
   clients: Client[];
   vendors: string[];
 }
+
+// Se usa para identificar la casa de un vendedor por su nombre
+const VENDOR_NAME_TO_INITIALS: Record<string, string> = {
+  'EDGAR BARBOSA HIGUERA': 'BHE',
+  'JUAN CARLOS CABANILLAS GAXIOLA': 'CGC',
+  'LETICIA CERVANTES GONZALEZ': 'CGL',
+  'MARCELINA DIAZ MILLAN': 'DMM',
+  'DENISSE YURIRIA FLORES VELAZQUEZ': 'FVD',
+  'LAURA NALLELY GARCIA REYES': 'GRL',
+  'CARLOS JULIAN GARCIA VEGA': 'GVJ',
+  'ANA LILIA GONZALEZ LARA': 'GLA',
+  'CARLA GUADALUPE HERRERA LOPEZ': 'HLC',
+  'GABRIELA MARTINEZ MADERA': 'MMG',
+  'MEDINA JARAMILLO MARLIN': 'MJM',
+  'JESUS ANGEL MEDRANO ELIZALDE': 'MEJ',
+  'MARIO ENRIQUE MONTES PINEDA': 'MPM',
+  'RODRIGO OLIVAS BATRES': 'OBR',
+  'JESUS PEÑA GONZALEZ': 'PGJ',
+  'JOEL PEREZ HERNANDEZ': 'PHJ',
+  'YOLANDA RENTERIA RODRIGUEZ': 'RRY',
+  'ANA MARIA REYES NEVARES': 'RNA',
+  'MARIA ANTONIA RODRIGUEZ IBARRA': 'RIA',
+  'YASMIN VIRIDIANA RODRIGUEZ PRECIADO': 'RPV',
+  'ANDRES TAPIA LEDEZMA': 'TLA',
+};
 
 // Funcion para convertir una cadena a Title Case
 export const toTitleCase = (str: string): string => {
@@ -118,11 +146,35 @@ const parseTimeToMinutes = (timeStr: string): number => {
 
 // Formatea la duracion en minutos a un string legible
 export const formatDuration = (minutes: number): string => {
-  if (minutes < 1) return 'Menos de 1 min';
+  if (minutes < 1) return '0 min';
   if (minutes < 60) return `${Math.round(minutes)} min`;
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
   return `${hours} h ${mins} min`;
+};
+
+// Añade minutos a una cadena de tiempo HH:mm:ss
+const addMinutesToTime = (timeStr: string, minutesToAdd: number): string => {
+  if (!timeStr) return timeStr;
+  if (minutesToAdd === 0) return timeStr;
+
+  try {
+    const parts = timeStr.split(':').map(Number);
+    const hours = parts[0] || 0;
+    const minutes = parts[1] || 0;
+    const seconds = parts[2] || 0;
+
+    const totalMinutes = hours * 60 + minutes + minutesToAdd;
+
+    const newHours = Math.floor(totalMinutes / 60) % 24;
+    const newMinutes = Math.round(totalMinutes % 60);
+
+    const pad = (num: number) => num.toString().padStart(2, '0');
+    return `${pad(newHours)}:${pad(newMinutes)}:${pad(seconds)}`;
+  } catch (e) {
+    console.error('Error adding minutes to time', e);
+    return timeStr;
+  }
 };
 
 // FUNCIÓN PARA EXTRAER INFORMACIÓN DEL VEHÍCULO
@@ -199,7 +251,6 @@ export const processMasterClientFile = (
   let headerRowIndex = -1;
   let isNewFormat = false;
 
-  // Buscar los encabezados en las primeras 10 filas
   for (let i = 0; i < 10 && i < sheetAsArray.length; i++) {
     const row = sheetAsArray[i].map((cell) =>
       String(cell || '')
@@ -207,14 +258,14 @@ export const processMasterClientFile = (
         .trim()
     );
 
-    // Verificar formato nuevo (VND, CLAVE, RAZON, GPS)
+    // Verificar formato nuevo (VEND, #CLIENTE, NOMBRE CLIENTE, GPS)
     const hasNewFormatHeaders =
       row.some((cell) => cell === 'VEND') &&
       row.some((cell) => cell.includes('#CLIENTE')) &&
       row.some((cell) => cell.includes('NOMBRE') && cell.includes('CLIENTE')) &&
       row.some((cell) => cell === 'GPS');
 
-    // Verificar formato anterior (Vend, #Cliente, Nombre del Cliente, GPS)
+    // Verificar formato anterior (VND, CLAVE, RAZON, GPS)
     const hasOldFormatHeaders =
       row.some((cell) => cell.includes('VND')) &&
       row.some((cell) => cell.includes('CLAVE')) &&
@@ -243,16 +294,16 @@ export const processMasterClientFile = (
 
   const clients = data
     .map((row): Client | null => {
-      // Determinar las columnas según el formato
       let vendor: string;
       let clientKey: string;
       let clientName: string;
       let gpsString: string;
       let branchNumber: string | undefined;
       let branchName: string | undefined;
+      let isVendorHome = false;
+      let vendorHomeInitial: string | undefined;
 
       if (isNewFormat) {
-        // Formato nuevo
         vendor = String(row['Vend'] || 'N/A')
           .trim()
           .toUpperCase();
@@ -261,25 +312,49 @@ export const processMasterClientFile = (
         gpsString = String(row['GPS'] || '').trim();
         branchNumber = String(row['#Suc'] || '').trim();
         branchName = String(row['Sucursal'] || '').trim();
+
+        const commercialName = String(row['Nombre_Comercial'] || '')
+          .toUpperCase()
+          .trim();
+
+        if (commercialName === 'EMPLEADO TME') {
+          isVendorHome = true;
+
+          const clientNameUpper = clientName
+            .toUpperCase()
+            .trim()
+            .replace(/\s+/g, ' ')
+            .normalize('NFC');
+
+          if (VENDOR_NAME_TO_INITIALS[clientNameUpper]) {
+            vendorHomeInitial = VENDOR_NAME_TO_INITIALS[clientNameUpper];
+            console.log(`  ✓ Iniciales asignadas: ${vendorHomeInitial}`);
+          } else {
+            console.warn(
+              `  ✗ No se encontraron iniciales para: "${clientNameUpper}"`
+            );
+            console.warn(
+              '  Nombres disponibles:',
+              Object.keys(VENDOR_NAME_TO_INITIALS)
+            );
+          }
+        }
       } else {
-        // Formato anterior
         vendor = String(row['VND'] || 'N/A')
           .trim()
           .toUpperCase();
         clientKey = String(row['CLAVE'] || 'N/A').trim();
         clientName = String(row['RAZON'] || '').trim();
         gpsString = String(row['GPS'] || '').trim();
-        // En el formato anterior no hay sucursales
         branchNumber = undefined;
         branchName = undefined;
+        isVendorHome = false;
       }
 
-      // Validar vendor
       if (vendor && vendor !== 'N/A') {
         allVendors.add(vendor);
       }
 
-      // Procesar coordenadas GPS
       if (!gpsString) return null;
       gpsString = gpsString.replace('&', ',');
       const coords = gpsString.split(',');
@@ -304,6 +379,8 @@ export const processMasterClientFile = (
         branchName:
           branchName && branchName !== '' ? toTitleCase(branchName) : undefined,
         displayName,
+        isVendorHome,
+        vendorHomeInitial,
       };
     })
     .filter((c): c is Client => c !== null);
@@ -366,6 +443,7 @@ const matchStopsWithClients = (
         clientName: closestClient.name,
         clientBranchNumber: closestClient.branchNumber,
         clientBranchName: closestClient.branchName,
+        isVendorHome: closestClient.isVendorHome,
       };
     }
     return flag;
@@ -692,24 +770,72 @@ export const processTripData = (
 
   const firstMovingEvent = allEvents.find((e) => e.speed > 0);
   const lastMovingEvent = [...allEvents].reverse().find((e) => e.speed > 0);
-  const firstClientVisit = coreTripData.flags.find(
+
+  const clientVisitFlags = coreTripData.flags.filter(
     (flag) =>
       flag.type === 'stop' &&
       flag.clientKey &&
       flag.clientName !== 'Sin coincidencia'
   );
 
+  const firstClientVisit = clientVisitFlags[0];
+  const lastClientVisit =
+    clientVisitFlags.length > 0
+      ? clientVisitFlags[clientVisitFlags.length - 1]
+      : undefined;
+
   let workStartTime: string | undefined;
   let workEndTime: string | undefined;
 
   if (processingMode === 'new') {
-    workStartTime = firstClientVisit?.time || firstMovingEvent?.time;
-    workEndTime = lastMovingEvent?.time || allEvents[allEvents.length - 1].time;
+    const firstInicioDeViajeEvent = allEvents.find((e) =>
+      e.description.toLowerCase().includes('inicio de viaje')
+    );
+
+    const firstInicioTime = firstInicioDeViajeEvent?.time;
+    const firstMoveTime = firstMovingEvent?.time;
+
+    if (firstInicioTime && firstMoveTime) {
+      workStartTime =
+        firstInicioTime < firstMoveTime ? firstInicioTime : firstMoveTime;
+    } else {
+      workStartTime = firstInicioTime || firstMoveTime;
+    }
+    const lastFinDeViajeEvent = [...allEvents]
+      .reverse()
+      .find((e) => e.description.toLowerCase().includes('fin de viaje'));
+    const lastMovingEventTime = lastMovingEvent?.time;
+    const lastFinDeViajeTime = lastFinDeViajeEvent?.time;
+
+    let finalEndTime: string | undefined;
+
+    if (lastFinDeViajeTime && lastMovingEventTime) {
+      finalEndTime =
+        lastFinDeViajeTime > lastMovingEventTime
+          ? lastFinDeViajeTime
+          : lastMovingEventTime;
+    } else {
+      finalEndTime = lastMovingEventTime || lastFinDeViajeTime;
+    }
+
+    workEndTime = finalEndTime || allEvents[allEvents.length - 1].time;
   } else {
     workStartTime =
       firstClientVisit?.time ||
       coreTripData.flags.find((f) => f.type === 'start')?.time;
+
+    let lastVisitEndTime: string | undefined;
+    if (lastClientVisit && lastClientVisit.duration) {
+      lastVisitEndTime = addMinutesToTime(
+        lastClientVisit.time,
+        lastClientVisit.duration
+      );
+    } else if (lastClientVisit) {
+      lastVisitEndTime = lastClientVisit.time;
+    }
+
     workEndTime =
+      lastVisitEndTime ||
       coreTripData.flags.find((f) => f.type === 'end')?.time ||
       allEvents[allEvents.length - 1].time;
   }

@@ -14,8 +14,12 @@ import {
   FileClock,
   Route,
   ChartBar,
+  CalendarClock,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
+
+import { parseISO, format as formatDate } from 'date-fns';
+import { es } from 'date-fns/locale';
 
 import {
   processTripData,
@@ -28,8 +32,23 @@ import {
   type Client,
 } from '../utils/tripUtils';
 
+// Definimos una interfaz para lo que vamos a almacenar por cada viaje
+interface TripStorage {
+  rawData: any[];
+  vehicleInfo: VehicleInfo;
+  fileName: string;
+}
+
 export default function VehicleTracker() {
-  // Estados principales
+  const [allTripsData, setAllTripsData] = usePersistentState<
+    Record<string, TripStorage>
+  >('vt_allTripsData', {});
+
+  const [activeDate, setActiveDate] = usePersistentState<string | null>(
+    'vt_activeDate',
+    null
+  );
+
   const [tripData, setTripData] = usePersistentState<ProcessedTrip | null>(
     'vt_tripData',
     null
@@ -82,48 +101,46 @@ export default function VehicleTracker() {
   }>('vt_selection', { mode: 'vendor', value: null });
   const [viewMode, setViewMode] = usePersistentState<'current' | 'new'>(
     'vt_viewMode',
-    'current'
+    'new'
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeTab, setActiveTab] = useState<'config' | 'info' | 'analytics'>(
     'config'
   );
-  const [showAnalytics, setShowAnalytics] = useState(false);
-
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
   // Función para obtener la dirección a partir de coordenadas usando la API de Google Maps
-  const getAddress = async (lat: number, lng: number): Promise<string> => {
-    if (!googleMapsApiKey) {
-      return 'API Key de Google Maps no configurada';
-    }
-    if (!lat || !lng) return 'Coordenadas inválidas';
+  // const getAddress = async (lat: number, lng: number): Promise<string> => {
+  //   if (!googleMapsApiKey) {
+  //     return 'API Key de Google Maps no configurada';
+  //   }
+  //   if (!lat || !lng) return 'Coordenadas inválidas';
 
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleMapsApiKey}`
-      );
-      if (!response.ok) {
-        throw new Error(
-          `Error en la respuesta de la API de Google: ${response.statusText}`
-        );
-      }
-      const data = await response.json();
+  //   try {
+  //     const response = await fetch(
+  //       `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${googleMapsApiKey}`
+  //     );
+  //     if (!response.ok) {
+  //       throw new Error(
+  //         `Error en la respuesta de la API de Google: ${response.statusText}`
+  //       );
+  //     }
+  //     const data = await response.json();
 
-      if (data.status === 'OK' && data.results && data.results[0]) {
-        return data.results[0].formatted_address;
-      } else {
-        console.error(
-          'Error de Geocodificación de Google:',
-          data.error_message || data.status
-        );
-        return `Dirección no encontrada (${data.status})`;
-      }
-    } catch (error) {
-      console.error('Error de red en la llamada a Google Maps:', error);
-      return `Dirección no disponible (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
-    }
-  };
+  //     if (data.status === 'OK' && data.results && data.results[0]) {
+  //       return data.results[0].formatted_address;
+  //     } else {
+  //       console.error(
+  //         'Error de Geocodificación de Google:',
+  //         data.error_message || data.status
+  //       );
+  //       return `Dirección no encontrada (${data.status})`;
+  //     }
+  //   } catch (error) {
+  //     console.error('Error de red en la llamada a Google Maps:', error);
+  //     return `Dirección no disponible (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
+  //   }
+  // };
 
   // Función para verificar si una parada está en horario laboral
   const isWorkingHours = (
@@ -169,6 +186,7 @@ export default function VehicleTracker() {
             clientKey: matchedClient?.key,
             clientBranchNumber: matchedClient?.branchNumber,
             clientBranchName: matchedClient?.branchName,
+            isVendorHome: matchedClient?.isVendorHome,
           };
         }
         return flag;
@@ -252,95 +270,135 @@ export default function VehicleTracker() {
     }
   }, [viewMode, rawTripData, vehicleInfo, clientData, setTripData]);
 
+  // Efecto para actualizar los datos activos cuando cambia la fecha seleccionada
+  useEffect(() => {
+    if (activeDate && allTripsData[activeDate]) {
+      const { rawData, vehicleInfo, fileName } = allTripsData[activeDate];
+      setRawTripData(rawData);
+      setVehicleInfo(vehicleInfo);
+      setFileName(fileName);
+    } else {
+      setRawTripData(null);
+      setVehicleInfo(null);
+      setTripData(null);
+      setFileName(null);
+    }
+  }, [
+    activeDate,
+    allTripsData,
+    setRawTripData,
+    setVehicleInfo,
+    setTripData,
+    setFileName,
+  ]);
+
   // Funcion para leer el archivo EXCEL para las rutas
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    setTripData(null);
-    setRawTripData(null);
-    setVehicleInfo(null);
     setError(null);
-    setFileName(file.name);
-    // setClientData(null);
-    // setClientFileName(null);
-    // setAllClientsFromFile(null);
-    // setAvailableVendors([]);
-    // setSelection(null);
+    setIsGeneratingReport(true);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (!event.target?.result) {
-          throw new Error('No se pudo leer el archivo.');
-        }
-        const bstr = event.target.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
+    try {
+      const fileReadPromises = Array.from(files).map(async (file) => {
+        return new Promise<[string, TripStorage]>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            try {
+              if (!event.target?.result) {
+                throw new Error(`No se pudo leer el archivo: ${file.name}`);
+              }
+              const bstr = event.target.result;
+              const wb = XLSX.read(bstr, { type: 'binary' });
+              const wsname = wb.SheetNames[0];
+              const ws = wb.Sheets[wsname];
 
-        const vehicleData = parseVehicleInfo(ws, file.name);
-        setVehicleInfo(vehicleData);
+              const vehicleData = parseVehicleInfo(ws, file.name);
+              if (!vehicleData.fecha || vehicleData.fecha === 'No encontrada') {
+                throw new Error(
+                  `No se pudo detectar la fecha para el archivo: ${file.name}`
+                );
+              }
 
-        const sheetAsArray: any[][] = XLSX.utils.sheet_to_json(ws, {
-          header: 1,
-          defval: '',
+              const sheetAsArray: any[][] = XLSX.utils.sheet_to_json(ws, {
+                header: 1,
+                defval: '',
+              });
+              const expectedHeaders = [
+                'latitud',
+                'longitud',
+                'descripción de evento',
+                'velocidad',
+              ];
+              let headerRowIndex = -1;
+
+              for (let i = 0; i < 20 && i < sheetAsArray.length; i++) {
+                const row = sheetAsArray[i].map((cell) =>
+                  String(cell || '').toLowerCase()
+                );
+                const matchCount = expectedHeaders.filter((header) =>
+                  row.some((cellText) => cellText.includes(header))
+                ).length;
+                if (matchCount >= 3) {
+                  headerRowIndex = i;
+                  break;
+                }
+              }
+              if (headerRowIndex === -1) {
+                throw new Error(
+                  `No se encontraron encabezados en el archivo: ${file.name}`
+                );
+              }
+              const data = XLSX.utils.sheet_to_json(ws, {
+                range: headerRowIndex,
+                defval: '',
+              });
+              if (!Array.isArray(data) || data.length === 0) {
+                throw new Error(
+                  `No se encontraron datos de viaje en: ${file.name}`
+                );
+              }
+
+              const tripEntry: TripStorage = {
+                rawData: data,
+                vehicleInfo: vehicleData,
+                fileName: file.name,
+              };
+
+              resolve([vehicleData.fecha, tripEntry]);
+            } catch (err) {
+              reject(err);
+            }
+          };
+          reader.onerror = (err) =>
+            reject(new Error(`Error leyendo ${file.name}: ${err}`));
+          reader.readAsBinaryString(file);
         });
-        const expectedHeaders = [
-          'latitud',
-          'longitud',
-          'descripción de evento',
-          'velocidad',
-        ];
-        let headerRowIndex = -1;
+      });
 
-        for (let i = 0; i < 20 && i < sheetAsArray.length; i++) {
-          const row = sheetAsArray[i].map((cell) =>
-            String(cell || '').toLowerCase()
-          );
-          const matchCount = expectedHeaders.filter((header) =>
-            row.some((cellText) => cellText.includes(header))
-          ).length;
+      const newEntries = await Promise.all(fileReadPromises);
+      const newTripsMap = Object.fromEntries(newEntries);
 
-          if (matchCount >= 3) {
-            headerRowIndex = i;
-            break;
-          }
-        }
-        if (headerRowIndex === -1) {
-          throw new Error(
-            "No se pudo encontrar la fila de encabezados. Verifique que el archivo contenga 'Latitud', 'Longitud', 'Velocidad(km)', etc."
-          );
-        }
-        const data = XLSX.utils.sheet_to_json(ws, {
-          range: headerRowIndex,
-          defval: '',
-        });
-        if (!Array.isArray(data) || data.length === 0) {
-          throw new Error(
-            'No se encontraron datos en el archivo de viaje o el formato es incorrecto.'
-          );
-        }
-        setRawTripData(data);
-        const processed = processTripData(
-          data,
-          viewMode,
-          vehicleInfo?.fecha || '',
-          clientData
-        );
-        setTripData(processed);
-      } catch (err) {
-        console.error(err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'Ocurrió un error desconocido al procesar el archivo.'
-        );
+      setAllTripsData((prevData) => ({
+        ...prevData,
+        ...newTripsMap,
+      }));
+
+      const lastUploadedDate = newEntries[newEntries.length - 1][0];
+      setActiveDate(lastUploadedDate);
+    } catch (err) {
+      console.error(err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Ocurrió un error al procesar uno o más archivos.'
+      );
+    } finally {
+      setIsGeneratingReport(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
-    };
-    reader.readAsBinaryString(file);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
     }
   };
 
@@ -384,17 +442,70 @@ export default function VehicleTracker() {
 
   // FUNCIÓN PARA MANEJAR LA SELECCIÓN DE VENDEDOR O MODO CHOFER
   const handleSelection = (selected: string) => {
-    setSelection({ mode: selection.mode, value: selected });
+    const newMode = availableVendors.includes(selected) ? 'vendor' : 'driver';
+    setSelection({ mode: newMode, value: selected });
+
     if (allClientsFromFile) {
-      if (selected === 'chofer') {
-        // Modo chofer: usa todos los clientes para matching, pero no los muestra en el mapa
+      if (newMode === 'driver') {
         setClientData(allClientsFromFile);
       } else {
-        // Modo vendedor: filtra los clientes por vendedor
+        console.log('=== SELECCIÓN DE VENDEDOR ===');
+        console.log('Vendedor seleccionado:', selected);
+        console.log('Total clientes disponibles:', allClientsFromFile.length);
+
+        // Filtrar clientes del vendedor (excluyendo casas)
         const filteredClients = allClientsFromFile.filter(
-          (client) => client.vendor === selected
+          (client) => client.vendor === selected && !client.isVendorHome
         );
-        setClientData(filteredClients);
+
+        console.log(
+          'Clientes del vendedor (sin casa):',
+          filteredClients.length
+        );
+
+        // Buscar la casa del vendedor
+        console.log('Buscando casa con vendorHomeInitial:', selected);
+
+        const allHomes = allClientsFromFile.filter((c) => c.isVendorHome);
+        console.log(
+          'Todas las casas disponibles:',
+          allHomes.map((h) => ({
+            key: h.key,
+            name: h.name,
+            vendor: h.vendor,
+            vendorHomeInitial: h.vendorHomeInitial,
+          }))
+        );
+
+        const vendorHome = allClientsFromFile.find(
+          (client) =>
+            client.isVendorHome && client.vendorHomeInitial === selected
+        );
+
+        console.log(
+          'Casa encontrada:',
+          vendorHome
+            ? {
+                key: vendorHome.key,
+                name: vendorHome.name,
+                vendor: vendorHome.vendor,
+                vendorHomeInitial: vendorHome.vendorHomeInitial,
+              }
+            : 'NINGUNA'
+        );
+
+        const finalClientList = [...filteredClients];
+        if (vendorHome) {
+          finalClientList.push(vendorHome);
+          console.log('✓ Casa agregada a la lista final');
+        } else {
+          console.warn('✗ No se agregó ninguna casa');
+        }
+
+        console.log('Lista final de clientes:', finalClientList.length);
+        console.log('==============================');
+
+        setClientData(finalClientList);
       }
     }
   };
@@ -428,16 +539,32 @@ export default function VehicleTracker() {
     return `${mes}-${dia}-${anio}`;
   };
 
-  // FUNCIÓN PARA GENERAR Y DESCARGAR EL REPORTE
+  // FUNCIÓN PARA GENERAR Y DESCARGAR EL REPORTE (VERSIÓN SEMANAL)
   const downloadReport = async () => {
-    if (!tripData || !vehicleInfo || !clientData) {
+    const tripsToProcess = Object.keys(allTripsData);
+    if (tripsToProcess.length === 0) {
       alert(
-        'Se necesita un archivo de viaje y un archivo de clientes para generar el reporte.'
+        'No hay ningún archivo de ruta cargado. Por favor, carga al menos un viaje.'
+      );
+      return;
+    }
+
+    let clientsForReport: Client[] = [];
+    if (selection.mode === 'driver') {
+      clientsForReport = allClientsFromFile || [];
+    } else {
+      clientsForReport = clientData || [];
+    }
+
+    if (clientsForReport.length === 0) {
+      alert(
+        'No se ha seleccionado un archivo de clientes o el vendedor no tiene clientes asignados.'
       );
       return;
     }
 
     setIsGeneratingReport(true);
+    const specialNonClientKeys = ['3689', '6395'];
 
     const styles = {
       title: {
@@ -445,386 +572,676 @@ export default function VehicleTracker() {
         fill: { fgColor: { rgb: 'FF0275D8' } },
         alignment: { horizontal: 'center', vertical: 'center' },
       },
-      infoLabel: {
-        font: { name: 'Arial', sz: 10, bold: true },
-        alignment: { horizontal: 'right' },
-      },
-      infoValue: {
-        font: { name: 'Arial', sz: 10 },
-        alignment: { horizontal: 'left' },
+      subHeader: {
+        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF4F81BD' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
       },
       header: {
         font: { name: 'Arial', sz: 11, bold: true },
         fill: { fgColor: { rgb: 'FFDDDDDD' } },
-        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
-      },
-      subHeader: {
-        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
-        fill: { fgColor: { rgb: 'FF4F81BD' } },
-        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
-      },
-      summaryLabel: {
-        font: { name: 'Arial', sz: 10, bold: true },
-        alignment: { horizontal: 'right' },
-      },
-      summaryValue: {
-        font: { name: 'Arial', sz: 10 },
-      },
-      totalRow: {
-        font: { name: 'Arial', sz: 10, bold: true },
-        fill: { fgColor: { rgb: 'FFF2F2F2' } },
-        alignment: { horizontal: 'center' },
-        border: {
-          top: { style: 'thin', color: { auto: 1 } },
-          bottom: { style: 'thin', color: { auto: 1 } },
+        alignment: {
+          wrapText: true,
+          vertical: 'center',
+          horizontal: 'center',
         },
       },
       cell: {
         font: { name: 'Arial', sz: 10 },
-        alignment: { vertical: 'center' },
+        alignment: { vertical: 'top', wrapText: true },
       },
       cellCentered: {
         font: { name: 'Arial', sz: 10 },
-        alignment: { horizontal: 'center', vertical: 'center' },
+        alignment: {
+          horizontal: 'center',
+          vertical: 'top',
+          wrapText: true,
+        },
       },
-      cellRight: {
-        font: { name: 'Arial', sz: 10 },
-        alignment: { horizontal: 'right', vertical: 'center' },
-      },
-      clientVisitCell: {
+      clientVisitedCell: {
         font: { name: 'Arial', sz: 10, bold: true },
         fill: { fgColor: { rgb: 'FFEBF5FF' } },
-        alignment: { vertical: 'center' },
+        alignment: { vertical: 'top', wrapText: true },
       },
-      eventCell: (type: 'visit' | 'stop' | 'start' | 'end') => {
-        const baseStyle = {
-          font: { name: 'Arial', sz: 10, bold: true },
-          alignment: { horizontal: 'center', vertical: 'center' },
-        };
-        const typeSpecificStyles = {
-          visit: {
-            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
-            fill: { fgColor: { rgb: 'FF0066CC' } },
-          },
-          stop: {
-            font: { ...baseStyle.font, color: { rgb: '00000000' } },
-            fill: { fgColor: { rgb: 'FFFFC000' } },
-          },
-          start: {
-            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
-            fill: { fgColor: { rgb: 'FF00B050' } },
-          },
-          end: {
-            font: { ...baseStyle.font, color: { rgb: 'FFFFFFFF' } },
-            fill: { fgColor: { rgb: 'FFFF0000' } },
-          },
-        };
-        return { ...baseStyle, ...typeSpecificStyles[type] };
+      vendorHomeVisitedCell: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFE8FFDE' } },
+        alignment: { vertical: 'top', wrapText: true },
+      },
+      toolsVisitedCell: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFFFD1D1' } },
+        alignment: { vertical: 'top', wrapText: true },
+      },
+      summaryLabelRed: {
+        font: { name: 'Arial', sz: 10, bold: true, color: { rgb: 'FF9C0006' } },
+        alignment: { horizontal: 'right' },
+        fill: { fgColor: { rgb: 'FFF2F2F2' } },
+      },
+      summaryValueRed: {
+        font: { name: 'Arial', sz: 10, bold: true, color: { rgb: 'FF9C0006' } },
+        alignment: { horizontal: 'center', wrapText: true },
+      },
+      summaryTotalColRed: {
+        font: { name: 'Arial', sz: 10, bold: true, color: { rgb: 'FF9C0006' } },
+        alignment: { horizontal: 'center', wrapText: true },
+        fill: { fgColor: { rgb: 'FFDDEBF7' } },
+      },
+      summarySubHeader: {
+        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF444444' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      summaryLabel: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'right' },
+        fill: { fgColor: { rgb: 'FFF2F2F2' } },
+      },
+      summaryValue: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'center', wrapText: true },
+      },
+      summaryTotalCol: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'center', wrapText: true },
+        fill: { fgColor: { rgb: 'FFDDEBF7' } },
       },
     };
 
-    try {
-      let clientsForReport: Client[] = [];
-      if (selection.mode === 'driver') {
-        clientsForReport = allClientsFromFile || [];
-      } else {
-        clientsForReport = clientData || [];
-      }
-      if (clientsForReport.length === 0) {
-        throw new Error('No se encontraron clientes para este reporte.');
-      }
-      const coordsToFetch = new Map<string, { lat: number; lng: number }>();
-      const allFlagsToProcess: any[] = [];
-      const visitedClientKeys = new Set<string>();
-      for (const flag of tripData.flags) {
+    const timeToMinutes = (timeStr: string): number => {
+      if (!timeStr) return 0;
+      const [h, m, s] = timeStr.split(':').map(Number);
+      return h * 60 + m + (s || 0) / 60;
+    };
+
+    const WORK_START_MINUTES = 8 * 60 + 30;
+    const WORK_END_MINUTES = 19 * 60;
+
+    const splitDurationByWorkingHours = (
+      startTime: string,
+      durationMinutes: number
+    ): { withinHours: number; outsideHours: number } => {
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = startMinutes + durationMinutes;
+      let withinHours = 0;
+      let outsideHours = 0;
+      for (let minute = startMinutes; minute < endMinutes; minute++) {
+        const currentMinute = minute % (24 * 60);
         if (
-          flag.type === 'start' ||
-          flag.type === 'end' ||
-          (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration)
+          currentMinute >= WORK_START_MINUTES &&
+          currentMinute < WORK_END_MINUTES
         ) {
-          let isClientVisit = false;
-          let clientInfo = null;
-          if (flag.type === 'stop') {
-            for (const client of clientsForReport) {
-              const distance = calculateDistance(
-                flag.lat,
-                flag.lng,
-                client.lat,
-                client.lng
-              );
-              if (distance < clientRadius) {
-                isClientVisit = true;
-                clientInfo = {
-                  key: client.key,
-                  name: client.name,
-                  branchNumber: client.branchNumber,
-                  branchName: client.branchName,
-                };
-                visitedClientKeys.add(client.key);
-                break;
-              }
-            }
-          }
-          const coordKey = `${flag.lat.toFixed(5)},${flag.lng.toFixed(5)}`;
-          if (!isClientVisit) {
-            if (!coordsToFetch.has(coordKey)) {
-              coordsToFetch.set(coordKey, { lat: flag.lat, lng: flag.lng });
-            }
-          }
-          allFlagsToProcess.push({
-            ...flag,
-            isClientVisit,
-            clientInfo,
-            coordKey,
-          });
-        }
-      }
-      const addressCache = new Map<string, string>();
-      const uniqueCoords = Array.from(coordsToFetch.entries());
-      const batchSize = 10;
-      for (let i = 0; i < uniqueCoords.length; i += batchSize) {
-        const batch = uniqueCoords.slice(i, i + batchSize);
-        const promises = batch.map(([key, coords]) =>
-          getAddress(coords.lat, coords.lng).then((address) => ({
-            key,
-            address,
-          }))
-        );
-        const results = await Promise.all(promises);
-        for (const result of results) {
-          addressCache.set(result.key, result.address);
-        }
-      }
-      const reportEntries: any[] = [];
-      for (const flag of allFlagsToProcess) {
-        let name = '';
-        let entryType = flag.type;
-        let branchNumber = undefined;
-        let branchName = undefined;
-        if (flag.isClientVisit) {
-          name = `${flag.clientInfo.key} - ${flag.clientInfo.name}`;
-          entryType = 'visit';
-          branchNumber = flag.clientBranchNumber;
-          branchName = flag.clientBranchName;
+          withinHours++;
         } else {
-          const address =
-            addressCache.get(flag.coordKey) || 'Dirección no disponible';
-          if (
-            flag.type === 'start' ||
-            flag.type === 'end' ||
-            flag.type === 'stop'
-          )
-            name = address;
+          outsideHours++;
         }
-        reportEntries.push({
-          fecha: formatExcelDate(vehicleInfo.fecha),
-          time: flag.time,
-          type: entryType,
-          name: name,
-          duration: flag.duration || 0,
-          branchNumber,
-          branchName,
-        });
       }
-      reportEntries.sort((a, b) => a.time.localeCompare(b.time));
+      return { withinHours, outsideHours };
+    };
 
-      const uniqueClientsVisited = new Set(
-        reportEntries
-          .filter((e) => e.type === 'visit')
-          .map((e) => e.name.split(' - ')[0])
-      ).size;
-      const totalDuration = reportEntries.reduce(
-        (sum, entry) => sum + entry.duration,
-        0
-      );
-      const totalMinutesForPercentage = 8 * 60;
-      const percentageOfTimeUsed = Math.min(
-        (totalDuration / totalMinutesForPercentage) * 100,
-        100
-      );
-      const formattedPercentage = `${percentageOfTimeUsed.toFixed(2)}%`;
-      const totalStopsAndVisits = reportEntries.filter(
-        (e) => e.type === 'visit' || e.type === 'stop'
-      ).length;
+    const calculateWorkingTimeBetween = (
+      startTime: string,
+      endTime: string
+    ): {
+      totalMinutes: number;
+      workingMinutes: number;
+      afterHoursMinutes: number;
+    } => {
+      const startMinutes = timeToMinutes(startTime);
+      const endMinutes = timeToMinutes(endTime);
+      let totalMinutes = 0;
+      let workingMinutes = 0;
+      let afterHoursMinutes = 0;
 
-      const rightSideData = [
-        ['Información del Viaje'],
-        ['Fecha:', vehicleInfo.fecha],
-        ['Vehículo:', vehicleInfo.placa],
-        [
-          'Reporte para:',
-          selection.mode === 'driver' ? 'CHOFER' : selection.value,
-        ],
-        [],
-        ['Resumen del Viaje'],
-        ['Número de Paradas:', String(totalStopsAndVisits)],
-        ['Clientes Únicos Visitados:', String(uniqueClientsVisited)],
-        [
-          'Kilometraje Total:',
-          `${Math.round(tripData.totalDistance / 1000)} km`,
-        ],
-        ['Duración Total en Paradas:', formatDuration(totalDuration)],
-        ['% de Tiempo Utilizado (8h):', formattedPercentage],
+      if (endMinutes >= startMinutes) {
+        totalMinutes = endMinutes - startMinutes;
+        for (let minute = startMinutes; minute < endMinutes; minute++) {
+          if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
+            workingMinutes++;
+          } else {
+            afterHoursMinutes++;
+          }
+        }
+      } else {
+        totalMinutes = 24 * 60 - startMinutes + endMinutes;
+        for (let minute = startMinutes; minute < 24 * 60; minute++) {
+          if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
+            workingMinutes++;
+          } else {
+            afterHoursMinutes++;
+          }
+        }
+        for (let minute = 0; minute < endMinutes; minute++) {
+          if (minute >= WORK_START_MINUTES && minute < WORK_END_MINUTES) {
+            workingMinutes++;
+          } else {
+            afterHoursMinutes++;
+          }
+        }
+      }
+      return { totalMinutes, workingMinutes, afterHoursMinutes };
+    };
+
+    try {
+      const allVisitsMap = new Map<string, any[]>();
+      const summaryByDay: Record<
+        number,
+        {
+          distance: number;
+          totalStops: number;
+          clientsVisited: Set<string>;
+          vehiclePlate: string;
+          timeWithClients: number;
+          timeWithNonClients: number;
+          travelTime: number;
+          timeAtTools: number;
+          timeAtHome: number;
+        }
+      > = {};
+
+      const dayColumnMap: Record<number, number> = {
+        1: 1, // Lunes
+        2: 2, // Martes
+        3: 3, // Miércoles
+        4: 4, // Jueves
+        5: 5, // Viernes
+      };
+
+      for (const date of tripsToProcess) {
+        const { rawData, vehicleInfo } = allTripsData[date];
+        const dateObj = parseISO(date);
+        const dayOfWeek = dateObj.getDay();
+
+        if (!dayColumnMap[dayOfWeek]) continue;
+
+        let processedTrip: ProcessedTrip;
+        try {
+          processedTrip = processTripData(
+            rawData,
+            viewMode,
+            date,
+            clientsForReport
+          );
+        } catch (e) {
+          console.error(`Error procesando el viaje del día ${date}:`, e);
+          continue;
+        }
+
+        let dailyTimeWithClients = 0;
+        let dailyTimeWithNonClients = 0;
+        let dailyTimeAtTools = 0;
+        let dailyTimeAtHome = 0;
+        const dailyClientsVisited = new Set<string>();
+        let dailyTotalStops = 0;
+        const specialNonClientKeys = ['3689', '6395'];
+
+        for (const flag of processedTrip.flags) {
+          if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
+            dailyTotalStops++;
+            const duration = flag.duration || 0;
+            const split = splitDurationByWorkingHours(flag.time, duration);
+
+            if (flag.clientKey) {
+              const visitKey = `${flag.clientKey}_${
+                flag.clientBranchNumber || 'main'
+              }`;
+              dailyClientsVisited.add(visitKey);
+              const clientVisits = allVisitsMap.get(visitKey) || [];
+              clientVisits.push({
+                date: date,
+                time: flag.time,
+                dayOfWeek: dayOfWeek,
+                duration: flag.duration || 0,
+              });
+              allVisitsMap.set(visitKey, clientVisits);
+
+              if (flag.isVendorHome) {
+                // 1. Es la casa del vendedor
+                dailyTimeAtHome += split.withinHours;
+              } else if (specialNonClientKeys.includes(flag.clientKey || '')) {
+                // 2. Es Tools de Mexico
+                dailyTimeAtTools += split.withinHours;
+              } else if (
+                !flag.clientName ||
+                flag.clientName === 'Sin coincidencia'
+              ) {
+                // 3. Es una parada sin coincidencia
+                dailyTimeWithNonClients += split.withinHours;
+              } else {
+                // 4. Es un cliente real
+                dailyTimeWithClients += split.withinHours;
+              }
+            } else {
+              dailyTimeWithNonClients += split.withinHours;
+            }
+          }
+        }
+
+        const startEvents = processedTrip.flags.filter(
+          (flag) => flag.type === 'start'
+        );
+        const endEvents = processedTrip.flags.filter(
+          (flag) => flag.type === 'end'
+        );
+        let dailyTravelTime = 0;
+
+        if (startEvents.length > 0 && endEvents.length > 0) {
+          const firstStartEvent = startEvents[0];
+          const lastEndEvent = endEvents[endEvents.length - 1];
+          const tripTimes = calculateWorkingTimeBetween(
+            firstStartEvent.time,
+            lastEndEvent.time
+          );
+          const totalWorkingTime = tripTimes.workingMinutes;
+          const totalStopTimeWorkingHours =
+            dailyTimeWithClients +
+            dailyTimeWithNonClients +
+            dailyTimeAtTools +
+            dailyTimeAtHome;
+          dailyTravelTime = Math.max(
+            0,
+            totalWorkingTime - totalStopTimeWorkingHours
+          );
+        }
+
+        summaryByDay[dayOfWeek] = {
+          distance: processedTrip.totalDistance,
+          totalStops: dailyTotalStops,
+          clientsVisited: dailyClientsVisited,
+          vehiclePlate: vehicleInfo.placa,
+          timeWithClients: dailyTimeWithClients,
+          timeWithNonClients: dailyTimeWithNonClients,
+          travelTime: dailyTravelTime,
+          timeAtTools: dailyTimeAtTools,
+          timeAtHome: dailyTimeAtHome,
+        };
+      }
+
+      const visitedClients: Client[] = [];
+      const nonVisitedClients: Client[] = [];
+      let vendorHome: Client | null = null;
+
+      for (const client of clientsForReport) {
+        if (client.isVendorHome) {
+          vendorHome = client;
+          continue;
+        }
+
+        const clientVisitKey = `${client.key}_${client.branchNumber || 'main'}`;
+        if (allVisitsMap.has(clientVisitKey)) {
+          visitedClients.push(client);
+        } else {
+          nonVisitedClients.push(client);
+        }
+      }
+
+      const sortedClients: Client[] = [...visitedClients, ...nonVisitedClients];
+      if (
+        vendorHome &&
+        allVisitsMap.has(
+          `${vendorHome.key}_${vendorHome.branchNumber || 'main'}`
+        )
+      ) {
+        sortedClients.unshift(vendorHome);
+      } else if (vendorHome) {
+        sortedClients.push(vendorHome);
+      }
+
+      const sheetData: any[][] = [];
+      const headers = [
+        'Cliente',
+        'Lunes',
+        'Martes',
+        'Miércoles',
+        'Jueves',
+        'Viernes',
+        'TOTAL SEMANAL',
+      ];
+      const numCols = headers.length;
+
+      sheetData.push(['Reporte Semanal de Visitas']);
+      sheetData.push([`Vendedor: ${selection.value || 'N/A'}`]);
+      sheetData.push([]);
+      sheetData.push(headers);
+      const headerRowIndex = sheetData.length - 1;
+
+      for (const client of sortedClients) {
+        let clientName = `${client.key} - ${client.name}`;
+        if (client.isVendorHome) clientName = `${clientName} (CASA)`;
+        else if (client.branchName) clientName += ` (${client.branchName})`;
+        else if (client.branchNumber)
+          clientName += ` (Suc. ${client.branchNumber})`;
+
+        const row = new Array(numCols).fill('');
+        row[0] = clientName;
+
+        const clientVisitKey = `${client.key}_${client.branchNumber || 'main'}`;
+        const visits = allVisitsMap.get(clientVisitKey);
+
+        if (visits) {
+          for (const visit of visits) {
+            const colIndex = dayColumnMap[visit.dayOfWeek];
+            if (colIndex !== undefined) {
+              const durationText = formatDuration(visit.duration || 0);
+              const visitString = `${formatExcelDate(visit.date)}\n${
+                visit.time
+              } (${durationText})`;
+              row[colIndex] =
+                (row[colIndex] ? row[colIndex] + '\n' : '') + visitString;
+            }
+          }
+        }
+        sheetData.push(row);
+      }
+
+      sheetData.push([]);
+      const summaryStartRow = sheetData.length;
+      sheetData.push(['RESUMEN SEMANAL']);
+
+      const vehicleRow = ['Vehículo', '', '', '', '', ''];
+      const totalDistRow = [
+        'Distancia Total (km)',
+        '0 km',
+        '0 km',
+        '0 km',
+        '0 km',
+        '0 km',
+      ];
+      const totalStopsRow = ['Paradas Totales', 0, 0, 0, 0, 0];
+      const uniqueClientsRow = ['Clientes Únicos Visitados', 0, 0, 0, 0, 0];
+      const timeWithClientsRow = [
+        'Tiempo con Clientes',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+      ];
+      const timeWithNonClientsRow = [
+        'Tiempo con NO Clientes',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+      ];
+      const timeAtToolsRow = [
+        'Tiempo en Tools de Mexico',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+      ];
+      const timeAtHomeRow = [
+        'Tiempo en Casa',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+      ];
+      const travelTimeRow = [
+        'Tiempo en Traslados',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
+        '0 min',
       ];
 
-      const leftSideData: any[][] = [];
-      leftSideData.push([
-        `Detalle de Actividades (${vehicleInfo.fecha})`,
-        '',
-        '',
-        '',
-        '',
-        '',
-      ]);
-      leftSideData.push([
-        'Fecha',
-        'Hora',
-        'Evento',
-        '# - Cliente / Descripción',
-        'Sucursal',
-        'Duración',
-      ]);
+      let totalDistanceWeek = 0;
+      let totalStopsWeek = 0;
+      const allClientsVisitedWeek = new Set<string>();
+      let totalTimeWithClientsWeek = 0;
+      let totalTimeWithNonClientsWeek = 0;
+      let totalTimeAtToolsWeek = 0;
+      let totalTimeAtHomeWeek = 0;
+      let totalTravelTimeWeek = 0;
 
-      reportEntries.forEach((entry) => {
-        let eventType = '';
-        switch (entry.type) {
-          case 'start':
-            eventType = 'Inicio de Viaje';
-            break;
-          case 'end':
-            eventType = 'Fin de Viaje';
-            break;
-          case 'visit':
-            eventType = 'Visita a Cliente';
-            break;
-          case 'stop':
-            eventType = 'Parada';
-            break;
+      for (const dayNum in summaryByDay) {
+        const colIndex = dayColumnMap[dayNum as any];
+        if (colIndex !== undefined) {
+          const stats = summaryByDay[dayNum as any];
+          const distKm = Math.round(stats.distance / 1000);
+
+          vehicleRow[colIndex] = stats.vehiclePlate;
+          totalDistRow[colIndex] = `${distKm} km`;
+          totalStopsRow[colIndex] = stats.totalStops;
+          uniqueClientsRow[colIndex] = stats.clientsVisited.size;
+          timeWithClientsRow[colIndex] = formatDuration(stats.timeWithClients);
+          timeWithNonClientsRow[colIndex] = formatDuration(
+            stats.timeWithNonClients
+          );
+          timeAtToolsRow[colIndex] = formatDuration(stats.timeAtTools);
+          timeAtHomeRow[colIndex] = formatDuration(stats.timeAtHome);
+          travelTimeRow[colIndex] = formatDuration(stats.travelTime);
+
+          totalDistanceWeek += distKm;
+          totalStopsWeek += stats.totalStops;
+          stats.clientsVisited.forEach((key) => allClientsVisitedWeek.add(key));
+          totalTimeWithClientsWeek += stats.timeWithClients;
+          totalTimeWithNonClientsWeek += stats.timeWithNonClients;
+          totalTimeAtToolsWeek += stats.timeAtTools;
+          totalTimeAtHomeWeek += stats.timeAtHome;
+          totalTravelTimeWeek += stats.travelTime;
         }
-
-        let branchInfo = '--';
-        if (entry.type === 'visit' && entry.branchNumber) {
-          branchInfo = entry.branchName
-            ? `Suc. ${entry.branchNumber} (${entry.branchName})`
-            : `Suc. ${entry.branchNumber}`;
-        }
-
-        const formattedDate = formatExcelDate(vehicleInfo.fecha);
-        leftSideData.push([
-          formattedDate,
-          entry.time,
-          eventType,
-          entry.name,
-          branchInfo,
-          entry.duration > 0 ? formatDuration(entry.duration) : '--',
-        ]);
-      });
-
-      const finalSheetData: any[][] = [];
-      finalSheetData.push(['Reporte de Viaje Individual']);
-      finalSheetData.push([]);
-
-      const numRows = Math.max(leftSideData.length, rightSideData.length);
-      const startRow = 2;
-
-      for (let i = 0; i < numRows; i++) {
-        const leftRow = leftSideData[i] || ['', '', '', '', '', ''];
-        const rightRow = rightSideData[i] || [];
-        finalSheetData[startRow + i] = [
-          ...leftRow,
-          '',
-          ...(rightRow || ['', '']),
-        ];
       }
 
-      const ws = XLSX.utils.aoa_to_sheet(finalSheetData);
+      const totalClientsInList = clientsForReport.filter(
+        (c) => !c.isVendorHome
+      ).length;
+      const clientsVisitedInList = Array.from(allClientsVisitedWeek).filter(
+        (key) => {
+          const clientKey = key.split('_')[0];
+          const client = clientsForReport.find((c) => c.key === clientKey);
+          return client && !client.isVendorHome;
+        }
+      ).length;
+
+      const totalNonVisitedWeek = totalClientsInList - clientsVisitedInList;
+
+      vehicleRow.push('');
+      totalDistRow.push(`${totalDistanceWeek} km`);
+      totalStopsRow.push(totalStopsWeek);
+      uniqueClientsRow.push(allClientsVisitedWeek.size);
+      const nonVisitedClientsRow = [
+        'Clientes NO Visitados',
+        '',
+        '',
+        '',
+        '',
+        '',
+        totalNonVisitedWeek,
+      ];
+      timeWithClientsRow.push(formatDuration(totalTimeWithClientsWeek));
+      timeWithNonClientsRow.push(formatDuration(totalTimeWithNonClientsWeek));
+      timeAtToolsRow.push(formatDuration(totalTimeAtToolsWeek));
+      timeAtHomeRow.push(formatDuration(totalTimeAtHomeWeek));
+      travelTimeRow.push(formatDuration(totalTravelTimeWeek));
+
+      // Sección 1: Paradas
+      sheetData.push(['Resumen de Paradas y Distancia']);
+      sheetData.push(vehicleRow);
+      sheetData.push(totalDistRow);
+      sheetData.push(totalStopsRow);
+      sheetData.push(uniqueClientsRow);
+      sheetData.push(nonVisitedClientsRow);
+
+      // Sección 2: Tiempos
+      sheetData.push(['Resumen de Tiempos']);
+      sheetData.push(timeWithClientsRow);
+      sheetData.push(timeWithNonClientsRow);
+      sheetData.push(timeAtToolsRow);
+      sheetData.push(timeAtHomeRow);
+      sheetData.push(travelTimeRow);
+
+      const ws = XLSX.utils.aoa_to_sheet(sheetData);
       const merges: XLSX.Range[] = [];
+      const totalCols = headers.length - 1;
 
-      if (ws['A1']) ws['A1'].s = styles.title;
-      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: 8 } });
+      ws['A1'].s = styles.title;
+      merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols } });
+      ws['A2'].s = styles.subHeader;
+      merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: totalCols } });
 
-      const rightSideStartCol = 7;
-      if (ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })])
-        ws[XLSX.utils.encode_cell({ r: 2, c: rightSideStartCol })].s =
-          styles.subHeader;
-      merges.push({
-        s: { r: 2, c: rightSideStartCol },
-        e: { r: 2, c: rightSideStartCol + 1 },
-      });
-
-      for (let i = 3; i <= 5; i++) {
-        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })])
-          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })].s =
-            styles.infoLabel;
-        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })])
-          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })].s =
-            styles.infoValue;
-      }
-
-      if (ws[XLSX.utils.encode_cell({ r: 7, c: rightSideStartCol })])
-        ws[XLSX.utils.encode_cell({ r: 7, c: rightSideStartCol })].s =
-          styles.subHeader;
-      merges.push({
-        s: { r: 7, c: rightSideStartCol },
-        e: { r: 7, c: rightSideStartCol + 1 },
-      });
-
-      for (let i = 8; i <= 12; i++) {
-        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })])
-          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol })].s =
-            styles.summaryLabel;
-        if (ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })])
-          ws[XLSX.utils.encode_cell({ r: i, c: rightSideStartCol + 1 })].s =
-            styles.summaryValue;
-      }
-
-      if (ws['A3']) ws['A3'].s = styles.subHeader;
-      merges.push({ s: { r: 2, c: 0 }, e: { r: 2, c: 5 } });
-
-      const tableHeaderRow = 3;
-      for (let c = 0; c < 6; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r: tableHeaderRow, c })];
+      for (let c = 0; c <= totalCols; c++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: headerRowIndex, c })];
         if (cell) cell.s = styles.header;
       }
 
-      reportEntries.forEach((entry, index) => {
-        const r = tableHeaderRow + 1 + index;
-        const cellFecha = ws[XLSX.utils.encode_cell({ r, c: 0 })];
-        const cellHora = ws[XLSX.utils.encode_cell({ r, c: 1 })];
-        const cellEvento = ws[XLSX.utils.encode_cell({ r, c: 2 })];
-        const cellDesc = ws[XLSX.utils.encode_cell({ r, c: 3 })];
-        const cellSucursal = ws[XLSX.utils.encode_cell({ r, c: 4 })];
-        const cellDuracion = ws[XLSX.utils.encode_cell({ r, c: 5 })];
+      sortedClients.forEach((client, index) => {
+        const r = headerRowIndex + 1 + index;
+        const clientVisitKey = `${client.key}_${client.branchNumber || 'main'}`;
+        const isVisited = allVisitsMap.has(clientVisitKey);
 
-        if (cellFecha) cellFecha.s = styles.cellCentered; //Estilo para la fecha
-        if (cellHora) cellHora.s = styles.cellCentered; //Estilo para la hora
-        if (cellEvento) cellEvento.s = styles.eventCell(entry.type); //Estilo para el tipo de evento
-        if (cellDesc)
-          cellDesc.s =
-            entry.type === 'visit' ? styles.clientVisitCell : styles.cell; //Estilo para la descripción
-        if (cellSucursal) cellSucursal.s = styles.cellCentered; //Estilo para la sucursal
-        if (cellDuracion) cellDuracion.s = styles.cellRight; //Estilo para la duración
+        let style;
+        const isToolsClient = specialNonClientKeys.includes(client.key);
+
+        if (isVisited) {
+          if (client.isVendorHome) {
+            style = styles.vendorHomeVisitedCell;
+          } else if (isToolsClient) {
+            style = styles.toolsVisitedCell;
+          } else {
+            style = styles.clientVisitedCell;
+          }
+        } else {
+          if (client.isVendorHome) {
+            style = {
+              ...styles.vendorHomeVisitedCell,
+              fill: { fgColor: { rgb: 'FFFFF9E6' } },
+            };
+          } else if (isToolsClient) {
+            style = {
+              ...styles.toolsVisitedCell,
+              fill: { fgColor: { rgb: 'FFFFF0F0' } },
+            };
+          } else {
+            style = styles.cell;
+          }
+        }
+
+        ws[XLSX.utils.encode_cell({ r, c: 0 })].s = style;
+
+        for (let c = 1; c <= 5; c++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell) cell.s = styles.cellCentered;
+        }
+
+        const totalCell = ws[XLSX.utils.encode_cell({ r, c: totalCols })];
+        if (totalCell) totalCell.s = styles.cell;
       });
 
-      ws['!merges'] = merges;
+      ws[XLSX.utils.encode_cell({ r: summaryStartRow, c: 0 })].s =
+        styles.subHeader;
+      merges.push({
+        s: { r: summaryStartRow, c: 0 },
+        e: { r: summaryStartRow, c: totalCols },
+      });
+
+      const paradasHeaderRow = summaryStartRow + 1;
+      const tiemposHeaderRow = summaryStartRow + 7;
+
+      ws[XLSX.utils.encode_cell({ r: paradasHeaderRow, c: 0 })].s =
+        styles.summarySubHeader;
+      merges.push({
+        s: { r: paradasHeaderRow, c: 0 },
+        e: { r: paradasHeaderRow, c: totalCols },
+      });
+
+      ws[XLSX.utils.encode_cell({ r: tiemposHeaderRow, c: 0 })].s =
+        styles.summarySubHeader;
+      merges.push({
+        s: { r: tiemposHeaderRow, c: 0 },
+        e: { r: tiemposHeaderRow, c: totalCols },
+      });
+
+      const numSummaryRows = 12;
+
+      const redSummaryRows = new Set([
+        summaryStartRow + 6, // No Visitadas
+        summaryStartRow + 9, // Paradas
+        summaryStartRow + 10, // Tools de Mexico
+        summaryStartRow + 11, // Tiempo en Casa
+      ]);
+
+      const headerSummaryRows = new Set([paradasHeaderRow, tiemposHeaderRow]);
+
+      for (
+        let r = summaryStartRow + 1;
+        r <= summaryStartRow + numSummaryRows;
+        r++
+      ) {
+        if (headerSummaryRows.has(r)) continue;
+
+        const isRedRow = redSummaryRows.has(r);
+
+        // Estilo para la Etiqueta
+        const labelCell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+        if (labelCell) {
+          labelCell.s = isRedRow ? styles.summaryLabelRed : styles.summaryLabel;
+        }
+
+        // Estilo para los Valores Diarios
+        for (let c = 1; c < totalCols; c++) {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })];
+          if (cell) {
+            cell.s = isRedRow ? styles.summaryValueRed : styles.summaryValue;
+          }
+        }
+
+        // Estilo para el Total Semanal (Última Columna)
+        const totalCell = ws[XLSX.utils.encode_cell({ r, c: totalCols })];
+        if (totalCell) {
+          totalCell.s = isRedRow
+            ? styles.summaryTotalColRed
+            : styles.summaryTotalCol;
+        }
+      }
+
       ws['!cols'] = [
-        { wch: 18 }, //Fecha
-        { wch: 15 }, //Hora
-        { wch: 20 }, //Evento
-        { wch: 50 }, //Descripción
-        { wch: 25 }, //Sucursal
-        { wch: 15 }, //Duración
-        { wch: 3 }, //Espacio
-        { wch: 30 },
-        { wch: 25 },
+        { wch: 50 }, // Cliente
+        { wch: 18 }, // Lun
+        { wch: 18 }, // Mar
+        { wch: 18 }, // Mie
+        { wch: 18 }, // Jue
+        { wch: 18 }, // Vie
+        { wch: 20 }, // Total Semanal
       ];
+
+      ws['!merges'] = merges;
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Reporte de Viaje');
+      XLSX.utils.book_append_sheet(wb, ws, 'Reporte Semanal de Visitas');
 
       const safeSelection =
         selection.value?.replace(/[^a-zA-Z0-9]/g, '') || 'S_V';
-      const safeDate = vehicleInfo.fecha.replace(/[^a-zA-Z0-9]/g, '-');
-      const fileName = `Reporte_Viaje_${safeSelection}_${safeDate}.xlsx`;
+
+      const sortedDates = Object.keys(allTripsData)
+        .filter((date) => {
+          const day = parseISO(date).getDay();
+          return day !== 0 && day !== 6;
+        })
+        .sort();
+
+      let datePart = '';
+      if (sortedDates.length === 0) {
+        datePart = 'SinFechasHabiles';
+      } else {
+        const firstDate = sortedDates[0];
+        const lastDate = sortedDates[sortedDates.length - 1];
+
+        if (firstDate === lastDate) {
+          datePart = formatExcelDate(firstDate).replace(/[^a-zA-Z0-9]/g, '-');
+        } else {
+          datePart = `${formatExcelDate(firstDate).replace(
+            /[^a-zA-Z0-9]/g,
+            '-'
+          )}_a_${formatExcelDate(lastDate).replace(/[^a-zA-Z0-9]/g, '-')}`;
+        }
+      }
+
+      const fileName = `Reporte_Viaje(s)_${safeSelection}_${datePart}.xlsx`;
       XLSX.writeFile(wb, fileName);
     } catch (err: any) {
       console.error(err);
@@ -851,6 +1268,12 @@ export default function VehicleTracker() {
       timeWithNonClientsAfterHours: number;
       travelTimeAfterHours: number;
       totalAfterHoursTime: number;
+      distanceWithinHours: number;
+      distanceAfterHours: number;
+      timeAtHome: number;
+      percentageAtHome: number;
+      timeAtTools: number;
+      percentageAtTools: number;
     }
   ): string => {
     if (!tripData) return '';
@@ -868,13 +1291,13 @@ export default function VehicleTracker() {
     const infoBoxHTML = vehicleInfo
       ? `
         <div id="info-box" class="info-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-            <h4 style="margin: 0;">Información del Viaje</h4>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1px;">
+            <h4 style="margin: 0;">Información del Vehiculo</h4>
             <button class="toggle-btn toggle-info-btn" aria-label="Minimizar/Maximizar">
               <i class="fa-solid fa-chevron-up"></i>
             </button>
           </div>
-          <div class="info-content info-grid" style="display: grid; grid-template-columns: 1.5fr 1.4fr; gap: 1px;">
+          <div class="info-content info-grid" style="display: grid; grid-template-columns: 1.5fr 1.6fr; gap: 1px;">
               <p><strong>Descripción:</strong></p>
               <p style="text-align: left;">${vehicleInfo.descripcion}</p>
 
@@ -895,47 +1318,52 @@ export default function VehicleTracker() {
 
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-          <h4 style="margin: 0;">Resumen del Viaje (8:30 - 19:00)</h4>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1px;">
+          <h4 style="margin: 0;">Resumen del dia</h4>
           <button class="toggle-btn toggle-summary-btn" aria-label="Minimizar/Maximizar">
             <i class="fa-solid fa-chevron-up"></i>
           </button>
         </div>
-        <div class="summary-content summary-grid" style="display: grid; grid-template-columns: 1.5fr 1fr 0.2fr; gap: 1px;">
-          <p><strong>Estado inicial:</strong></p>
-          <p style="text-align: left;">${tripData.initialState}</p>
-          <p></p>
+        <div class="summary-content summary-grid" style="display: grid; grid-template-columns: 1.5fr 1.2fr 0.2fr; gap: 1px;">
           
+          <p style="grid-column: span 3; font-size: 13px; font-weight: bold; color: #002FFF; background-color: #EDF0FF;">
+            Dentro de horario (8:30 - 19:00)
+          </p>
+
           <p><strong>Inicio de labores:</strong></p>
-          <p style="text-align: left;"><strong>${tripData.workStartTime || 'N/A'}</strong></p>
-          <p></p>
+          <p style="text-align: left; grid-column: span 2;"><strong>${tripData.workStartTime || 'N/A'}</strong></p>
           
           <p><strong>Clientes Visitados:</strong></p>
-          <p style="text-align: left;"><span class="visited-clients-count">0</span> / ${totalMatchedStops}</p>
-          <p></p>
+          <p style="text-align: left; grid-column: span 2;"><span class="visited-clients-count">0</span> / ${totalMatchedStops}</p>
           
-          <p><strong>Tiempo con Clientes:</strong></p>
+          <p style="grid-column: span 3;"><strong>Tiempo con:</strong></p>
+          
+          <p style="padding-left: 15px;">• Clientes:</p>
           <p style="text-align: left;">${formatDuration(summaryStats.timeWithClients)}</p>
           <p style="text-align: left;"><strong>${summaryStats.percentageClients.toFixed(1)}%</strong></p>
           
-          <p style="color: #FF0000;"><strong>Tiempo con NO Clientes:</strong></p>
+          <p style="padding-left: 15px; color: #FF0000;">• No Clientes:</p>
           <p style="text-align: left; color: #FF0000;">${formatDuration(summaryStats.timeWithNonClients)}</p>
           <p style="text-align: left; color: #FF0000;"><strong>${summaryStats.percentageNonClients.toFixed(1)}%</strong></p>
-          
-          <p><strong>Tiempo en Traslados:</strong></p>
+
+          <p style="padding-left: 15px; color: #FF0000;">• En su casa:</p>
+          <p style="text-align: left; color: #FF0000;">${formatDuration(summaryStats.timeAtHome)}</p>
+          <p style="text-align: left; color: #FF0000;"><strong>${summaryStats.percentageAtHome.toFixed(1)}%</strong></p>
+
+          <p style="padding-left: 15px; color: #FF0000;">• Tools de Mexico:</p>
+          <p style="text-align: left; color: #FF0000;">${formatDuration(summaryStats.timeAtTools)}</p>
+          <p style="text-align: left; color: #FF0000;"><strong>${summaryStats.percentageAtTools.toFixed(1)}%</strong></p>
+              
+          <p style="padding-left: 15px;">• En Traslados:</p>
           <p style="text-align: left;">${formatDuration(summaryStats.travelTime)}</p>
           <p style="text-align: left;"><strong>${summaryStats.percentageTravel.toFixed(1)}%</strong></p>
           
-          <p><strong>Distancia Tramo:</strong></p>
-          <p style="text-align: left;"><span id="segment-distance">0.00 km</span></p>
-          <p></p>
           
-          <p><strong>Distancia Total:</strong></p>
-          <p style="text-align: left;"><span id="total-distance">0.00 km</span></p>
-          <p></p>
+          <p><strong>Distancia total:</strong></p>
+          <p style="text-align: left; grid-column: span 2;"><strong>${(summaryStats.distanceWithinHours / 1000).toFixed(2)} km</strong></p>
           
           <p><strong>Fin de labores:</strong></p>
-          <p style="text-align: left;">
+          <p style="text-align: left; grid-column: span 2;">
             <strong>
               ${
                 viewMode === 'new' && tripData.isTripOngoing
@@ -944,24 +1372,24 @@ export default function VehicleTracker() {
               }
             </strong>
           </p>
-          <p></p>
 
-          <!-- TIEMPOS FUERA DE HORARIO LABORAL -->
-          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"><strong>Fuera de Horario:</strong></p>
-          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
-          <p style="color: #888; border-top: 1px solid #ccc; padding-top: 5px;"></p>
+          <p style="grid-column: span 3; font-size: 13px; font-weight: bold; color: #002FFF; background-color: #EDF0FF;">
+            Fuera de horario
+          </p>
+
+          <p style="grid-column: span 3; color: #00004F;"><strong>Tiempo con:</strong></p>
+
+          <p style="padding-left: 15px; color: #00004F;">• Clientes:</p>
+          <p style="text-align: left; color: #00004F; grid-column: span 2;">${formatDuration(summaryStats.timeWithClientsAfterHours)}</p>
           
-          <p style="color: #888;"><strong>• Con Clientes:</strong></p>
-          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithClientsAfterHours)}</p>
-          <p style="text-align: left; color: #888;"></p>
+          <p style="padding-left: 15px; color: #FF0000;">• No Clientes:</p>
+          <p style="text-align: left; color: #FF0000; grid-column: span 2;">${formatDuration(summaryStats.timeWithNonClientsAfterHours)}</p>
           
-          <p style="color: #888;"><strong>• Con NO Clientes:</strong></p>
-          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.timeWithNonClientsAfterHours)}</p>
-          <p style="text-align: left; color: #888;"></p>
+          <p style="padding-left: 15px; color: #00004F;">• En Traslados:</p>
+          <p style="text-align: left; color: ##00004F; grid-column: span 2;">${formatDuration(summaryStats.travelTimeAfterHours)}</p>
           
-          <p style="color: #888;"><strong>• En Traslados:</strong></p>
-          <p style="text-align: left; color: #888;">${formatDuration(summaryStats.travelTimeAfterHours)}</p>
-          <p style="text-align: left; color: #888;"></p>
+          <p style="color: #00004F;"><strong>Distancia recorrida:</strong></p>
+          <p style="text-align: left; color: #00004F; grid-column: span 2;"><strong>${(summaryStats.distanceAfterHours / 1000).toFixed(2)} km</strong></p>
           
         </div>
       </div>
@@ -980,11 +1408,11 @@ export default function VehicleTracker() {
 
           <style>
             #map { height: 100%; width: 100%; } 
-            body, html { height: 100%; margin: 0; padding: 0; } 
-            .gm-style-iw-d { overflow: hidden !important; } 
-            .gm-style-iw-c { padding: 12px !important; } 
-            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; } 
-            h3 span { font-size: 20px; margin-right: 8px; } 
+            body, html { height: 100%; margin: 0; padding: 0; }
+            .gm-style-iw-d { overflow: hidden !important; }
+            .gm-style-iw-c { padding: 12px !important; }
+            h3 { margin: 0 0 8px 0; font-family: sans-serif; font-size: 16px; display: flex; align-items: center; }
+            h3 span { font-size: 20px; margin-right: 8px; }
             p { margin: 4px 0; font-family: sans-serif; font-size: 14px; }
             
             #controls { 
@@ -1039,26 +1467,23 @@ export default function VehicleTracker() {
               z-index: 10; 
               display: flex; 
               flex-direction: column; 
-              gap: 10px; 
+              gap: 5px; 
             }
             
             .info-card { 
               background: rgba(255, 255, 255, 0.9); 
-              padding: 8px 12px; 
-              border-radius: 6px; 
+              padding: 6px 10px; 
+              border-radius: 5px; 
               border: 1px solid #ccc; 
-              box-shadow: 0 1px 4px rgba(0,0,0,0.2); 
               font-family: sans-serif; 
               font-size: 12px; 
-              width: 280px; 
+              width: 260px; 
             }
             
             .info-card h4 { 
               font-size: 14px; 
               font-weight: bold; 
               margin: 0; 
-              padding-bottom: 4px; 
-              border-bottom: 1px solid #ddd; 
               color: #00004F
             }
 
@@ -1097,7 +1522,7 @@ export default function VehicleTracker() {
             }
             
             .info-card p { 
-              margin: 3px 0; 
+              margin: 2.7px 0; 
               font-size: 12px; 
               color: #00004F
             }
@@ -1599,15 +2024,24 @@ export default function VehicleTracker() {
             function createClientMarker(client) {
               const specialBlueIds  = [ '3689', '6395' ];
               const isSpecial = specialBlueIds.includes(String(client.key));
-              
+
+              let markerColor = '#A12323'; // Color por defecto (Cliente normal)
+
+              if (client.isVendorHome) {
+                markerColor = '#5D00FF';
+              } else if (isSpecial) {
+                markerColor = '#005EFF'; // Color Azul para especiales
+              }
+
               const icon = {
                 path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                fillColor: isSpecial ? '#007bff' : '#A12323',
+                fillColor: markerColor,
                 fillOpacity: 1,
                 strokeWeight: 0,
                 scale: 1.3,
                 anchor: new google.maps.Point(12, 24)
               };
+              
               return new google.maps.Marker({
                 position: { lat: client.lat, lng: client.lng },
                 map,
@@ -1625,16 +2059,21 @@ export default function VehicleTracker() {
               const googleMapsLink = \`https://www.google.com/maps/search/?api=1&query=\${client.lat},\${client.lng}\`;
               const coordinatesText = \`\${client.lat.toFixed(6)}, \${client.lng.toFixed(6)}\`;
 
+              const isHome = client.isVendorHome;
+              const titleText = isHome ? 'Casa Vendedor' : 'Cliente';
+              const titleIcon = isHome ? 'fa-solid fa-user-tie' : 'fa-solid fa-house';
+              const nameColor = isHome ? '#5D00FF' : '#059669';
+
               const content = \`
                 <div>
                   <h3 style="display:flex; align-items:center; font-size: 15px;">
-                    <span style="margin-right: 8px; font-size:15px;">
-                      <i class="fa-solid fa-house"></i>
+                    <span style="margin-right: 8px; font-size:15px; color: \${nameColor};">
+                      <i class="\${titleIcon}"></i>
                     </span>
-                    Cliente
+                    \${titleText}
                   </h3>
-                  <strong><p style="margin: 2px 0 0 0; color: #059669; font-size: 12px;"><strong>#</strong> <strong> \${client.key} </strong></p></strong>
-                  <strong><p style="margin: 2px 0 0 0; color: #059669; font-size: 12px;"><strong> \${client.displayName} </strong></p></strong>
+                  <strong><p style="margin: 2px 0 0 0; color: \${nameColor}; font-size: 12px;"><strong>#</strong> <strong> \${client.key} </strong></p></strong>
+                  <strong><p style="margin: 2px 0 0 0; color: \${nameColor}; font-size: 12px;"><strong> \${client.displayName} </strong></p></strong>
                   <strong>\${branchInfo}</strong>
                   <p style="color: #374151; font-size: 12px;">\${coordinatesText}</p>
                   <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
@@ -2087,20 +2526,32 @@ export default function VehicleTracker() {
       timeWithClients: 0,
       timeWithNonClients: 0,
       travelTime: 0,
+      timeAtHome: 0,
+      timeAtTools: 0,
 
       // Tiempos fuera de horario laboral
       timeWithClientsAfterHours: 0,
       timeWithNonClientsAfterHours: 0,
       travelTimeAfterHours: 0,
+      timeAtHomeAfterHours: 0,
+      timeAtToolsAfterHours: 0,
 
       // Totales
       totalWorkingTime: 0,
       totalAfterHoursTime: 0,
+      totalTimeWithNonClients: 0,
 
       // Porcentajes (solo del horario laboral)
       percentageClients: 0,
       percentageNonClients: 0,
       percentageTravel: 0,
+      percentageAtHome: 0,
+      percentageAtTools: 0,
+      percentageTotalNonClients: 0,
+
+      // Distancias
+      distanceWithinHours: 0,
+      distanceAfterHours: 0,
     };
 
     if (!tripData || !vehicleInfo?.fecha) return stats;
@@ -2111,11 +2562,9 @@ export default function VehicleTracker() {
       return h * 60 + m + (s || 0) / 60;
     };
 
-    // Horario laboral: 8:30 (510 minutos) a 19:00 (1140 minutos)
-    const WORK_START_MINUTES = 8 * 60 + 30; // 510
-    const WORK_END_MINUTES = 19 * 60; // 1140
+    const WORK_START_MINUTES = 8 * 60 + 30;
+    const WORK_END_MINUTES = 19 * 60;
 
-    // Función para calcular cuántos minutos de una duración caen dentro del horario laboral
     const splitDurationByWorkingHours = (
       startTime: string,
       durationMinutes: number
@@ -2126,7 +2575,6 @@ export default function VehicleTracker() {
       let withinHours = 0;
       let outsideHours = 0;
 
-      // Iterar minuto por minuto para determinar si está dentro o fuera del horario
       for (let minute = startMinutes; minute < endMinutes; minute++) {
         const currentMinute = minute % (24 * 60);
 
@@ -2143,7 +2591,6 @@ export default function VehicleTracker() {
       return { withinHours, outsideHours };
     };
 
-    // Obtener eventos de inicio y fin reales del viaje
     const startEvents = tripData.flags.filter((flag) => flag.type === 'start');
     const endEvents = tripData.flags.filter((flag) => flag.type === 'end');
 
@@ -2209,42 +2656,62 @@ export default function VehicleTracker() {
 
     const specialNonClientKeys = ['3689', '6395'];
 
-    // CALCULAR TIEMPOS DE PARADA (dividiendo según horario)
+    // CALCULAR TIEMPOS DE PARADA
     tripData.flags.forEach((flag) => {
       if (flag.type === 'stop' && (flag.duration || 0) >= minStopDuration) {
         const duration = flag.duration || 0;
         const split = splitDurationByWorkingHours(flag.time, duration);
 
-        if (
-          flag.clientName &&
-          flag.clientName !== 'Sin coincidencia' &&
-          !specialNonClientKeys.includes(flag.clientKey || '')
-        ) {
+        if (flag.isVendorHome) {
+          // 1. Es la casa del vendedor
+          stats.timeAtHome += split.withinHours;
+          stats.timeAtHomeAfterHours += split.outsideHours;
+        } else if (specialNonClientKeys.includes(flag.clientKey || '')) {
+          // 2. Es Tools de Mexico
+          stats.timeAtTools += split.withinHours;
+          stats.timeAtToolsAfterHours += split.outsideHours;
+        } else if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
+          // 3. Es un cliente válido (y no es la casa ni Tools)
           stats.timeWithClients += split.withinHours;
           stats.timeWithClientsAfterHours += split.outsideHours;
         } else {
+          // 4. Es una parada sin coincidencia
           stats.timeWithNonClients += split.withinHours;
           stats.timeWithNonClientsAfterHours += split.outsideHours;
         }
       }
     });
 
+    //CALCULAR TOTAL DE TIEMPO CON NO CLIENTES
+    if (stats.totalWorkingTime > 0) {
+      stats.totalTimeWithNonClients =
+        stats.timeAtHome + stats.timeAtTools + stats.timeWithNonClients;
+      stats.percentageTotalNonClients =
+        (stats.totalTimeWithNonClients / stats.totalWorkingTime) * 100;
+    }
+
     // CALCULAR TIEMPO DE TRASLADO
     const totalStopTimeWorkingHours =
-      stats.timeWithClients + stats.timeWithNonClients;
+      stats.timeWithClients +
+      stats.timeWithNonClients +
+      stats.timeAtHome +
+      stats.timeAtTools;
     stats.travelTime = Math.max(
       0,
       stats.totalWorkingTime - totalStopTimeWorkingHours
     );
 
     const totalStopTimeAfterHours =
-      stats.timeWithClientsAfterHours + stats.timeWithNonClientsAfterHours;
+      stats.timeWithClientsAfterHours +
+      stats.timeWithNonClientsAfterHours +
+      stats.timeAtHomeAfterHours +
+      stats.timeAtToolsAfterHours;
     stats.travelTimeAfterHours = Math.max(
       0,
       stats.totalAfterHoursTime - totalStopTimeAfterHours
     );
 
-    // CALCULAR PORCENTAJES (solo del horario laboral)
+    // CALCULAR PORCENTAJES (horario laboral)
     if (stats.totalWorkingTime > 0) {
       stats.percentageClients =
         (stats.timeWithClients / stats.totalWorkingTime) * 100;
@@ -2252,6 +2719,62 @@ export default function VehicleTracker() {
         (stats.timeWithNonClients / stats.totalWorkingTime) * 100;
       stats.percentageTravel =
         (stats.travelTime / stats.totalWorkingTime) * 100;
+      stats.percentageAtHome =
+        (stats.timeAtHome / stats.totalWorkingTime) * 100;
+      stats.percentageAtTools =
+        (stats.timeAtTools / stats.totalWorkingTime) * 100;
+    }
+
+    // CALCULAR DISTANCIAS POR HORARIO
+    if (
+      tripData.routes &&
+      tripData.routes[0]?.path &&
+      tripData.flags.length > 0
+    ) {
+      const routePath = tripData.routes[0].path;
+      const startFlag = tripData.flags.find((f) => f.type === 'start');
+      const endFlag = tripData.flags.find((f) => f.type === 'end');
+
+      if (startFlag && endFlag) {
+        const startMinutes = startFlag.time.split(':').map(Number);
+        const endMinutes = endFlag.time.split(':').map(Number);
+        const totalStartMinutes = startMinutes[0] * 60 + startMinutes[1];
+        const totalEndMinutes = endMinutes[0] * 60 + endMinutes[1];
+        const tripDurationMinutes =
+          totalEndMinutes >= totalStartMinutes
+            ? totalEndMinutes - totalStartMinutes
+            : 24 * 60 - totalStartMinutes + totalEndMinutes;
+
+        for (let i = 0; i < routePath.length - 1; i++) {
+          const point1 = routePath[i];
+          const point2 = routePath[i + 1];
+
+          const segmentDistance = calculateDistance(
+            point1.lat,
+            point1.lng,
+            point2.lat,
+            point2.lng
+          );
+
+          const progressRatio = i / (routePath.length - 1);
+          const estimatedMinutes =
+            totalStartMinutes + tripDurationMinutes * progressRatio;
+          const estimatedHours = Math.floor(estimatedMinutes / 60) % 24;
+          const estimatedMins = Math.floor(estimatedMinutes % 60);
+          const estimatedTime = `${String(estimatedHours).padStart(2, '0')}:${String(estimatedMins).padStart(2, '0')}:00`;
+
+          const isInWorkingHours = isWorkingHours(
+            estimatedTime,
+            vehicleInfo?.fecha || ''
+          );
+
+          if (isInWorkingHours) {
+            stats.distanceWithinHours += segmentDistance;
+          } else {
+            stats.distanceAfterHours += segmentDistance;
+          }
+        }
+      }
     }
 
     return stats;
@@ -2339,9 +2862,30 @@ export default function VehicleTracker() {
               <div className="p-4 space-y-4">
                 {/* Upload de Ruta */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    1. Cargar Archivo de Ruta del Vendedor
-                  </label>
+                  <div className="flex justify-between items-center mb-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      1. Cargar Archivo(s) de Ruta
+                    </label>
+                    {/* Boton de borrar */}
+                    {Object.keys(allTripsData).length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              '¿Estás seguro de que deseas borrar todos los viajes cargados?'
+                            )
+                          ) {
+                            setAllTripsData({});
+                            setActiveDate(null);
+                          }
+                        }}
+                        className="text-xs p-0.5 text-red-500 hover:text-red-700 font-medium"
+                        title="Limpiar todas las rutas"
+                      >
+                        Limpiar
+                      </button>
+                    )}
+                  </div>
                   <label
                     htmlFor="dropzone-file"
                     className="flex flex-col items-center justify-center w-full h-32 border-2 border-blue-300 border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100 transition-colors"
@@ -2361,6 +2905,7 @@ export default function VehicleTracker() {
                       className="hidden"
                       onChange={handleFileUpload}
                       accept=".xlsx, .xls"
+                      multiple
                     />
                   </label>
                 </div>
@@ -2373,7 +2918,7 @@ export default function VehicleTracker() {
                     </label>
                     <label
                       htmlFor="clients-file"
-                      className="flex flex-col items-center justify-center w-full h-24 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors"
+                      className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors"
                     >
                       <Users className="w-6 h-6 mb-1 text-green-500 animate-bounce" />
                       {clientFileName ? (
@@ -2439,28 +2984,34 @@ export default function VehicleTracker() {
                 {tripData && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Modo de Vista
+                      Modo de Traslado
                     </label>
-                    <div className="flex rounded-lg border border-gray-300 overflow-hidden">
+                    <div className="flex rounded-lg border border-blue-300 overflow-hidden">
                       <button
                         onClick={() => setViewMode('current')}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           viewMode === 'current'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                            ? 'bg-blue-600 text-white hover:bg-blue-800'
+                            : 'bg-white text-blue-600 hover:bg-blue-50'
                         }`}
                       >
-                        Actual
+                        <div className="flex items-center justify-center gap-1">
+                          <Users className="w-4 h-4" />
+                          Clientes
+                        </div>
                       </button>
                       <button
                         onClick={() => setViewMode('new')}
                         className={`flex-1 px-3 py-2 text-sm font-medium transition-colors ${
                           viewMode === 'new'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                            ? 'bg-blue-600 text-white hover:bg-blue-800'
+                            : 'bg-white text-blue-600 hover:bg-blue-50'
                         }`}
                       >
-                        Completa
+                        <div className="flex items-center justify-center gap-1">
+                          <CalendarClock className="w-4 h-4" />
+                          24 horas
+                        </div>
                       </button>
                     </div>
                   </div>
@@ -2644,12 +3195,15 @@ export default function VehicleTracker() {
                   </div>
 
                   {/* Información dentro de horario laboral */}
-                  <div className="space-y-1 text-xs pb-2">
+                  <div className="space-y-1 text-xs">
+                    <h4 className="font-semibold text-gray-800">
+                      Dentro de Horario Laboral
+                    </h4>
                     <div className="grid grid-cols-3 items-center gap-2">
                       <span className="text-gray-600 text-left col-span-1">
-                        Con clientes:
+                        Con Clientes:
                       </span>
-                      <span className="font-medium text-right col-span-1">
+                      <span className="text-green-600 font-medium text-right col-span-1">
                         {formatDuration(summaryStats.timeWithClients)}
                       </span>
                       <span className="text-green-600 text-sm font-bold text-right col-span-1">
@@ -2659,21 +3213,57 @@ export default function VehicleTracker() {
 
                     <div className="grid grid-cols-3 items-center gap-2">
                       <span className="text-gray-600 text-left col-span-1">
-                        Sin clientes:
+                        Sin Clientes:
                       </span>
-                      <span className="font-medium text-right col-span-1">
-                        {formatDuration(summaryStats.timeWithNonClients)}
+                      <span className="text-red-600 font-medium text-right col-span-1">
+                        {formatDuration(summaryStats.totalTimeWithNonClients)}
                       </span>
                       <span className="text-red-600 text-sm font-bold text-right col-span-1">
+                        {summaryStats.percentageTotalNonClients.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 items-center gap-2">
+                      <span className="text-gray-600 text-left col-span-1 pl-2">
+                        - En paradas:
+                      </span>
+                      <span className="text-red-800 text-right col-span-1">
+                        {formatDuration(summaryStats.timeWithNonClients)}
+                      </span>
+                      <span className="text-red-800 font-bold text-right col-span-1">
                         {summaryStats.percentageNonClients.toFixed(1)}%
                       </span>
                     </div>
 
                     <div className="grid grid-cols-3 items-center gap-2">
-                      <span className="text-gray-600 text-left col-span-1">
-                        En traslados:
+                      <span className="text-gray-600 text-left col-span-1 pl-2">
+                        - En Tools:
                       </span>
-                      <span className="font-medium text-right col-span-1">
+                      <span className="text-red-800 text-right col-span-1">
+                        {formatDuration(summaryStats.timeAtTools)}
+                      </span>
+                      <span className="text-red-800 font-bold text-right col-span-1">
+                        {summaryStats.percentageAtTools.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 items-center gap-2">
+                      <span className="text-gray-600 text-left col-span-1 pl-2">
+                        - En Casa:
+                      </span>
+                      <span className="text-red-800 text-right col-span-1">
+                        {formatDuration(summaryStats.timeAtHome)}
+                      </span>
+                      <span className="text-red-800 font-bold text-right col-span-1">
+                        {summaryStats.percentageAtHome.toFixed(1)}%
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-3 items-center gap-2">
+                      <span className="text-gray-600 text-left col-span-1">
+                        En Traslados:
+                      </span>
+                      <span className="text-blue-600 font-medium text-right col-span-1">
                         {formatDuration(summaryStats.travelTime)}
                       </span>
                       <span className="text-blue-600 text-sm font-bold text-right col-span-1">
@@ -2683,7 +3273,7 @@ export default function VehicleTracker() {
                   </div>
 
                   {/* Información fuera de horario laboral */}
-                  <div className="space-y-1 text-xs pt-2">
+                  <div className="space-y-1 text-xs">
                     <h4 className="font-semibold text-gray-800">
                       Fuera de Horario Laboral
                     </h4>
@@ -2762,6 +3352,43 @@ export default function VehicleTracker() {
           </h2>
           {tripData && (
             <div className="flex items-center gap-3">
+              {/* Seleccion del dia */}
+              {Object.keys(allTripsData).length > 0 && (
+                <div>
+                  <select
+                    id="date-selector"
+                    value={activeDate || ''}
+                    onChange={(e) => setActiveDate(e.target.value)}
+                    className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500
+                    hover:ring-2 hover:ring-blue-500"
+                  >
+                    <option value="" disabled>
+                      Selecciona un día
+                    </option>
+                    {Object.keys(allTripsData)
+                      .sort(
+                        (a, b) => new Date(a).getTime() - new Date(b).getTime()
+                      )
+                      .map((date) => {
+                        const dateObj = parseISO(date);
+                        const formatted = formatDate(
+                          dateObj,
+                          'EEEE, dd-MM-yyyy',
+                          {
+                            locale: es,
+                          }
+                        );
+                        return (
+                          <option key={date} value={date}>
+                            {formatted}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+              )}
+
+              {/* Boton para generar el reporte */}
               <button
                 onClick={downloadReport}
                 disabled={isGeneratingReport || !selection.value}
@@ -2787,28 +3414,6 @@ export default function VehicleTracker() {
               >
                 <Download className="w-4 h-4 mr-2" />
                 Descargar Mapa
-              </button>
-
-              <button
-                onClick={() => setShowAnalytics(!showAnalytics)}
-                className="relative px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
-              >
-                <svg
-                  className={`w-5 h-5 transition-transform ${
-                    showAnalytics ? 'rotate-180' : ''
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
-                {showAnalytics ? 'Ocultar' : 'Mostrar'} Análisis
               </button>
             </div>
           )}
@@ -2842,31 +3447,6 @@ export default function VehicleTracker() {
             </div>
           )}
         </div>
-
-        {/* Panel de Análisis (Expandible) */}
-        {showAnalytics && tripData && (
-          <div className="bg-white h-full overflow-y-auto">
-            <div className="p-6">
-              <h3 className="text-lg font-semibold text-gray-800 mb-4">
-                Análisis y Gráficas
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {/* Placeholder para futuras gráficas */}
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <p className="text-sm text-gray-600">
-                    Distribución de tiempo
-                  </p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <p className="text-sm text-gray-600">Eficiencia de ruta</p>
-                </div>
-                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                  <p className="text-sm text-gray-600">Cobertura de clientes</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* Error Toast (Opcional) */}

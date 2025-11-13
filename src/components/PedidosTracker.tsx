@@ -17,6 +17,7 @@ import {
   MapPinXInside,
   UserX,
   Crosshair,
+  Download,
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -412,13 +413,51 @@ export default function PedidosTracker() {
     let pedidosSinMatch = 0;
     let pedidosSinGps = 0;
     let pedidosSinGpsCliente = 0;
+    let pedidosEnMatriz = 0;
 
     for (const pedido of filteredPedidos) {
       const gpsAAnalizar =
         gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
 
       if (!gpsAAnalizar) {
-        pedidosSinGps++;
+        const tieneImportes = pedido.impMXN > 0 || pedido.impUS > 0;
+
+        if (tieneImportes) {
+          pedidosEnMatriz++;
+
+          const masterClient = allClientsFromFile.find(
+            (c) => c.key === pedido.clienteNum
+          );
+          const clientGps = masterClient
+            ? { lat: masterClient.lat, lng: masterClient.lng }
+            : pedido.pedidoClientGps;
+
+          if (clientGps) {
+            if (clientMap.has(pedido.clienteNum)) {
+              const existing = clientMap.get(pedido.clienteNum)!;
+              existing.totalPedidos += 1;
+              existing.totalMXN += pedido.impMXN;
+              existing.totalUS += pedido.impUS;
+            } else {
+              clientMap.set(pedido.clienteNum, {
+                number: pedido.clienteNum,
+                name: pedido.clienteName,
+                lat: clientGps.lat,
+                lng: clientGps.lng,
+                branchName: masterClient
+                  ? masterClient.branchName || ''
+                  : pedido.sucursalName,
+                vendor: pedido.vendedor,
+                totalPedidos: 1,
+                totalMXN: pedido.impMXN,
+                totalUS: pedido.impUS,
+              });
+            }
+          }
+        } else {
+          pedidosSinGps++;
+        }
+
         continue;
       }
 
@@ -517,8 +556,6 @@ export default function PedidosTracker() {
 
     const clientMarkers = Array.from(clientMap.values());
     const visitedClientKeys = new Set(clientMap.keys());
-
-    // Ahora, calculamos el "más cercano" para filtrar la lista de "no visitados"
     const allVendorClients = allClientsFromFile.filter(
       (c) => selectedVendor === '__ALL__' || c.vendor === selectedVendor
     );
@@ -563,39 +600,37 @@ export default function PedidosTracker() {
       : null;
 
     const clientesNoVisitados: IClientMarker[] = [];
-    if (showNoVisitados) {
-      regularClientsOnRoute.forEach((regularClient) => {
-        if (!visitedClientKeys.has(regularClient.key)) {
-          clientesNoVisitados.push({
-            number: regularClient.key,
-            name: regularClient.name,
-            lat: regularClient.lat,
-            lng: regularClient.lng,
-            branchName: regularClient.branchName || '',
-            vendor: regularClient.vendor,
-            totalPedidos: 0,
-            totalMXN: 0,
-            totalUS: 0,
-          });
-        }
-      });
-
-      if (
-        closestSpecialClient &&
-        !visitedClientKeys.has(closestSpecialClient.key)
-      ) {
+    regularClientsOnRoute.forEach((regularClient) => {
+      if (!visitedClientKeys.has(regularClient.key)) {
         clientesNoVisitados.push({
-          number: closestSpecialClient.key,
-          name: closestSpecialClient.name,
-          lat: closestSpecialClient.lat,
-          lng: closestSpecialClient.lng,
-          branchName: closestSpecialClient.branchName || '',
-          vendor: closestSpecialClient.vendor,
+          number: regularClient.key,
+          name: regularClient.name,
+          lat: regularClient.lat,
+          lng: regularClient.lng,
+          branchName: regularClient.branchName || '',
+          vendor: regularClient.vendor,
           totalPedidos: 0,
           totalMXN: 0,
           totalUS: 0,
         });
       }
+    });
+
+    if (
+      closestSpecialClient &&
+      !visitedClientKeys.has(closestSpecialClient.key)
+    ) {
+      clientesNoVisitados.push({
+        number: closestSpecialClient.key,
+        name: closestSpecialClient.name,
+        lat: closestSpecialClient.lat,
+        lng: closestSpecialClient.lng,
+        branchName: closestSpecialClient.branchName || '',
+        vendor: closestSpecialClient.vendor,
+        totalPedidos: 0,
+        totalMXN: 0,
+        totalUS: 0,
+      });
     }
 
     const pedidoMarkers = applyOffsetsToMarkers(pedidoMarkersRaw);
@@ -608,6 +643,7 @@ export default function PedidosTracker() {
       pedidosSinMatch,
       pedidosSinGpsCliente,
       pedidosSinGps,
+      pedidosEnMatriz,
       matchPercentage:
         totalMapeables > 0 ? (pedidosConMatch / totalMapeables) * 100 : 0,
       sinMatchPercentage:
@@ -631,7 +667,6 @@ export default function PedidosTracker() {
     selectedDate,
     selectedVendor,
     matchRadius,
-    showNoVisitados,
     gpsMode,
   ]);
 
@@ -735,7 +770,7 @@ export default function PedidosTracker() {
         
         const clientMarkers = ${JSON.stringify(clientMarkers)};
         const pedidoMarkers = ${JSON.stringify(pedidoMarkers)};
-        const clientesNoVisitados = ${JSON.stringify(clientesNoVisitados)};
+        const clientesNoVisitados = ${JSON.stringify(showNoVisitados ? clientesNoVisitados : [])};
         const closestSpecialClientKey = ${JSON.stringify(closestSpecialClientKey)};
         const useClustering = ${useClustering};
 
@@ -836,6 +871,7 @@ export default function PedidosTracker() {
               <i class="fa-solid fa-cart-shopping"></i> Pedido #\${pedido.number}
             </h3>
             
+            <strong>#\${pedido.clienteKey}</strong>
             <p style="margin: 2px 0; font-weight: 600; font-size: 12px; color: #374151;">
               Cliente: \${toTitleCase(pedido.clienteName)}
             </p>
@@ -971,6 +1007,7 @@ export default function PedidosTracker() {
       'Fuera de Ubicación',
       'Sin GPS Cliente',
       gpsMode === 'envio' ? 'Sin GPS Envío' : 'Sin GPS Captura',
+      'En Tools',
     ],
     datasets: [
       {
@@ -980,12 +1017,14 @@ export default function PedidosTracker() {
           stats?.pedidosSinMatch || 0,
           stats?.pedidosSinGpsCliente || 0,
           stats?.pedidosSinGps || 0,
+          stats?.pedidosEnMatriz || 0,
         ],
         backgroundColor: [
           '#22c55e', // Verde (match)
           '#ef4444', // Rojo (no match)
           '#f59e0b', // Naranja (sin GPS cliente)
           '#6b7280', // Gris (sin GPS envío)
+          '#3b82f6', // Azul (en Tools)
         ],
         borderColor: ['#ffffff'],
         borderWidth: 3,
@@ -1045,6 +1084,628 @@ export default function PedidosTracker() {
         stacked: true,
       },
     },
+  };
+
+  const downloadPedidosExcel = () => {
+    if (
+      !pedidosData ||
+      !selectedDate ||
+      !selectedVendor ||
+      !allClientsFromFile
+    ) {
+      setError('No hay datos suficientes para generar el reporte.');
+      return;
+    }
+
+    const isAllVendors = selectedVendor === '__ALL__';
+    const vendorsToProcess = isAllVendors ? availableVendors : [selectedVendor];
+
+    const styles = {
+      title: {
+        font: { name: 'Arial', sz: 18, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF0275D8' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      header: {
+        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF4F81BD' } },
+        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
+      },
+      vendorHeader: {
+        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF00B050' } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      totalRow: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFF2F2F2' } },
+        alignment: { horizontal: 'right' },
+        border: { top: { style: 'thin', color: { auto: 1 } } },
+      },
+      cell: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { vertical: 'center', horizontal: 'left' },
+      },
+      cellCentered: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'center', vertical: 'center' },
+      },
+      cellRight: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'right', vertical: 'center' },
+      },
+      clientVisitCell: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        fill: { fgColor: { rgb: 'FFEBF5FF' } },
+        alignment: { vertical: 'center', horizontal: 'left' },
+      },
+      nonVisitedHeader: {
+        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FFC00000' } },
+        alignment: { horizontal: 'center' },
+      },
+      // Estilos para el panel de resumen
+      infoLabel: {
+        font: { name: 'Arial', sz: 10, bold: true },
+        alignment: { horizontal: 'right' },
+      },
+      infoValue: {
+        font: { name: 'Arial', sz: 10 },
+        alignment: { horizontal: 'left' },
+      },
+      subHeader: {
+        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
+        fill: { fgColor: { rgb: 'FF4F81BD' } },
+        alignment: { vertical: 'center', horizontal: 'center' },
+      },
+    };
+
+    const filteredPedidos = pedidosData.filter((p) => {
+      if (selectedDate !== '__ALL_DATES__' && p.fechaStr !== selectedDate) {
+        return false;
+      }
+      return isAllVendors ? true : p.vendedor === selectedVendor;
+    });
+
+    const clientesConCoincidencia: IPedido[] = [];
+    const clientesFueraUbicacion: IPedido[] = [];
+    const clientesConPedidos = new Set<string>();
+
+    for (const pedido of filteredPedidos) {
+      const gpsAAnalizar =
+        gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
+      let isMatch = false;
+
+      if (!gpsAAnalizar) {
+        if (pedido.impMXN > 0 || pedido.impUS > 0) {
+          isMatch = true;
+        } else {
+          continue;
+        }
+      } else {
+        const masterClient = allClientsFromFile.find(
+          (c) => c.key === pedido.clienteNum
+        );
+        const clientGps = masterClient
+          ? { lat: masterClient.lat, lng: masterClient.lng }
+          : pedido.pedidoClientGps;
+
+        if (clientGps) {
+          const distance = calculateDistance(
+            clientGps.lat,
+            clientGps.lng,
+            gpsAAnalizar.lat,
+            gpsAAnalizar.lng
+          );
+          isMatch = distance <= matchRadius;
+        }
+      }
+
+      clientesConPedidos.add(pedido.clienteNum);
+      if (isMatch) {
+        clientesConCoincidencia.push(pedido);
+      } else {
+        clientesFueraUbicacion.push(pedido);
+      }
+    }
+
+    const clientesVendedor = isAllVendors
+      ? allClientsFromFile
+      : allClientsFromFile.filter((c) => c.vendor === selectedVendor);
+    const clientesSinPedidos =
+      clientesVendedor.filter((c) => !clientesConPedidos.has(c.key)) || [];
+    const grandTotalPedidosEnUbicacion = clientesConCoincidencia.length;
+    const grandTotalPedidosFueraUbicacion = clientesFueraUbicacion.length;
+    const grandTotalSinPedidos = clientesSinPedidos.length;
+
+    const allPedidosConImporte = [
+      ...clientesConCoincidencia,
+      ...clientesFueraUbicacion,
+    ];
+    const grandTotalMXN = allPedidosConImporte.reduce(
+      (sum, p) => sum + p.impMXN,
+      0
+    );
+    const grandTotalUSD = allPedidosConImporte.reduce(
+      (sum, p) => sum + p.impUS,
+      0
+    );
+
+    let dateRangeStr = selectedDate;
+    if (selectedDate === '__ALL_DATES__') {
+      const allDates = [...new Set(filteredPedidos.map((p) => p.fechaStr))]
+        .filter((date) => date)
+        .sort();
+
+      if (allDates.length === 0) {
+        dateRangeStr = 'N/A';
+      } else if (allDates.length === 1) {
+        dateRangeStr = allDates[0];
+      } else {
+        dateRangeStr = `${allDates[0]} a ${allDates[allDates.length - 1]}`;
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // Headers y Columnas (SIN VENDEDOR)
+    const headersPedidos = [
+      '# Pedido',
+      'Fecha',
+      'Cliente',
+      'Sucursal',
+      'Imp MXN',
+      'Imp USD',
+    ];
+    const colsPedidos = [
+      { wch: 17 }, // # Pedido
+      { wch: 12 }, // Fecha
+      { wch: 43 }, // Cliente
+      { wch: 25 }, // Sucursal
+      { wch: 15 }, // Imp MXN
+      { wch: 15 }, // Imp USD
+    ];
+    const headersSinPedidos = ['Cliente', 'Sucursal'];
+    const colsSinPedidos = [
+      { wch: 40 }, // Cliente
+      { wch: 25 }, // Sucursal
+    ];
+    const summaryColWidths = [
+      { wch: 2 }, // Espaciador
+      { wch: 30 }, // Label
+      { wch: 25 }, // Value
+    ];
+
+    // --- HOJA 1: Clientes en Ubicación ---
+    {
+      const wsName = 'Clientes en Ubicación';
+      const data: any[][] = [];
+      const merges: XLSX.Range[] = [];
+      let currentRow = 0;
+      const tableWidth = headersPedidos.length; // 6
+      const summaryStartCol = tableWidth + 1; // Col 7 (índice 6)
+
+      data.push(['Clientes en Ubicación']);
+      merges.push({
+        s: { r: currentRow, c: 0 },
+        e: { r: currentRow, c: summaryStartCol + 1 },
+      }); // Título abarca todo
+      currentRow += 2; // + Título y + Fila vacía
+
+      for (const vendor of vendorsToProcess) {
+        const vendorPedidos = clientesConCoincidencia
+          .filter((p) => p.vendedor === vendor)
+          .sort((a, b) => a.clienteName.localeCompare(b.clienteName));
+        if (vendorPedidos.length === 0) continue;
+
+        let vendorTotalMXN = 0;
+        let vendorTotalUSD = 0;
+
+        if (isAllVendors) {
+          const vendorRow = Array(tableWidth).fill('');
+          vendorRow[0] = `Vendedor: ${vendor}`;
+          data.push(vendorRow);
+          merges.push({
+            s: { r: currentRow, c: 0 },
+            e: { r: currentRow, c: tableWidth - 1 },
+          });
+          currentRow++;
+        }
+
+        data.push([...headersPedidos]);
+        currentRow++;
+
+        vendorPedidos.forEach((p) => {
+          const clientName = p.clienteName;
+          const clientKey = p.clienteNum;
+          let branchInfo = '--';
+          if (p.sucursalNum && p.sucursalNum !== '0' && p.sucursalNum !== '') {
+            branchInfo = p.sucursalName
+              ? `Suc. ${p.sucursalName}`
+              : `Suc. ${p.sucursalNum}`;
+          }
+          const row = [
+            p.pedidoNum,
+            p.fechaStr,
+            `${clientKey} - ${clientName}`,
+            branchInfo,
+            p.impMXN,
+            p.impUS,
+          ];
+          data.push(row);
+          vendorTotalMXN += p.impMXN;
+          vendorTotalUSD += p.impUS;
+          currentRow++;
+        });
+
+        const totalRow = [
+          '',
+          '',
+          '',
+          'Total Vendedor:',
+          vendorTotalMXN,
+          vendorTotalUSD,
+        ];
+        data.push(totalRow);
+        merges.push({
+          s: { r: currentRow, c: 0 },
+          e: { r: currentRow, c: 3 }, // Columnas 0-3
+        });
+        currentRow++;
+
+        data.push([]);
+        currentRow++;
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [...colsPedidos, ...summaryColWidths];
+      ws['!merges'] = merges;
+
+      // Aplicar Estilos
+      ws['A1'].s = styles.title;
+      data.forEach((row, rIdx) => {
+        if (row.length === 0) return;
+
+        if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
+          for (let cIdx = 0; cIdx < tableWidth; cIdx++) {
+            const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
+            if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
+            ws[cellRef].s = styles.vendorHeader;
+          }
+        } else if (row[0] === '# Pedido') {
+          for (let cIdx = 0; cIdx < row.length; cIdx++) {
+            const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
+            if (ws[cellRef]) {
+              ws[cellRef].s = styles.header;
+            }
+          }
+        } else if (row[3] === 'Total Vendedor:') {
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.totalRow;
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
+            ...styles.totalRow,
+            numFmt: '"$"#,##0.00',
+          };
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })].s = {
+            ...styles.totalRow,
+            numFmt: '"$"#,##0.00',
+          };
+        } else if (rIdx > 0 && !row[0]?.startsWith('Clientes en Ubicación')) {
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s =
+              styles.cellCentered;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })].s =
+              styles.cellCentered;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })].s =
+              styles.clientVisitCell;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.cell;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
+              ...styles.cellRight,
+              numFmt: '"$"#,##0.00',
+            };
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })].s = {
+              ...styles.cellRight,
+              numFmt: '"$"#,##0.00',
+            };
+        }
+      });
+      XLSX.utils.book_append_sheet(wb, ws, wsName);
+    }
+
+    // --- HOJA 2: Clientes Fuera de Ubicación ---
+    {
+      const wsName = 'Clientes Fuera Ubicación';
+      const data: any[][] = [];
+      const merges: XLSX.Range[] = [];
+      let currentRow = 0;
+      const tableWidth = headersPedidos.length; // 6
+      const summaryStartCol = tableWidth + 1; // Col 7 (índice 6)
+
+      data.push(['Clientes Fuera de Ubicación']);
+      merges.push({
+        s: { r: currentRow, c: 0 },
+        e: { r: currentRow, c: summaryStartCol + 1 },
+      });
+      currentRow += 2;
+
+      for (const vendor of vendorsToProcess) {
+        const vendorPedidos = clientesFueraUbicacion
+          .filter((p) => p.vendedor === vendor)
+          .sort((a, b) => a.clienteName.localeCompare(b.clienteName));
+        if (vendorPedidos.length === 0) continue;
+
+        let vendorTotalMXN = 0;
+        let vendorTotalUSD = 0;
+
+        if (isAllVendors) {
+          const vendorRow = Array(tableWidth).fill('');
+          vendorRow[0] = `Vendedor: ${vendor}`;
+          data.push(vendorRow);
+          merges.push({
+            s: { r: currentRow, c: 0 },
+            e: { r: currentRow, c: tableWidth - 1 },
+          });
+          currentRow++;
+        }
+
+        data.push([...headersPedidos]);
+        currentRow++;
+
+        vendorPedidos.forEach((p) => {
+          const clientName = p.clienteName;
+          const clientKey = p.clienteNum;
+          let branchInfo = '--';
+          if (p.sucursalNum && p.sucursalNum !== '0' && p.sucursalNum !== '') {
+            branchInfo = p.sucursalName
+              ? `Suc. ${p.sucursalName}`
+              : `Suc. ${p.sucursalNum}`;
+          }
+          const row = [
+            p.pedidoNum,
+            p.fechaStr,
+            `${clientKey} - ${clientName}`,
+            branchInfo,
+            p.impMXN,
+            p.impUS,
+          ];
+          data.push(row);
+          vendorTotalMXN += p.impMXN;
+          vendorTotalUSD += p.impUS;
+          currentRow++;
+        });
+
+        const totalRow = [
+          '',
+          '',
+          '',
+          'Total Vendedor:',
+          vendorTotalMXN,
+          vendorTotalUSD,
+        ];
+        data.push(totalRow);
+        merges.push({
+          s: { r: currentRow, c: 0 },
+          e: { r: currentRow, c: 3 },
+        });
+        currentRow++;
+
+        data.push([]);
+        currentRow++;
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [...colsPedidos, ...summaryColWidths];
+      ws['!merges'] = merges;
+
+      // Aplicar Estilos
+      ws['A1'].s = styles.title;
+      data.forEach((row, rIdx) => {
+        if (row.length === 0) return;
+
+        if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
+          // Aplicar estilo a toda la fila del vendedor
+          for (let cIdx = 0; cIdx < tableWidth; cIdx++) {
+            const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
+            if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
+            ws[cellRef].s = styles.vendorHeader;
+          }
+        } else if (row[0] === '# Pedido') {
+          // Aplicar estilo a los headers
+          for (let cIdx = 0; cIdx < row.length; cIdx++) {
+            const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
+            if (ws[cellRef]) {
+              ws[cellRef].s = styles.header;
+            }
+          }
+        } else if (row[3] === 'Total Vendedor:') {
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.totalRow;
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
+            ...styles.totalRow,
+            numFmt: '"$"#,##0.00',
+          };
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })].s = {
+            ...styles.totalRow,
+            numFmt: '"$"#,##0.00',
+          };
+        } else if (rIdx > 0 && !row[0]?.startsWith('Clientes Fuera')) {
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s =
+              styles.cellCentered;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })].s =
+              styles.cellCentered;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })].s =
+              styles.clientVisitCell;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.cell;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
+              ...styles.cellRight,
+              numFmt: '"$"#,##0.00',
+            };
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })].s = {
+              ...styles.cellRight,
+              numFmt: '"$"#,##0.00',
+            };
+        }
+      });
+      XLSX.utils.book_append_sheet(wb, ws, wsName);
+    }
+
+    // --- HOJA 3: Clientes Sin Pedidos ---
+    {
+      const wsName = 'Clientes Sin Pedidos';
+      const data: any[][] = [];
+      const merges: XLSX.Range[] = [];
+      let currentRow = 0;
+      const tableWidth = headersSinPedidos.length; // 2
+      const summaryStartCol = tableWidth + 1; // Col 3 (índice 2)
+
+      data.push(['Clientes Sin Pedidos']);
+      merges.push({
+        s: { r: currentRow, c: 0 },
+        e: { r: currentRow, c: summaryStartCol + 1 },
+      });
+      currentRow += 2;
+
+      for (const vendor of vendorsToProcess) {
+        const vendorClientesSin = clientesSinPedidos
+          .filter((c) => c.vendor === vendor)
+          .sort((a, b) => a.name.localeCompare(b.name));
+        if (vendorClientesSin.length === 0) continue;
+
+        if (isAllVendors) {
+          data.push([`Vendedor: ${vendor}`]);
+          merges.push({
+            s: { r: currentRow, c: 0 },
+            e: { r: currentRow, c: tableWidth - 1 },
+          });
+          currentRow++;
+        }
+
+        data.push(headersSinPedidos);
+        currentRow++;
+
+        vendorClientesSin.forEach((c) => {
+          const row = [`${c.key} - ${c.name}`, c.branchName || '--'];
+          data.push(row);
+          currentRow++;
+        });
+
+        if (isAllVendors) {
+          const totalRow = ['Total Vendedor:', vendorClientesSin.length];
+          data.push(totalRow);
+          merges.push({
+            s: { r: currentRow, c: 0 },
+            e: { r: currentRow, c: 0 },
+          });
+          currentRow++;
+        }
+        data.push([]);
+        currentRow++;
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [...colsSinPedidos, ...summaryColWidths];
+      ws['!merges'] = merges;
+
+      // Aplicar Estilos
+      ws['A1'].s = styles.title;
+      data.forEach((row, rIdx) => {
+        if (row.length === 0) return;
+        if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s = styles.vendorHeader;
+        } else if (row[0] === 'Cliente') {
+          row.forEach((_, cIdx) => {
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: cIdx })].s =
+              styles.nonVisitedHeader;
+          });
+        } else if (row[0] === 'Total Vendedor:') {
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s = styles.totalRow;
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })].s = {
+            ...styles.totalRow,
+            alignment: { horizontal: 'center' },
+          };
+        } else if (rIdx > 0 && !row[0]?.startsWith('Clientes Sin Pedidos')) {
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s = styles.cell;
+          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })])
+            ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })].s = styles.cell;
+        }
+      });
+      XLSX.utils.book_append_sheet(wb, ws, wsName);
+    }
+
+    const summaryData = [
+      ['Información del Reporte'],
+      ['Fecha(s):', dateRangeStr],
+      ['Vendedor:', isAllVendors ? 'TODOS' : selectedVendor],
+      [],
+      ['Resumen General'],
+      ['Pedidos en Ubicación:', grandTotalPedidosEnUbicacion],
+      ['Pedidos Fuera Ubicación:', grandTotalPedidosFueraUbicacion],
+      ['Clientes Sin Pedidos:', grandTotalSinPedidos],
+      ['Total Importe MXN:', grandTotalMXN],
+      ['Total Importe USD:', grandTotalUSD],
+    ];
+
+    wb.SheetNames.forEach((sheetName) => {
+      const ws = wb.Sheets[sheetName];
+      const tableCols =
+        sheetName === 'Clientes Sin Pedidos'
+          ? colsSinPedidos.length
+          : colsPedidos.length;
+      const startCol = tableCols + 1;
+      const startRow = 2;
+
+      const merges = ws['!merges'] || [];
+
+      summaryData.forEach((row, rIdx) => {
+        const r = startRow + rIdx;
+        XLSX.utils.sheet_add_aoa(ws, [row], { origin: { r, c: startCol } });
+
+        const cellRefA = XLSX.utils.encode_cell({ r, c: startCol });
+        const cellRefB = XLSX.utils.encode_cell({ r, c: startCol + 1 });
+
+        if (rIdx === 0 || rIdx === 4) {
+          if (ws[cellRefA]) ws[cellRefA].s = styles.subHeader;
+          if (ws[cellRefB]) ws[cellRefB].s = styles.subHeader;
+          merges.push({
+            s: { r, c: startCol },
+            e: { r, c: startCol + 1 },
+          });
+        } else if (row.length > 1) {
+          if (ws[cellRefA]) ws[cellRefA].s = styles.infoLabel;
+          if (ws[cellRefB]) ws[cellRefB].s = styles.infoValue;
+          if (
+            String(row[0]).includes('MXN') ||
+            String(row[0]).includes('USD')
+          ) {
+            ws[cellRefB].s = {
+              ...styles.infoValue,
+              numFmt: '"$"#,##0.00',
+            };
+          }
+        }
+      });
+      ws['!merges'] = merges;
+
+      if (!ws['!cols']) ws['!cols'] = [];
+      ws['!cols'][startCol - 1] = { wch: 3 }; // Espaciador
+      ws['!cols'][startCol] = { wch: 30 }; // Label
+      ws['!cols'][startCol + 1] = { wch: 25 }; // Value
+    });
+
+    const vendorName = isAllVendors ? 'TODOS' : selectedVendor;
+    const fileName = `Reporte_Pedidos_${vendorName}_${dateRangeStr.replace(/ a /g, '-')}.xlsx`;
+
+    XLSX.writeFile(wb, fileName);
   };
 
   return (
@@ -1118,7 +1779,7 @@ export default function PedidosTracker() {
               </label>
               <label
                 htmlFor="client-file-pedidos"
-                className="flex flex-col items-center justify-center w-full h-24 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100"
+                className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100"
               >
                 <Users className="w-8 h-8 mb-2 text-green-500 animate-bounce" />
                 <span className="text-xs font-semibold text-green-700 text-center px-2">
@@ -1206,43 +1867,6 @@ export default function PedidosTracker() {
                   </div>
                 </div>
 
-                {/* Toggle de Clientes No Visitados */}
-                {selectedVendor != '__ALL__' && (
-                  <div className="flex items-center justify-between pt-2">
-                    {/* El título */}
-                    <label
-                      htmlFor="toggle-no-visitados"
-                      className="flex flex-col"
-                    >
-                      <span className="flex text-sm font-medium text-gray-700 items-center gap-2">
-                        <UserX className="w-4 h-4" />
-                        Clientes No Visitados
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {showNoVisitados ? 'Mostrando en el mapa' : 'Ocultos'}
-                      </span>
-                    </label>
-
-                    {/* Switch */}
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={showNoVisitados}
-                      id="toggle-no-visitados"
-                      onClick={() => setShowNoVisitados(!showNoVisitados)}
-                      className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-200 ease-in-out ${
-                        showNoVisitados ? 'bg-green-500' : 'bg-gray-300'
-                      } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400`}
-                    >
-                      <span
-                        className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-200 ease-in-out ${
-                          showNoVisitados ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-                )}
-
                 {/* Toggle de Modo GPS */}
                 <div className="flex items-center justify-between mt-4">
                   <label htmlFor="toggle-gps-mode" className="flex flex-col">
@@ -1283,6 +1907,43 @@ export default function PedidosTracker() {
                   </button>
                 </div>
 
+                {/* Toggle de Clientes No Visitados */}
+                {selectedVendor != '__ALL__' && (
+                  <div className="flex items-center justify-between pt-2">
+                    {/* El título */}
+                    <label
+                      htmlFor="toggle-no-visitados"
+                      className="flex flex-col"
+                    >
+                      <span className="flex text-sm font-medium text-gray-700 items-center gap-2">
+                        <UserX className="w-4 h-4" />
+                        Clientes No Visitados
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {showNoVisitados ? 'Mostrando en el mapa' : 'Ocultos'}
+                      </span>
+                    </label>
+
+                    {/* Switch */}
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={showNoVisitados}
+                      id="toggle-no-visitados"
+                      onClick={() => setShowNoVisitados(!showNoVisitados)}
+                      className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-200 ease-in-out ${
+                        showNoVisitados ? 'bg-green-500' : 'bg-gray-300'
+                      } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400`}
+                    >
+                      <span
+                        className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-200 ease-in-out ${
+                          showNoVisitados ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                  </div>
+                )}
+
                 {/* Filtro de Radio */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -1304,7 +1965,7 @@ export default function PedidosTracker() {
                     <input
                       type="range"
                       min={10}
-                      max={250}
+                      max={500}
                       step={10}
                       value={matchRadius}
                       onChange={(e) => setMatchRadius(Number(e.target.value))}
@@ -1366,27 +2027,36 @@ export default function PedidosTracker() {
                 : 'Carga archivos y selecciona filtros'}
           </h2>
           {processedMapData.stats && (
-            <button
-              onClick={() => setShowAnalytics(!showAnalytics)}
-              className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
-            >
-              <svg
-                className={`w-5 h-5 transition-transform ${
-                  showAnalytics ? 'rotate-180' : ''
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+            <div className="flex items-center gap-3">
+              <button
+                onClick={downloadPedidosExcel}
+                className="sm:flex items-center text-sm font-medium justify-center px-4 py-2 gap-2 text-white bg-green-500 hover:text-green-600 hover:bg-green-100 rounded-lg transition-all"
               >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
-              </svg>
-              {showAnalytics ? 'Ocultar' : 'Mostrar'} Análisis
-            </button>
+                <Download className="w-4 h-4" />
+                Descargar Excel
+              </button>
+              <button
+                onClick={() => setShowAnalytics(!showAnalytics)}
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors flex items-center gap-2"
+              >
+                <svg
+                  className={`w-5 h-5 transition-transform ${
+                    showAnalytics ? 'rotate-180' : ''
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+                {showAnalytics ? 'Ocultar' : 'Mostrar'} Análisis
+              </button>
+            </div>
           )}
         </div>
 
