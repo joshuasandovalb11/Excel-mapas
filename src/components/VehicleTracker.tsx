@@ -191,8 +191,15 @@ export default function VehicleTracker() {
         }
         return flag;
       });
+
+      const specialNonClientKeys = ['3689', '6395'];
+
       const matchedStops = updatedFlags.filter(
-        (flag) => flag.type === 'stop' && flag.clientName !== 'Sin coincidencia'
+        (flag) =>
+          flag.type === 'stop' &&
+          flag.clientName !== 'Sin coincidencia' &&
+          !flag.isVendorHome &&
+          !specialNonClientKeys.includes(flag.clientKey || '')
       );
       const uniqueClientKeys = new Set(
         matchedStops.map((stop) => stop.clientKey)
@@ -785,7 +792,13 @@ export default function VehicleTracker() {
               const visitKey = `${flag.clientKey}_${
                 flag.clientBranchNumber || 'main'
               }`;
-              dailyClientsVisited.add(visitKey);
+
+              if (
+                !flag.isVendorHome &&
+                !specialNonClientKeys.includes(flag.clientKey)
+              ) {
+                dailyClientsVisited.add(visitKey);
+              }
               const clientVisits = allVisitsMap.get(visitKey) || [];
               clientVisits.push({
                 date: date,
@@ -1035,7 +1048,11 @@ export default function VehicleTracker() {
         (key) => {
           const clientKey = key.split('_')[0];
           const client = clientsForReport.find((c) => c.key === clientKey);
-          return client && !client.isVendorHome;
+          return (
+            client &&
+            !client.isVendorHome &&
+            !specialNonClientKeys.includes(clientKey)
+          );
         }
       ).length;
 
@@ -1255,7 +1272,7 @@ export default function VehicleTracker() {
   const generateMapHTML = (
     vehicleInfo: VehicleInfo | null,
     clientData: Client[] | null,
-    totalMatchedStops: number,
+    _matchedStopsCount: number,
     selection: string | null,
     summaryStats: {
       timeWithClients: number;
@@ -1274,6 +1291,7 @@ export default function VehicleTracker() {
       percentageAtHome: number;
       timeAtTools: number;
       percentageAtTools: number;
+      uniqueClientsVisited: number;
     }
   ): string => {
     if (!tripData) return '';
@@ -1314,7 +1332,59 @@ export default function VehicleTracker() {
     `
       : '';
 
-    const clientsToRender = selection === 'chofer' ? [] : clientData || [];
+    // Filtrar clientes para mostrar solo la sede más cercana de Tools de Mexico
+    let clientsToRender: Client[] = [];
+    if (selection !== 'chofer' && clientData) {
+      const specialClientKeys = ['3689', '6395'];
+
+      const regularClients = clientData.filter(
+        (c) => !specialClientKeys.includes(c.key) && !c.isVendorHome
+      );
+      const specialClients = clientData.filter((c) =>
+        specialClientKeys.includes(c.key)
+      );
+      const vendorHome = clientData.find((c) => c.isVendorHome);
+
+      let closestSpecialClient: Client | null = null;
+
+      if (specialClients.length > 0) {
+        if (regularClients.length > 0) {
+          const avgLat =
+            regularClients.reduce((sum, c) => sum + c.lat, 0) /
+            regularClients.length;
+          const avgLng =
+            regularClients.reduce((sum, c) => sum + c.lng, 0) /
+            regularClients.length;
+          const centroid = { lat: avgLat, lng: avgLng };
+
+          let closestDist = Infinity;
+
+          specialClients.forEach((client) => {
+            const dist = calculateDistance(
+              centroid.lat,
+              centroid.lng,
+              client.lat,
+              client.lng
+            );
+
+            if (dist < closestDist) {
+              closestDist = dist;
+              closestSpecialClient = client;
+            }
+          });
+        } else {
+          closestSpecialClient = specialClients[0];
+        }
+      }
+
+      clientsToRender = [...regularClients];
+      if (closestSpecialClient) {
+        clientsToRender.push(closestSpecialClient);
+      }
+      if (vendorHome) {
+        clientsToRender.push(vendorHome);
+      }
+    }
 
     const summaryCardHTML = `
       <div id="summary-box" class="info-card">
@@ -1334,7 +1404,7 @@ export default function VehicleTracker() {
           <p style="text-align: left; grid-column: span 2;"><strong>${tripData.workStartTime || 'N/A'}</strong></p>
           
           <p><strong>Clientes Visitados:</strong></p>
-          <p style="text-align: left; grid-column: span 2;"><span class="visited-clients-count">0</span> / ${totalMatchedStops}</p>
+          <p style="text-align: left; grid-column: span 2;"><span class="visited-clients-count">0</span> / ${summaryStats.uniqueClientsVisited}</p>
           
           <p style="grid-column: span 3;"><strong>Tiempo con:</strong></p>
           
@@ -1961,6 +2031,7 @@ export default function VehicleTracker() {
             const isWorkingHoursFunc = ${isWorkingHours.toString()};
             const tripDateForCheck = '${vehicleInfo?.fecha || ''}';
             const processingMethod = '${processingMethod}';
+            const specialNonClientKeys = ['3689', '6395'];
             let animatedPolyline, currentPathIndex = 0, animationFrameId, isAnimating = false, currentStopIndex = 0;
             let segmentDistances = [];
             let cumulativeDistance = 0;
@@ -2354,9 +2425,18 @@ export default function VehicleTracker() {
                 updateDistanceCard(currentSegmentMeters, cumulativeDistance);
 
                 const currentFlag = allFlags[nextStop.markerIndex];
-                if (currentFlag && currentFlag.type === 'stop' && currentFlag.clientKey && !countedClientKeys.has(currentFlag.clientKey)) {
+                if (
+                  currentFlag &&
+                  currentFlag.type === 'stop' &&
+                  currentFlag.clientKey &&
+                  !countedClientKeys.has(currentFlag.clientKey) &&
+                  !currentFlag.isVendorHome && // <-- CONDICIÓN AGREGADA
+                  !specialNonClientKeys.includes(currentFlag.clientKey) // <-- CONDICIÓN AGREGADA
+                ) {
                   countedClientKeys.add(currentFlag.clientKey);
-                  document.querySelectorAll('.visited-clients-count').forEach(el => el.textContent = countedClientKeys.size);
+                  document.querySelectorAll('.visited-clients-count').forEach(
+                    (el) => (el.textContent = countedClientKeys.size)
+                  );
                 }
                 currentStopIndex++;
                 
@@ -2552,6 +2632,9 @@ export default function VehicleTracker() {
       // Distancias
       distanceWithinHours: 0,
       distanceAfterHours: 0,
+
+      // Contador de clientes únicos
+      uniqueClientsVisited: 0,
     };
 
     if (!tripData || !vehicleInfo?.fecha) return stats;
@@ -2655,6 +2738,17 @@ export default function VehicleTracker() {
     stats.totalAfterHoursTime = tripTimes.afterHoursMinutes;
 
     const specialNonClientKeys = ['3689', '6395'];
+
+    // Contar solo clientes reales visitados (excluyendo casa del vendedor y Tools de México)
+    const realClientsVisited = tripData.flags.filter(
+      (flag) =>
+        flag.type === 'stop' &&
+        (flag.duration || 0) >= minStopDuration &&
+        flag.clientKey &&
+        flag.clientName !== 'Sin coincidencia' &&
+        !flag.isVendorHome &&
+        !specialNonClientKeys.includes(flag.clientKey)
+    );
 
     // CALCULAR TIEMPOS DE PARADA
     tripData.flags.forEach((flag) => {
@@ -2776,6 +2870,11 @@ export default function VehicleTracker() {
         }
       }
     }
+
+    const uniqueRealClients = new Set(
+      realClientsVisited.map((flag) => flag.clientKey)
+    );
+    stats.uniqueClientsVisited = uniqueRealClients.size;
 
     return stats;
   };
@@ -3162,7 +3261,9 @@ export default function VehicleTracker() {
                   <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-600">Clientes visitados:</span>
-                      <span className="font-medium">{matchedStopsCount}</span>
+                      <span className="font-medium">
+                        {summaryStats.uniqueClientsVisited}
+                      </span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Distancia total:</span>
@@ -3203,7 +3304,7 @@ export default function VehicleTracker() {
                       <span className="text-gray-600 text-left col-span-1">
                         Con Clientes:
                       </span>
-                      <span className="text-green-600 font-medium text-right col-span-1">
+                      <span className="text-gray-600 font-bold text-right col-span-1">
                         {formatDuration(summaryStats.timeWithClients)}
                       </span>
                       <span className="text-green-600 text-sm font-bold text-right col-span-1">
@@ -3215,7 +3316,7 @@ export default function VehicleTracker() {
                       <span className="text-gray-600 text-left col-span-1">
                         Sin Clientes:
                       </span>
-                      <span className="text-red-600 font-medium text-right col-span-1">
+                      <span className="text-gray-600 font-bold text-right col-span-1">
                         {formatDuration(summaryStats.totalTimeWithNonClients)}
                       </span>
                       <span className="text-red-600 text-sm font-bold text-right col-span-1">
@@ -3227,7 +3328,7 @@ export default function VehicleTracker() {
                       <span className="text-gray-600 text-left col-span-1 pl-2">
                         - En paradas:
                       </span>
-                      <span className="text-red-800 text-right col-span-1">
+                      <span className="text-gray-800 font-bold text-right col-span-1">
                         {formatDuration(summaryStats.timeWithNonClients)}
                       </span>
                       <span className="text-red-800 font-bold text-right col-span-1">
@@ -3239,7 +3340,7 @@ export default function VehicleTracker() {
                       <span className="text-gray-600 text-left col-span-1 pl-2">
                         - En Tools:
                       </span>
-                      <span className="text-red-800 text-right col-span-1">
+                      <span className="text-gray-800 font-bold text-right col-span-1">
                         {formatDuration(summaryStats.timeAtTools)}
                       </span>
                       <span className="text-red-800 font-bold text-right col-span-1">
@@ -3251,7 +3352,7 @@ export default function VehicleTracker() {
                       <span className="text-gray-600 text-left col-span-1 pl-2">
                         - En Casa:
                       </span>
-                      <span className="text-red-800 text-right col-span-1">
+                      <span className="text-gray-800 font-bold text-right col-span-1">
                         {formatDuration(summaryStats.timeAtHome)}
                       </span>
                       <span className="text-red-800 font-bold text-right col-span-1">
@@ -3263,7 +3364,7 @@ export default function VehicleTracker() {
                       <span className="text-gray-600 text-left col-span-1">
                         En Traslados:
                       </span>
-                      <span className="text-blue-600 font-medium text-right col-span-1">
+                      <span className="text-gray-600 font-bold text-right col-span-1">
                         {formatDuration(summaryStats.travelTime)}
                       </span>
                       <span className="text-blue-600 text-sm font-bold text-right col-span-1">

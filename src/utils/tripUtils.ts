@@ -771,11 +771,15 @@ export const processTripData = (
   const firstMovingEvent = allEvents.find((e) => e.speed > 0);
   const lastMovingEvent = [...allEvents].reverse().find((e) => e.speed > 0);
 
+  const specialNonClientKeys = ['3689', '6395'];
+
   const clientVisitFlags = coreTripData.flags.filter(
     (flag) =>
       flag.type === 'stop' &&
       flag.clientKey &&
-      flag.clientName !== 'Sin coincidencia'
+      flag.clientName !== 'Sin coincidencia' &&
+      !flag.isVendorHome &&
+      !specialNonClientKeys.includes(flag.clientKey)
   );
 
   const firstClientVisit = clientVisitFlags[0];
