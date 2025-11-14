@@ -1248,7 +1248,6 @@ export default function PedidosTracker() {
 
     const wb = XLSX.utils.book_new();
 
-    // Headers y Columnas (SIN VENDEDOR)
     const headersPedidos = [
       '# Pedido',
       'Fecha',
@@ -1272,7 +1271,7 @@ export default function PedidosTracker() {
     ];
     const summaryColWidths = [
       { wch: 2 }, // Espaciador
-      { wch: 30 }, // Label
+      { wch: 30 }, // Titulo
       { wch: 25 }, // Value
     ];
 
@@ -1282,15 +1281,17 @@ export default function PedidosTracker() {
       const data: any[][] = [];
       const merges: XLSX.Range[] = [];
       let currentRow = 0;
-      const tableWidth = headersPedidos.length; // 6
-      const summaryStartCol = tableWidth + 1; // Col 7 (índice 6)
+      const tableWidth = headersPedidos.length;
+      const summaryStartCol = tableWidth + 1;
 
       data.push(['Clientes en Ubicación']);
       merges.push({
         s: { r: currentRow, c: 0 },
         e: { r: currentRow, c: summaryStartCol + 1 },
-      }); // Título abarca todo
-      currentRow += 2; // + Título y + Fila vacía
+      });
+
+      data.push([]);
+      currentRow = 2;
 
       for (const vendor of vendorsToProcess) {
         const vendorPedidos = clientesConCoincidencia
@@ -1302,9 +1303,7 @@ export default function PedidosTracker() {
         let vendorTotalUSD = 0;
 
         if (isAllVendors) {
-          const vendorRow = Array(tableWidth).fill('');
-          vendorRow[0] = `Vendedor: ${vendor}`;
-          data.push(vendorRow);
+          data.push([`Vendedor: ${vendor}`]);
           merges.push({
             s: { r: currentRow, c: 0 },
             e: { r: currentRow, c: tableWidth - 1 },
@@ -1349,19 +1348,14 @@ export default function PedidosTracker() {
         data.push(totalRow);
         merges.push({
           s: { r: currentRow, c: 0 },
-          e: { r: currentRow, c: 3 }, // Columnas 0-3
+          e: { r: currentRow, c: 3 },
         });
-        currentRow++;
-
-        data.push([]);
         currentRow++;
       }
 
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws['!cols'] = [...colsPedidos, ...summaryColWidths];
-      ws['!merges'] = merges;
 
-      // Aplicar Estilos
       ws['A1'].s = styles.title;
       data.forEach((row, rIdx) => {
         if (row.length === 0) return;
@@ -1413,6 +1407,8 @@ export default function PedidosTracker() {
             };
         }
       });
+
+      ws['!merges'] = merges;
       XLSX.utils.book_append_sheet(wb, ws, wsName);
     }
 
@@ -1422,15 +1418,17 @@ export default function PedidosTracker() {
       const data: any[][] = [];
       const merges: XLSX.Range[] = [];
       let currentRow = 0;
-      const tableWidth = headersPedidos.length; // 6
-      const summaryStartCol = tableWidth + 1; // Col 7 (índice 6)
+      const tableWidth = headersPedidos.length;
+      const summaryStartCol = tableWidth + 1;
 
       data.push(['Clientes Fuera de Ubicación']);
       merges.push({
         s: { r: currentRow, c: 0 },
         e: { r: currentRow, c: summaryStartCol + 1 },
       });
-      currentRow += 2;
+
+      data.push([]);
+      currentRow = 2;
 
       for (const vendor of vendorsToProcess) {
         const vendorPedidos = clientesFueraUbicacion
@@ -1442,9 +1440,7 @@ export default function PedidosTracker() {
         let vendorTotalUSD = 0;
 
         if (isAllVendors) {
-          const vendorRow = Array(tableWidth).fill('');
-          vendorRow[0] = `Vendedor: ${vendor}`;
-          data.push(vendorRow);
+          data.push([`Vendedor: ${vendor}`]);
           merges.push({
             s: { r: currentRow, c: 0 },
             e: { r: currentRow, c: tableWidth - 1 },
@@ -1492,14 +1488,10 @@ export default function PedidosTracker() {
           e: { r: currentRow, c: 3 },
         });
         currentRow++;
-
-        data.push([]);
-        currentRow++;
       }
 
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws['!cols'] = [...colsPedidos, ...summaryColWidths];
-      ws['!merges'] = merges;
 
       // Aplicar Estilos
       ws['A1'].s = styles.title;
@@ -1555,6 +1547,8 @@ export default function PedidosTracker() {
             };
         }
       });
+
+      ws['!merges'] = merges;
       XLSX.utils.book_append_sheet(wb, ws, wsName);
     }
 
