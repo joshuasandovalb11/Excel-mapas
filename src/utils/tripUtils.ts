@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as XLSX from 'xlsx';
 import { format, fromZonedTime } from 'date-fns-tz';
+import { useCallback, useState } from 'react';
 
 const convertToTijuanaTime = (
   timeString: string,
@@ -55,9 +56,9 @@ export interface ProcessedTrip {
   totalDistance: number;
   processingMethod: 'event-based' | 'speed-based';
   initialState: 'Apagado' | 'En movimiento';
-  workStartTime?: string; // Hora de inicio de labores
-  workEndTime?: string; // Hora de fin de labores
-  isTripOngoing?: boolean; // Indica si el viaje esta en curso
+  workStartTime?: string;
+  workEndTime?: string;
+  isTripOngoing?: boolean;
 }
 
 export interface VehicleInfo {
@@ -73,9 +74,9 @@ export interface Client {
   lat: number;
   lng: number;
   vendor: string;
-  branchNumber?: string; // Número de sucursal
-  branchName?: string; // Nombre de sucursal
-  displayName: string; // Nombre para mostrar
+  branchNumber?: string;
+  branchName?: string;
+  displayName: string;
   isVendorHome?: boolean;
   vendorHomeInitial?: string;
 }
@@ -153,6 +154,21 @@ export const formatDuration = (minutes: number): string => {
   return `${hours} h ${mins} min`;
 };
 
+// Función para verificar si una parada está en horario laboral
+export const isWorkingHours = (
+  time: string,
+  tripDate: string | undefined
+): boolean => {
+  if (!time || !tripDate) return true;
+
+  const [hours, minutes] = time.split(':').map(Number);
+  const totalMinutes = hours * 60 + minutes;
+  const WORK_START_MINUTES = 8 * 60 + 30;
+  const WORK_END_MINUTES = 19 * 60;
+
+  return totalMinutes >= WORK_START_MINUTES && totalMinutes < WORK_END_MINUTES;
+};
+
 // Añade minutos a una cadena de tiempo HH:mm:ss
 const addMinutesToTime = (timeStr: string, minutesToAdd: number): string => {
   if (!timeStr) return timeStr;
@@ -177,6 +193,64 @@ const addMinutesToTime = (timeStr: string, minutesToAdd: number): string => {
   }
 };
 
+// Funcion para copiar un texto al portapapeles
+export function useCopyToClipboard(): [
+  boolean | null,
+  (text: string) => Promise<boolean>,
+] {
+  const [copied, setCopied] = useState<boolean | null>(null);
+
+  const copy = useCallback(async (text: string) => {
+    if (!navigator.clipboard) {
+      console.warn('El API del portapapeles no está disponible');
+      setCopied(false);
+      return false;
+    }
+
+    try {
+      await navigator.clipboard.writeText(text);
+
+      setCopied(true);
+      setTimeout(() => setCopied(null), 2000);
+
+      return true;
+    } catch (error) {
+      console.error('Error al copiar al portapapeles:', error);
+      setCopied(false);
+      return false;
+    }
+  }, []);
+
+  return [copied, copy];
+}
+
+const findColumnName = (row: any, keywords: string[]): string | null => {
+  if (!row) return null;
+  const keys = Object.keys(row);
+
+  return (
+    keys.find((key) =>
+      keywords.some((keyword) =>
+        key.toLowerCase().includes(keyword.toLowerCase())
+      )
+    ) || null
+  );
+};
+
+const parseFlexibleNumber = (val: any): number => {
+  if (val === null || val === undefined || val === '') return 0;
+
+  if (typeof val === 'number') return val;
+
+  if (typeof val === 'string') {
+    const cleanVal = val.trim().replace(',', '.');
+    const num = parseFloat(cleanVal);
+    return isNaN(num) ? 0 : num;
+  }
+
+  return 0;
+};
+
 // FUNCIÓN PARA EXTRAER INFORMACIÓN DEL VEHÍCULO
 export const parseVehicleInfo = (
   worksheet: XLSX.WorkSheet,
@@ -194,6 +268,7 @@ export const parseVehicleInfo = (
     defval: '',
   });
   const rowsToSearch = data.slice(0, 20);
+  const dateRegex = /\d{4}-\d{2}-\d{2}/;
 
   for (const row of rowsToSearch) {
     if (!Array.isArray(row)) continue;
@@ -227,6 +302,41 @@ export const parseVehicleInfo = (
         value = findNextValue();
         if (value) {
           info.fecha = value.split('..')[0].trim().split(' ')[0];
+        }
+      } else if (
+        currentCellText.includes('período') ||
+        currentCellText.includes('periodo')
+      ) {
+        const sameCellMatch = currentCellText.match(dateRegex);
+
+        if (sameCellMatch) {
+          info.fecha = sameCellMatch[0];
+        } else {
+          value = findNextValue();
+          if (value) {
+            const nextCellMatch = value.match(dateRegex);
+            if (nextCellMatch) {
+              info.fecha = nextCellMatch[0];
+            } else {
+              info.fecha = value.split('..')[0].trim().split(' ')[0];
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (info.fecha === 'No encontrada' || !dateRegex.test(info.fecha)) {
+    console.log('Fecha no encontrada en encabezados, buscando en datos...');
+
+    for (const row of data) {
+      if (Array.isArray(row) && row.length > 0) {
+        const firstCol = String(row[0] || '');
+        const match = firstCol.match(dateRegex);
+        if (match) {
+          info.fecha = match[0];
+          console.log(`Fecha recuperada de los datos: ${info.fecha}`);
+          break;
         }
       }
     }
@@ -694,6 +804,26 @@ export const processTripData = (
     );
   }
 
+  // 1. Detectar nombres reales de las columnas en la primera fila
+  const firstRow = rawData.length > 0 ? rawData[0] : {};
+
+  // Buscamos columnas que se parezcan a "Descripción" o "Evento"
+  const descColumn =
+    findColumnName(firstRow, [
+      'descripción',
+      'descripcion',
+      'evento',
+      'event',
+    ]) || 'Descripción de Evento:';
+
+  const speedColumn =
+    findColumnName(firstRow, ['velocidad', 'speed', 'km/h']) || 'Velocidad(km)';
+  const latColumn =
+    findColumnName(firstRow, ['latitud', 'latitude', 'lat']) || 'Latitud';
+  const lngColumn =
+    findColumnName(firstRow, ['longitud', 'longitude', 'lng', 'lon']) ||
+    'Longitud';
+
   const allEvents: TripEvent[] = rawData
     .map((row: any, index: number) => {
       const excelTimeValue = row[timeColumn];
@@ -722,10 +852,10 @@ export const processTripData = (
       return {
         id: index + 1,
         time: convertedTime,
-        description: row['Descripción de Evento:'] || 'Sin descripción',
-        speed: Number(row['Velocidad(km)']) || 0,
-        lat: Number(row['Latitud']),
-        lng: Number(row['Longitud']),
+        description: row[descColumn] || 'Sin descripción',
+        speed: parseFlexibleNumber(row[speedColumn]),
+        lat: Number(row[latColumn]),
+        lng: Number(row[lngColumn]),
       };
     })
     .filter(

@@ -540,7 +540,7 @@ export default function PedidosTracker() {
           statsVendedor.match++;
         } else {
           if (pMarker.isMatch) {
-            // Ya está contado arriba
+            // ""
           } else if (pMarker.distance !== Infinity) {
             statsVendedor.noMatch++;
           }
@@ -1053,12 +1053,12 @@ export default function PedidosTracker() {
       {
         label: 'En Ubicación',
         data: pedidosPorVendedor?.map((v) => v.match) || [],
-        backgroundColor: '#22c55e', // Verde
+        backgroundColor: '#22c55e',
       },
       {
         label: 'Fuera de Ubicación',
         data: pedidosPorVendedor?.map((v) => v.noMatch) || [],
-        backgroundColor: '#ef4444', // Rojo
+        backgroundColor: '#ef4444',
       },
     ],
   };
@@ -1144,7 +1144,6 @@ export default function PedidosTracker() {
         fill: { fgColor: { rgb: 'FFC00000' } },
         alignment: { horizontal: 'center' },
       },
-      // Estilos para el panel de resumen
       infoLabel: {
         font: { name: 'Arial', sz: 10, bold: true },
         alignment: { horizontal: 'right' },
@@ -1493,20 +1492,17 @@ export default function PedidosTracker() {
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws['!cols'] = [...colsPedidos, ...summaryColWidths];
 
-      // Aplicar Estilos
       ws['A1'].s = styles.title;
       data.forEach((row, rIdx) => {
         if (row.length === 0) return;
 
         if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
-          // Aplicar estilo a toda la fila del vendedor
           for (let cIdx = 0; cIdx < tableWidth; cIdx++) {
             const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
             if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
             ws[cellRef].s = styles.vendorHeader;
           }
         } else if (row[0] === '# Pedido') {
-          // Aplicar estilo a los headers
           for (let cIdx = 0; cIdx < row.length; cIdx++) {
             const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
             if (ws[cellRef]) {
@@ -1558,9 +1554,8 @@ export default function PedidosTracker() {
       const data: any[][] = [];
       const merges: XLSX.Range[] = [];
       let currentRow = 0;
-      const tableWidth = headersSinPedidos.length; // 2
-      const summaryStartCol = tableWidth + 1; // Col 3 (índice 2)
-
+      const tableWidth = headersSinPedidos.length;
+      const summaryStartCol = tableWidth + 1;
       data.push(['Clientes Sin Pedidos']);
       merges.push({
         s: { r: currentRow, c: 0 },
@@ -1609,7 +1604,6 @@ export default function PedidosTracker() {
       ws['!cols'] = [...colsSinPedidos, ...summaryColWidths];
       ws['!merges'] = merges;
 
-      // Aplicar Estilos
       ws['A1'].s = styles.title;
       data.forEach((row, rIdx) => {
         if (row.length === 0) return;
@@ -1691,9 +1685,9 @@ export default function PedidosTracker() {
       ws['!merges'] = merges;
 
       if (!ws['!cols']) ws['!cols'] = [];
-      ws['!cols'][startCol - 1] = { wch: 3 }; // Espaciador
-      ws['!cols'][startCol] = { wch: 30 }; // Label
-      ws['!cols'][startCol + 1] = { wch: 25 }; // Value
+      ws['!cols'][startCol - 1] = { wch: 3 };
+      ws['!cols'][startCol] = { wch: 30 };
+      ws['!cols'][startCol + 1] = { wch: 25 };
     });
 
     const vendorName = isAllVendors ? 'TODOS' : selectedVendor;

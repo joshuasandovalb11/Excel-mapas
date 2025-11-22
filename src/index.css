@@ -16,6 +16,21 @@ body {
   min-height: 100vh;
 }
 
+.gm-style-iw-d {
+  overflow: hidden !important;
+  max-height: none !important;
+}
+
+.gm-style-iw {
+  padding-right: 0 !important;
+  padding-bottom: 0 !important;
+}
+
+button.gm-ui-hover-effect {
+  top: 0px !important;
+  right: 0px !important;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
