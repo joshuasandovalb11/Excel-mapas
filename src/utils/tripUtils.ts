@@ -423,7 +423,9 @@ export const processMasterClientFile = (
         branchNumber = String(row['#Suc'] || '').trim();
         branchName = String(row['Sucursal'] || '').trim();
 
-        const commercialName = String(row['Nombre_Comercial'] || '')
+        const commercialName = String(
+          row['Nombre Comercial'] || row['Nombre_Comercial'] || ''
+        )
           .toUpperCase()
           .trim();
 
