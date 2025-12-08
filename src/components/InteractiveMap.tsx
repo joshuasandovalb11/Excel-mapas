@@ -29,6 +29,7 @@ import {
   faTriangleExclamation,
   faUserTie,
 } from '@fortawesome/free-solid-svg-icons';
+import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 
 interface InteractiveMapProps {
   tripData: ProcessedTrip;
@@ -162,7 +163,7 @@ export default function InteractiveMap({
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: googleMapsApiKey,
-    libraries: ['geometry'],
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const [map, setMap] = useState<google.maps.Map | null>(null);

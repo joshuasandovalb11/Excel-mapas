@@ -24,6 +24,7 @@ import {
 } from '@react-google-maps/api';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUser } from '@fortawesome/free-solid-svg-icons';
+import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 
 const mapContainerStyle = {
   width: '100%',
@@ -70,6 +71,7 @@ export default function Routes() {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_Maps_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const {

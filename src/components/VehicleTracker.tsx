@@ -17,6 +17,7 @@ import {
   CalendarClock,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
+import { useIndexedDBState } from '../hooks/useIndexedDBState';
 
 import { parseISO, format as formatDate } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -35,7 +36,6 @@ import {
 } from '../utils/tripUtils';
 import InteractiveMap from './InteractiveMap';
 
-// Definimos una interfaz para lo que vamos a almacenar por cada viaje
 interface TripStorage {
   rawData: any[];
   vehicleInfo: VehicleInfo;
@@ -43,35 +43,25 @@ interface TripStorage {
 }
 
 export default function VehicleTracker() {
-  const [allTripsData, setAllTripsData] = usePersistentState<
+  const [allTripsData, setAllTripsData] = useIndexedDBState<
     Record<string, TripStorage>
-  >('vt_allTripsData', {});
+  >('vt_allTripsData_db', {});
+
+  const [tripData, setTripData] = useState<ProcessedTrip | null>(null);
+  const [rawTripData, setRawTripData] = useState<any[] | null>(null);
+  const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
+  const [clientData, setClientData] = useState<Client[] | null>(null);
 
   const [activeDate, setActiveDate] = usePersistentState<string | null>(
     'vt_activeDate',
     null
   );
 
-  const [tripData, setTripData] = usePersistentState<ProcessedTrip | null>(
-    'vt_tripData',
-    null
-  );
-  const [rawTripData, setRawTripData] = usePersistentState<any[] | null>(
-    'vt_rawTripData',
-    null
-  );
-  const [vehicleInfo, setVehicleInfo] = usePersistentState<VehicleInfo | null>(
-    'vt_vehicleInfo',
-    null
-  );
-  const [clientData, setClientData] = usePersistentState<Client[] | null>(
-    'vt_clientData',
-    null
-  );
   const [fileName, setFileName] = usePersistentState<string | null>(
     'vt_fileName',
     null
   );
+
   const [clientFileName, setClientFileName] = usePersistentState<string | null>(
     'vt_clientFileName',
     null

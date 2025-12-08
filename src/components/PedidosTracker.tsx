@@ -61,6 +61,7 @@ import {
   calculateDistance,
   toTitleCase,
 } from '../utils/tripUtils';
+import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 
 interface IPedidoRaw {
   '#Pedido': string | number;
@@ -278,6 +279,7 @@ export default function PedidosTracker() {
   const { isLoaded } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: import.meta.env.VITE_Maps_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
   const processedMapData = useMemo(() => {
