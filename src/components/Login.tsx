@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ForgotPassword from './ForgotPasswordModal';
+import mapsBg from '../assets/maps.jpg';
 
 interface LoginProps {
   onLoginTransition?: (isTransitioning: boolean) => void;
@@ -230,7 +231,7 @@ export default function Login({ onLoginTransition }: LoginProps) {
         {/* IMAGEN Y DESCRIPCIÓN */}
         <div className="hidden md:block md:w-1/2 relative bg-blue-900">
           <img
-            src="./src/assets/maps.jpg"
+            src={mapsBg}
             // src="./src/assets/image.png"
             alt="Mapa y Logística"
             className="absolute inset-0 w-full h-full object-cover opacity-95 mix-blend-overlay"
