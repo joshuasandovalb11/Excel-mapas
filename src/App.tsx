@@ -17,6 +17,7 @@ import ChangePassword from './components/ChangePasswordModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import Lottie from 'lottie-react';
 import loaderAnimation from './assets/Globe.json';
+import { clear } from 'idb-keyval';
 
 const VehicleTracker = lazy(() => import('./components/VehicleTracker'));
 const ReportesView = lazy(() => import('./components/ReportesView'));
@@ -78,9 +79,16 @@ export default function App() {
         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
     }`;
 
-  const handleRefresh = () => {
-    window.sessionStorage.clear();
-    window.location.reload();
+  const handleRefresh = async () => {
+    const confirm = window.confirm(
+      '¿Deseas reiniciar la aplicación y borrar todos los datos guardados?'
+    );
+    if (confirm) {
+      window.sessionStorage.clear();
+      window.localStorage.clear();
+      await clear();
+      window.location.reload();
+    }
   };
 
   const renderActiveView = () => {

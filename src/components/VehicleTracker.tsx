@@ -47,6 +47,10 @@ export default function VehicleTracker() {
     Record<string, TripStorage>
   >('vt_allTripsData_db', {});
 
+  const [allClientsFromFile, setAllClientsFromFile] = useIndexedDBState<
+    Client[] | null
+  >('vt_allClients_db', null);
+
   const [tripData, setTripData] = useState<ProcessedTrip | null>(null);
   const [rawTripData, setRawTripData] = useState<any[] | null>(null);
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
@@ -56,12 +60,10 @@ export default function VehicleTracker() {
     'vt_activeDate',
     null
   );
-
   const [fileName, setFileName] = usePersistentState<string | null>(
     'vt_fileName',
     null
   );
-
   const [clientFileName, setClientFileName] = usePersistentState<string | null>(
     'vt_clientFileName',
     null
@@ -81,9 +83,6 @@ export default function VehicleTracker() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
 
-  const [allClientsFromFile, setAllClientsFromFile] = usePersistentState<
-    Client[] | null
-  >('vt_allClients', null);
   const [availableVendors, setAvailableVendors] = usePersistentState<string[]>(
     'vt_vendors',
     []
