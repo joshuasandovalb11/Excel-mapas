@@ -1,5 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useMemo,
+  useCallback,
+} from 'react';
 import * as XLSX from 'xlsx-js-style';
 import {
   Upload,
@@ -18,7 +24,18 @@ import {
   UserX,
   Crosshair,
   Download,
+  ChartNoAxesCombined,
+  Search,
+  Check,
+  Calendar,
+  // MapPinOff,
 } from 'lucide-react';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import {
+  faCartShopping,
+  faHouse,
+  faMapLocationDot,
+} from '@fortawesome/free-solid-svg-icons';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -30,14 +47,21 @@ import {
   ArcElement,
 } from 'chart.js';
 import { Bar, Doughnut } from 'react-chartjs-2';
+import {
+  GoogleMap,
+  useJsApiLoader,
+  Marker,
+  InfoWindow,
+  MarkerClusterer,
+} from '@react-google-maps/api';
 import { usePersistentState } from '../hooks/usePersistentState';
 import {
   processMasterClientFile,
   type Client,
   calculateDistance,
+  toTitleCase,
 } from '../utils/tripUtils';
 
-// Estructura de archivos de pedidos
 interface IPedidoRaw {
   '#Pedido': string | number;
   '#Vend': string;
@@ -54,7 +78,6 @@ interface IPedidoRaw {
   Procedencia: string;
 }
 
-// Interfaz para el dato procesado y limpio
 interface IPedido {
   pedidoNum: string;
   vendedor: string;
@@ -75,6 +98,8 @@ interface IPedido {
 }
 
 interface IClientMarker {
+  type: 'client';
+  id: string;
   number: string;
   name: string;
   lat: number;
@@ -87,6 +112,8 @@ interface IClientMarker {
 }
 
 interface IPedidoMarker {
+  type: 'pedido';
+  id: string;
   number: string;
   lat: number;
   lng: number;
@@ -100,6 +127,19 @@ interface IPedidoMarker {
   offset?: { lat: number; lng: number };
 }
 
+interface INoVisitadoMarker {
+  type: 'no-visitado';
+  id: string;
+  number: string;
+  name: string;
+  lat: number;
+  lng: number;
+  branchName: string;
+  vendor: string;
+}
+
+type MapMarker = IClientMarker | IPedidoMarker | INoVisitadoMarker;
+
 const parseGps = (gpsString: string): { lat: number; lng: number } | null => {
   if (!gpsString || gpsString === '0,0' || gpsString === '0.0,0.0') return null;
   const parts = gpsString.trim().split(',');
@@ -110,7 +150,6 @@ const parseGps = (gpsString: string): { lat: number; lng: number } | null => {
   return { lat, lng };
 };
 
-// Formato de fecha de Excel
 const parseExcelDate = (fecha: string | number): string => {
   if (typeof fecha === 'number') {
     const date = new Date((fecha - 25569) * 86400 * 1000);
@@ -133,7 +172,6 @@ const parseExcelDate = (fecha: string | number): string => {
   }
 };
 
-// Aplicar offsets a marcadores duplicados
 const applyOffsetsToMarkers = (markers: IPedidoMarker[]): IPedidoMarker[] => {
   const grouped = new Map<string, IPedidoMarker[]>();
   markers.forEach((marker) => {
@@ -149,7 +187,7 @@ const applyOffsetsToMarkers = (markers: IPedidoMarker[]): IPedidoMarker[] => {
     if (group.length === 1) {
       result.push(group[0]);
     } else {
-      const radius = 0.0001;
+      const radius = 0.0008;
       group.forEach((marker, idx) => {
         const angle = (idx * 2 * Math.PI) / group.length;
         result.push({
@@ -176,6 +214,8 @@ ChartJS.register(
 );
 
 const specialClientKeys = ['3689', '6395'];
+const mapContainerStyle = { width: '100%', height: '100%' };
+const defaultCenter = { lat: 25.0, lng: -100.0 };
 
 export default function PedidosTracker() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -201,6 +241,8 @@ export default function PedidosTracker() {
     'pt_availableDates',
     []
   );
+  const [dateSearchTerm, setDateSearchTerm] = useState('');
+  const [isDateSelectorOpen, setIsDateSelectorOpen] = useState(false);
   const [availableVendors, setAvailableVendors] = usePersistentState<string[]>(
     'pt_availableVendors',
     []
@@ -230,6 +272,372 @@ export default function PedidosTracker() {
     'envio'
   );
 
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [selectedMarker, setSelectedMarker] = useState<MapMarker | null>(null);
+
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: import.meta.env.VITE_Maps_API_KEY,
+  });
+
+  const processedMapData = useMemo(() => {
+    if (
+      !pedidosData ||
+      !allClientsFromFile ||
+      !selectedDate ||
+      selectedVendor === null
+    ) {
+      return {
+        clientMarkers: [],
+        pedidoMarkers: [],
+        stats: null,
+        pedidosPorVendedor: [],
+        clientesNoVisitados: [],
+        closestSpecialClientKey: null,
+      };
+    }
+
+    const filteredPedidos = pedidosData.filter((p) => {
+      if (selectedDate !== '__ALL_DATES__' && p.fechaStr !== selectedDate) {
+        return false;
+      }
+
+      if (selectedVendor === '__ALL__') {
+        return true;
+      }
+      return p.vendedor === selectedVendor;
+    });
+
+    const clientMap = new Map<string, IClientMarker>();
+    const pedidoMarkersRaw: IPedidoMarker[] = [];
+
+    let pedidosConMatch = 0;
+    let pedidosSinMatch = 0;
+    let pedidosSinGps = 0;
+    let pedidosSinGpsCliente = 0;
+    let pedidosEnMatriz = 0;
+
+    for (const pedido of filteredPedidos) {
+      const gpsAAnalizar =
+        gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
+
+      let masterClient = allClientsFromFile.find(
+        (c) => c.key === pedido.clienteNum
+      );
+
+      if (['3689', '6395'].includes(pedido.clienteNum)) {
+        const clientByName = allClientsFromFile.find(
+          (c) =>
+            c.name.trim().toLowerCase() ===
+            pedido.clienteName.trim().toLowerCase()
+        );
+
+        if (clientByName) {
+          masterClient = clientByName;
+        }
+      }
+
+      const clientGps = masterClient
+        ? { lat: masterClient.lat, lng: masterClient.lng }
+        : null;
+      const displayKey = masterClient ? masterClient.key : pedido.clienteNum;
+      const displayName = masterClient ? masterClient.name : pedido.clienteName;
+
+      if (!gpsAAnalizar) {
+        const tieneImportes = pedido.impMXN > 0 || pedido.impUS > 0;
+
+        if (tieneImportes) {
+          pedidosEnMatriz++;
+
+          if (clientGps) {
+            if (clientMap.has(displayKey)) {
+              const existing = clientMap.get(displayKey)!;
+              existing.totalPedidos += 1;
+              existing.totalMXN += pedido.impMXN;
+              existing.totalUS += pedido.impUS;
+            } else {
+              clientMap.set(displayKey, {
+                type: 'client',
+                id: `client-${displayKey}`,
+                number: displayKey,
+                name: displayName,
+                lat: clientGps.lat,
+                lng: clientGps.lng,
+                branchName: masterClient
+                  ? masterClient.branchName || ''
+                  : pedido.sucursalName,
+                vendor: pedido.vendedor,
+                totalPedidos: 1,
+                totalMXN: pedido.impMXN,
+                totalUS: pedido.impUS,
+              });
+            }
+          }
+        } else {
+          pedidosSinGps++;
+        }
+        continue;
+      }
+
+      let distance = Infinity;
+      let isMatch = false;
+
+      if (clientGps) {
+        distance = calculateDistance(
+          clientGps.lat,
+          clientGps.lng,
+          gpsAAnalizar.lat,
+          gpsAAnalizar.lng
+        );
+        isMatch = distance <= matchRadius;
+        if (isMatch) pedidosConMatch++;
+        else pedidosSinMatch++;
+      } else {
+        pedidosSinGpsCliente++;
+      }
+
+      pedidoMarkersRaw.push({
+        type: 'pedido',
+        id: `pedido-${pedido.pedidoNum}`,
+        number: pedido.pedidoNum,
+        lat: gpsAAnalizar.lat,
+        lng: gpsAAnalizar.lng,
+        isMatch,
+        distance,
+        clienteKey: displayKey,
+        clienteName: displayName,
+        impMXN: pedido.impMXN,
+        impUS: pedido.impUS,
+        vendedor: pedido.vendedor,
+      });
+
+      if (clientGps) {
+        if (clientMap.has(displayKey)) {
+          const existing = clientMap.get(displayKey)!;
+          existing.totalPedidos += 1;
+          existing.totalMXN += pedido.impMXN;
+          existing.totalUS += pedido.impUS;
+        } else {
+          clientMap.set(displayKey, {
+            type: 'client',
+            id: `client-${displayKey}`,
+            number: displayKey,
+            name: displayName,
+            lat: clientGps.lat,
+            lng: clientGps.lng,
+            branchName: masterClient
+              ? masterClient.branchName || ''
+              : pedido.sucursalName,
+            vendor: pedido.vendedor,
+            totalPedidos: 1,
+            totalMXN: pedido.impMXN,
+            totalUS: pedido.impUS,
+          });
+        }
+      }
+    }
+
+    const pedidosPorVendedor: {
+      vendedor: string;
+      match: number;
+      noMatch: number;
+    }[] = [];
+
+    if (selectedVendor === '__ALL__') {
+      const vendorMap = new Map<string, { match: number; noMatch: number }>();
+
+      for (const pMarker of pedidoMarkersRaw) {
+        if (!vendorMap.has(pMarker.vendedor)) {
+          vendorMap.set(pMarker.vendedor, { match: 0, noMatch: 0 });
+        }
+        const statsVendedor = vendorMap.get(pMarker.vendedor)!;
+        if (pMarker.isMatch) {
+          statsVendedor.match++;
+        } else {
+          if (pMarker.distance !== Infinity) {
+            statsVendedor.noMatch++;
+          }
+        }
+      }
+
+      vendorMap.forEach((counts, vendedor) => {
+        pedidosPorVendedor.push({ vendedor, ...counts });
+      });
+
+      pedidosPorVendedor.sort((a, b) => a.vendedor.localeCompare(b.vendedor));
+    }
+
+    const clientMarkers = Array.from(clientMap.values());
+    const visitedClientKeys = new Set(clientMap.keys());
+
+    const allVendorClients = allClientsFromFile.filter(
+      (c) => selectedVendor === '__ALL__' || c.vendor === selectedVendor
+    );
+
+    const regularClientsOnRoute = allVendorClients.filter(
+      (c) => !specialClientKeys.includes(c.key)
+    );
+    const allSpecialClientsOnRoute = allVendorClients.filter((c) =>
+      specialClientKeys.includes(c.key)
+    );
+
+    let closestSpecialClient: Client | null = null;
+    if (allSpecialClientsOnRoute.length > 0) {
+      if (regularClientsOnRoute.length > 0) {
+        const avgLat =
+          regularClientsOnRoute.reduce((sum, c) => sum + c.lat, 0) /
+          regularClientsOnRoute.length;
+        const avgLng =
+          regularClientsOnRoute.reduce((sum, c) => sum + c.lng, 0) /
+          regularClientsOnRoute.length;
+        const centroid = { lat: avgLat, lng: avgLng };
+
+        let closestDist = Infinity;
+        allSpecialClientsOnRoute.forEach((client) => {
+          const dist = calculateDistance(
+            centroid.lat,
+            centroid.lng,
+            client.lat,
+            client.lng
+          );
+          if (dist < closestDist) {
+            closestDist = dist;
+            closestSpecialClient = client;
+          }
+        });
+      } else {
+        closestSpecialClient = allSpecialClientsOnRoute[0];
+      }
+    }
+
+    if (closestSpecialClient) {
+      if (!visitedClientKeys.has(closestSpecialClient.key)) {
+        clientMarkers.push({
+          type: 'client',
+          id: `client-${closestSpecialClient.key}`,
+          number: closestSpecialClient.key,
+          name: closestSpecialClient.name,
+          lat: closestSpecialClient.lat,
+          lng: closestSpecialClient.lng,
+          branchName: closestSpecialClient.branchName || '',
+          vendor: closestSpecialClient.vendor,
+          totalPedidos: 0,
+          totalMXN: 0,
+          totalUS: 0,
+        });
+        visitedClientKeys.add(closestSpecialClient.key);
+      }
+    }
+
+    const closestSpecialClientKey = closestSpecialClient
+      ? closestSpecialClient.key
+      : null;
+
+    const clientesNoVisitados: INoVisitadoMarker[] = [];
+    regularClientsOnRoute.forEach((regularClient) => {
+      if (!visitedClientKeys.has(regularClient.key)) {
+        clientesNoVisitados.push({
+          type: 'no-visitado',
+          id: `novisit-${regularClient.key}`,
+          number: regularClient.key,
+          name: regularClient.name,
+          lat: regularClient.lat,
+          lng: regularClient.lng,
+          branchName: regularClient.branchName || '',
+          vendor: regularClient.vendor,
+        });
+      }
+    });
+
+    const pedidoMarkers = applyOffsetsToMarkers(pedidoMarkersRaw).map((p) => ({
+      ...p,
+      lat: p.offset?.lat || p.lat,
+      lng: p.offset?.lng || p.lng,
+    })) as IPedidoMarker[];
+
+    const totalPedidos = filteredPedidos.length;
+    const totalMapeables = pedidosConMatch + pedidosSinMatch;
+
+    const stats = {
+      totalPedidos,
+      pedidosConMatch,
+      pedidosSinMatch,
+      pedidosSinGpsCliente,
+      pedidosSinGps,
+      pedidosEnMatriz,
+      matchPercentage:
+        totalMapeables > 0 ? (pedidosConMatch / totalMapeables) * 100 : 0,
+      sinMatchPercentage:
+        totalMapeables > 0 ? (pedidosSinMatch / totalMapeables) * 100 : 0,
+      totalMXN: clientMarkers.reduce((sum, c) => sum + c.totalMXN, 0),
+      totalUS: clientMarkers.reduce((sum, c) => sum + c.totalUS, 0),
+      totalClients: clientMarkers.length,
+    };
+
+    return {
+      clientMarkers,
+      pedidoMarkers,
+      stats,
+      pedidosPorVendedor,
+      clientesNoVisitados,
+      closestSpecialClientKey,
+    };
+  }, [
+    pedidosData,
+    allClientsFromFile,
+    selectedDate,
+    selectedVendor,
+    matchRadius,
+    gpsMode,
+  ]);
+
+  // Funciones para controlar el mapa (ahora pueden usar processedMapData)
+  const onLoad = useCallback(
+    (map: google.maps.Map) => {
+      const bounds = new window.google.maps.LatLngBounds();
+      const { clientMarkers, pedidoMarkers, clientesNoVisitados } =
+        processedMapData;
+
+      clientMarkers.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+      pedidoMarkers.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+      if (showNoVisitados) {
+        clientesNoVisitados.forEach((p) =>
+          bounds.extend({ lat: p.lat, lng: p.lng })
+        );
+      }
+
+      if (!bounds.isEmpty()) {
+        map.fitBounds(bounds);
+      }
+      setMap(map);
+    },
+    [processedMapData, showNoVisitados]
+  );
+
+  const onUnmount = useCallback(() => {
+    setMap(null);
+  }, []);
+
+  // Efecto para centrar el mapa cuando cambian los datos
+  useEffect(() => {
+    if (map) {
+      const bounds = new window.google.maps.LatLngBounds();
+      const { clientMarkers, pedidoMarkers, clientesNoVisitados } =
+        processedMapData;
+
+      const allPoints = [
+        ...clientMarkers,
+        ...pedidoMarkers,
+        ...(showNoVisitados ? clientesNoVisitados : []),
+      ];
+
+      if (allPoints.length > 0) {
+        allPoints.forEach((p) => bounds.extend({ lat: p.lat, lng: p.lng }));
+        map.fitBounds(bounds);
+      }
+    }
+  }, [map, processedMapData, showNoVisitados]);
+
   useEffect(() => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
@@ -258,7 +666,6 @@ export default function PedidosTracker() {
     setTimeout(() => setError(null), 500);
   };
 
-  // Carga de Archivo de Clientes
   const handleClientFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -378,714 +785,6 @@ export default function PedidosTracker() {
     reader.readAsBinaryString(file);
   };
 
-  const processedMapData = useMemo(() => {
-    if (
-      !pedidosData ||
-      !allClientsFromFile ||
-      !selectedDate ||
-      selectedVendor === null
-    ) {
-      return {
-        clientMarkers: [],
-        pedidoMarkers: [],
-        stats: null,
-        pedidosPorVendedor: [],
-        clientesNoVisitados: [],
-        closestSpecialClientKey: null,
-      };
-    }
-
-    const filteredPedidos = pedidosData.filter((p) => {
-      if (selectedDate !== '__ALL_DATES__' && p.fechaStr !== selectedDate) {
-        return false;
-      }
-
-      if (selectedVendor === '__ALL__') {
-        return true;
-      }
-      return p.vendedor === selectedVendor;
-    });
-
-    const clientMap = new Map<string, IClientMarker>();
-    const pedidoMarkersRaw: IPedidoMarker[] = [];
-
-    let pedidosConMatch = 0;
-    let pedidosSinMatch = 0;
-    let pedidosSinGps = 0;
-    let pedidosSinGpsCliente = 0;
-    let pedidosEnMatriz = 0;
-
-    for (const pedido of filteredPedidos) {
-      const gpsAAnalizar =
-        gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
-
-      if (!gpsAAnalizar) {
-        const tieneImportes = pedido.impMXN > 0 || pedido.impUS > 0;
-
-        if (tieneImportes) {
-          pedidosEnMatriz++;
-
-          const masterClient = allClientsFromFile.find(
-            (c) => c.key === pedido.clienteNum
-          );
-          const clientGps = masterClient
-            ? { lat: masterClient.lat, lng: masterClient.lng }
-            : pedido.pedidoClientGps;
-
-          if (clientGps) {
-            if (clientMap.has(pedido.clienteNum)) {
-              const existing = clientMap.get(pedido.clienteNum)!;
-              existing.totalPedidos += 1;
-              existing.totalMXN += pedido.impMXN;
-              existing.totalUS += pedido.impUS;
-            } else {
-              clientMap.set(pedido.clienteNum, {
-                number: pedido.clienteNum,
-                name: pedido.clienteName,
-                lat: clientGps.lat,
-                lng: clientGps.lng,
-                branchName: masterClient
-                  ? masterClient.branchName || ''
-                  : pedido.sucursalName,
-                vendor: pedido.vendedor,
-                totalPedidos: 1,
-                totalMXN: pedido.impMXN,
-                totalUS: pedido.impUS,
-              });
-            }
-          }
-        } else {
-          pedidosSinGps++;
-        }
-
-        continue;
-      }
-
-      const masterClient = allClientsFromFile.find(
-        (c) => c.key === pedido.clienteNum
-      );
-      const clientGps = masterClient
-        ? { lat: masterClient.lat, lng: masterClient.lng }
-        : pedido.pedidoClientGps;
-
-      let distance = Infinity;
-      let isMatch = false;
-
-      if (clientGps) {
-        distance = calculateDistance(
-          clientGps.lat,
-          clientGps.lng,
-          gpsAAnalizar.lat,
-          gpsAAnalizar.lng
-        );
-        isMatch = distance <= matchRadius;
-        if (isMatch) pedidosConMatch++;
-        else pedidosSinMatch++;
-      } else {
-        pedidosSinGpsCliente++;
-      }
-
-      pedidoMarkersRaw.push({
-        number: pedido.pedidoNum,
-        lat: gpsAAnalizar.lat,
-        lng: gpsAAnalizar.lng,
-        isMatch,
-        distance,
-        clienteKey: pedido.clienteNum,
-        clienteName: pedido.clienteName,
-        impMXN: pedido.impMXN,
-        impUS: pedido.impUS,
-        vendedor: pedido.vendedor,
-      });
-
-      if (clientGps) {
-        if (clientMap.has(pedido.clienteNum)) {
-          const existing = clientMap.get(pedido.clienteNum)!;
-          existing.totalPedidos += 1;
-          existing.totalMXN += pedido.impMXN;
-          existing.totalUS += pedido.impUS;
-        } else {
-          clientMap.set(pedido.clienteNum, {
-            number: pedido.clienteNum,
-            name: pedido.clienteName,
-            lat: clientGps.lat,
-            lng: clientGps.lng,
-            branchName: masterClient
-              ? masterClient.branchName || ''
-              : pedido.sucursalName,
-            vendor: pedido.vendedor,
-            totalPedidos: 1,
-            totalMXN: pedido.impMXN,
-            totalUS: pedido.impUS,
-          });
-        }
-      }
-    }
-
-    const pedidosPorVendedor: {
-      vendedor: string;
-      match: number;
-      noMatch: number;
-    }[] = [];
-
-    if (selectedVendor === '__ALL__') {
-      const vendorMap = new Map<string, { match: number; noMatch: number }>();
-
-      for (const pMarker of pedidoMarkersRaw) {
-        if (!vendorMap.has(pMarker.vendedor)) {
-          vendorMap.set(pMarker.vendedor, { match: 0, noMatch: 0 });
-        }
-        const statsVendedor = vendorMap.get(pMarker.vendedor)!;
-        if (pMarker.isMatch) {
-          statsVendedor.match++;
-        } else {
-          if (pMarker.isMatch) {
-            // ""
-          } else if (pMarker.distance !== Infinity) {
-            statsVendedor.noMatch++;
-          }
-        }
-      }
-
-      vendorMap.forEach((counts, vendedor) => {
-        pedidosPorVendedor.push({ vendedor, ...counts });
-      });
-
-      pedidosPorVendedor.sort((a, b) => a.vendedor.localeCompare(b.vendedor));
-    }
-
-    const clientMarkers = Array.from(clientMap.values());
-    const visitedClientKeys = new Set(clientMap.keys());
-    const allVendorClients = allClientsFromFile.filter(
-      (c) => selectedVendor === '__ALL__' || c.vendor === selectedVendor
-    );
-
-    const regularClientsOnRoute = allVendorClients.filter(
-      (c) => !specialClientKeys.includes(c.key)
-    );
-    const allSpecialClientsOnRoute = allVendorClients.filter((c) =>
-      specialClientKeys.includes(c.key)
-    );
-
-    let closestSpecialClient: Client | null = null;
-    if (allSpecialClientsOnRoute.length > 0) {
-      if (regularClientsOnRoute.length > 0) {
-        const avgLat =
-          regularClientsOnRoute.reduce((sum, c) => sum + c.lat, 0) /
-          regularClientsOnRoute.length;
-        const avgLng =
-          regularClientsOnRoute.reduce((sum, c) => sum + c.lng, 0) /
-          regularClientsOnRoute.length;
-        const centroid = { lat: avgLat, lng: avgLng };
-
-        let closestDist = Infinity;
-        allSpecialClientsOnRoute.forEach((client) => {
-          const dist = calculateDistance(
-            centroid.lat,
-            centroid.lng,
-            client.lat,
-            client.lng
-          );
-          if (dist < closestDist) {
-            closestDist = dist;
-            closestSpecialClient = client;
-          }
-        });
-      } else {
-        closestSpecialClient = allSpecialClientsOnRoute[0];
-      }
-    }
-    const closestSpecialClientKey = closestSpecialClient
-      ? closestSpecialClient.key
-      : null;
-
-    const clientesNoVisitados: IClientMarker[] = [];
-    regularClientsOnRoute.forEach((regularClient) => {
-      if (!visitedClientKeys.has(regularClient.key)) {
-        clientesNoVisitados.push({
-          number: regularClient.key,
-          name: regularClient.name,
-          lat: regularClient.lat,
-          lng: regularClient.lng,
-          branchName: regularClient.branchName || '',
-          vendor: regularClient.vendor,
-          totalPedidos: 0,
-          totalMXN: 0,
-          totalUS: 0,
-        });
-      }
-    });
-
-    if (
-      closestSpecialClient &&
-      !visitedClientKeys.has(closestSpecialClient.key)
-    ) {
-      clientesNoVisitados.push({
-        number: closestSpecialClient.key,
-        name: closestSpecialClient.name,
-        lat: closestSpecialClient.lat,
-        lng: closestSpecialClient.lng,
-        branchName: closestSpecialClient.branchName || '',
-        vendor: closestSpecialClient.vendor,
-        totalPedidos: 0,
-        totalMXN: 0,
-        totalUS: 0,
-      });
-    }
-
-    const pedidoMarkers = applyOffsetsToMarkers(pedidoMarkersRaw);
-    const totalPedidos = filteredPedidos.length;
-    const totalMapeables = pedidosConMatch + pedidosSinMatch;
-
-    const stats = {
-      totalPedidos,
-      pedidosConMatch,
-      pedidosSinMatch,
-      pedidosSinGpsCliente,
-      pedidosSinGps,
-      pedidosEnMatriz,
-      matchPercentage:
-        totalMapeables > 0 ? (pedidosConMatch / totalMapeables) * 100 : 0,
-      sinMatchPercentage:
-        totalMapeables > 0 ? (pedidosSinMatch / totalMapeables) * 100 : 0,
-      totalMXN: clientMarkers.reduce((sum, c) => sum + c.totalMXN, 0),
-      totalUS: clientMarkers.reduce((sum, c) => sum + c.totalUS, 0),
-      totalClients: clientMarkers.length,
-    };
-
-    return {
-      clientMarkers,
-      pedidoMarkers,
-      stats,
-      pedidosPorVendedor,
-      clientesNoVisitados,
-      closestSpecialClientKey,
-    };
-  }, [
-    pedidosData,
-    allClientsFromFile,
-    selectedDate,
-    selectedVendor,
-    matchRadius,
-    gpsMode,
-  ]);
-
-  const generateMapHTML = () => {
-    const {
-      clientMarkers,
-      pedidoMarkers,
-      clientesNoVisitados,
-      closestSpecialClientKey,
-    } = processedMapData;
-    const apiKey = import.meta.env.VITE_Maps_API_KEY;
-
-    let center = '{lat: 25.0, lng: -100.0}';
-    let zoom = 12;
-    const allPoints = [
-      ...clientMarkers,
-      ...pedidoMarkers.map((p) => (p.offset ? p.offset : p)),
-      ...clientesNoVisitados,
-    ];
-
-    if (allPoints.length > 0) {
-      const avgLat =
-        allPoints.reduce((sum, p) => sum + p.lat, 0) / allPoints.length;
-      const avgLng =
-        allPoints.reduce((sum, p) => sum + p.lng, 0) / allPoints.length;
-      center = `{lat: ${avgLat}, lng: ${avgLng}}`;
-    }
-    if (allPoints.length === 1) {
-      zoom = 15;
-    }
-
-    const totalMarkers =
-      clientMarkers.length + pedidoMarkers.length + clientesNoVisitados.length;
-    const isAllVendors = selectedVendor === '__ALL__';
-    const useClustering = totalMarkers > 50 && isAllVendors;
-
-    return `<!DOCTYPE html>
-    <html>
-    <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
-    <style>
-        #map { height: 100%; } body, html { height: 100%; margin: 0; padding: 0; }
-        .gm-style-iw-d { overflow: hidden !important; } .gm-style-iw-c { padding: 8px !important; }
-        /* Estilos base para la tarjeta */
-        .info-window { font-family: sans-serif; }
-        /* Estilos personalizados para los clusters */
-        .custom-cluster {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border-radius: 50%;
-          font-weight: bold;
-          font-size: 14px;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          border: 3px solid white;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-          width: 50px;
-          height: 50px;
-        }
-        .custom-cluster-large {
-          width: 60px;
-          height: 60px;
-          font-size: 16px;
-          background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-    </style>
-    </head>
-    <body>
-    <div id="map"></div>
-    <script src="https://unpkg.com/@googlemaps/markerclusterer/dist/index.min.js"></script>
-    <script>
-        let map, openInfoWindows = new Set();
-        
-        function toTitleCase(str) {
-          if (!str) return '';
-          return str.toLowerCase().split(' ').map(function(word) {
-            if (word.length <= 3 && (word === 'de' || word === 'la' || word === 'el' || word === 'y' || word === 'e')) {
-              return word;
-            }
-            return word.charAt(0).toUpperCase() + word.slice(1);
-          }).join(' ');
-        }
-
-        function closeAllInfoWindows() {
-          openInfoWindows.forEach(iw => iw.close());
-          openInfoWindows.clear();
-        }
-
-        function initMap() {
-          map = new google.maps.Map(document.getElementById('map'), {
-            center: ${center},
-            zoom: ${zoom},
-            mapTypeControl: false, 
-            streetViewControl: true,
-            gestureHandling: 'greedy'
-        });
-
-        const bounds = new google.maps.LatLngBounds();
-        
-        const clientMarkers = ${JSON.stringify(clientMarkers)};
-        const pedidoMarkers = ${JSON.stringify(pedidoMarkers)};
-        const clientesNoVisitados = ${JSON.stringify(showNoVisitados ? clientesNoVisitados : [])};
-        const closestSpecialClientKey = ${JSON.stringify(closestSpecialClientKey)};
-        const useClustering = ${useClustering};
-
-        // Arrays para almacenar todos los marcadores para clustering
-        const allMarkersForClustering = [];
-
-        // 1. Marcadores de Clientes (Casas)
-        clientMarkers.forEach(client => {
-            const isSpecial = client.number === closestSpecialClientKey;
-            const iconFillColor = isSpecial ? '#FF0000' : '#000000';
-
-            const marker = new google.maps.Marker({
-            position: { lat: client.lat, lng: client.lng },
-            map: map,
-            icon: {
-                path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                fillColor: '#000000',
-                fillOpacity: 1,
-                strokeWeight: 0,
-                strokeColor: '#fff',
-                scale: 1.3,
-                anchor: new google.maps.Point(12, 24)
-            },
-            title: client.name
-            });
-
-            const coordinatesText = \`\${client.lat.toFixed(6)}, \${client.lng.toFixed(6)}\`;
-            const googleMapsLink = \`https://www.google.com/maps?q=\${client.lat},\${client.lng}\`;
-            const branchInfo = client.branchName ? 
-                \`<p style="margin: 2px 0; font-weight: 600; color: #2563eb; font-size: 12px;">Suc. \${toTitleCase(client.branchName)}</p>\` : '';
-
-            const content = \`<div class="info-window" style="padding: 4px; color: black; background: white;">
-            <h3 style="font-size: 15px; margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px;">
-              <i class="fa-solid fa-house"></i> Cliente
-            </h3>
-            
-            <div style="color:#059669;">
-              <p style="margin: 2px 0; font-weight: 500; font-size: 12px;">
-                <strong># \${client.number}</strong>
-              </p>
-              <strong><p style="margin: 2px 0; font-weight: 600; font-size: 12px;">\${toTitleCase(client.name)}</p></strong>
-              \${branchInfo}
-            </div>
-
-            <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-            <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-              <strong>View on Google Maps</strong>
-            </a>
-            
-            <p style="border-top:1px solid #eee; padding-top:4px; margin-top: 8px; font-size: 12px; margin-bottom: 0;">
-                Vendedor: \${client.vendor}<br>
-                Pedidos: \${client.totalPedidos}<br>
-                MXN: \${client.totalMXN.toLocaleString('es-MX', {style: 'currency', currency: 'MXN'})}<br>
-                USD: \${client.totalUS.toLocaleString('en-US', {style: 'currency', currency: 'USD'})}
-            </p>
-            </div>\`;
-            const info = new google.maps.InfoWindow({ content: content });
-            marker.addListener('click', () => { closeAllInfoWindows(); info.open(map, marker); openInfoWindows.add(info); });
-            bounds.extend(marker.getPosition());
-            
-            if (useClustering) allMarkersForClustering.push(marker);
-        });
-
-        // 2. Marcadores de Pedidos (Pines)
-        pedidoMarkers.forEach(pedido => {
-            const pos = pedido.offset || { lat: pedido.lat, lng: pedido.lng };
-            const marker = new google.maps.Marker({
-            position: pos,
-            map: map,
-            icon: {
-                path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-                fillColor: pedido.isMatch ? '#22c55e' : '#ef4444',
-                fillOpacity: 1,
-                strokeWeight: 0,
-                scale: 1.5,
-                anchor: new google.maps.Point(12, 24)
-            },
-            title: 'Pedido ' + pedido.key
-            });
-            
-            const coordinatesText = \`\${pos.lat.toFixed(6)}, \${pos.lng.toFixed(6)}\`;
-            const googleMapsLink = \`https://www.google.com/maps?q=\${pos.lat},\${pos.lng}\`;
-            
-            const matchText = pedido.isMatch 
-            ? \`<div style="color:#059669;">
-                <p style="margin: 2px 0; font-weight: 600; font-size: 12px;">
-                  <i class="fa-solid fa-check"></i> En ubicación
-                </p>
-              </div>\`
-            : \`<div style="color:#FC2121;">
-                <p style="margin: 2px 0; font-weight: 600; font-size: 12px;">
-                  <i class="fa-solid fa-xmark"></i> Fuera de ubicación
-                </p>
-              </div>\`;
-
-            const content = \`<div class="info-window" style="padding: 4px; color: black; background: white;">
-            <h3 style="font-size: 15px; margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px;">
-              <i class="fa-solid fa-cart-shopping"></i> Pedido #\${pedido.number}
-            </h3>
-            
-            <strong>#\${pedido.clienteKey}</strong>
-            <p style="margin: 2px 0; font-weight: 600; font-size: 12px; color: #374151;">
-              Cliente: \${toTitleCase(pedido.clienteName)}
-            </p>
-            <p style="margin: 4px 0 2px 0; font-weight: 500; font-size: 12px; color: #374151;">
-              Vendedor: <strong>\${pedido.vendedor}</strong>
-            </p>
-
-            \${matchText}
-
-
-            <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-            <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-              <strong>View on Google Maps</strong>
-            </a>
-
-            <p style="border-top:1px solid #eee; padding-top:4px; margin-top: 8px; font-size: 12px; margin-bottom: 0;">
-                MXN: \${pedido.impMXN.toLocaleString('es-MX', {style: 'currency', currency: 'MXN'})}<br>
-                USD: \${pedido.impUS.toLocaleString('en-US', {style: 'currency', currency: 'USD'})}
-            </p>
-            </div>\`;
-            const info = new google.maps.InfoWindow({ content: content });
-            marker.addListener('click', () => { closeAllInfoWindows(); info.open(map, marker); openInfoWindows.add(info); });
-            bounds.extend(new google.maps.LatLng(pos.lat, pos.lng));
-            
-            if (useClustering) allMarkersForClustering.push(marker);
-        });
-
-        // 3. Marcadores de Clientes NO Visitados
-        clientesNoVisitados.forEach(client => {
-            const isSpecial = client.number === closestSpecialClientKey;
-            const iconFillColor = isSpecial ? '#0059FF' : '#636970'; 
-            const iconOpacity = isSpecial ? 1.0 : 0.8;
-
-            const marker = new google.maps.Marker({
-            position: { lat: client.lat, lng: client.lng },
-            map: map,
-            icon: {
-                path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                fillColor: iconFillColor,
-                fillOpacity: iconOpacity,
-                strokeWeight: 1,
-                strokeColor: "white",
-                scale: 1.2,
-                anchor: new google.maps.Point(12, 24)
-            },
-            title: 'NO VISITADO: ' + client.name
-            });
-
-            const coordinatesText = \`\${client.lat.toFixed(6)}, \${client.lng.toFixed(6)}\`;
-            const googleMapsLink = \`https://www.google.com/maps?q=\${client.lat},\${client.lng}\`;
-            const branchInfo = client.branchName ? 
-                \`<p style="margin: 2px 0; font-weight: 600; color: #2563eb; font-size: 12px;">Suc. \${toTitleCase(client.branchName)}</p>\` : '';
-
-            const content = \`<div class="info-window" style="padding: 4px; color: black; background: white;">
-            <h3 style="font-size: 14px; margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px; color: #212121;">
-              <i class="fa-solid fa-house-chimney-user"></i> Cliente No Visitado
-            </h3>
-              
-            <div style="color:#212121;">
-              <p style="margin: 2px 0; font-weight: 500; font-size: 12px;">
-                <strong># \${client.number}</strong>
-              </p>
-              <strong><p style="margin: 2px 0; font-weight: 600; font-size: 12px;">\${toTitleCase(client.name)}</p></strong>
-              \${branchInfo}
-            </div>
-
-            <p style="color: #374151; font-size: 12px; margin: 4px 0;">\${coordinatesText}</p>
-            <a href="\${googleMapsLink}" target="_blank" style="color: #1a73e8; text-decoration: none; font-size: 12px; display: inline-flex; align-items: center;">
-              <strong>View on Google Maps</strong>
-            </a>
-              
-            <p style="border-top:1px solid #eee; padding-top:4px; margin-top: 8px; font-size: 12px; margin-bottom: 0;">
-              Vendedor: \${client.vendor}
-            </p>
-            </div>\`;
-            const info = new google.maps.InfoWindow({ content: content });
-            marker.addListener('click', () => { closeAllInfoWindows(); info.open(map, marker); openInfoWindows.add(info); });
-            bounds.extend(marker.getPosition());
-
-            if (useClustering) allMarkersForClustering.push(marker);
-        });
-
-        // Crear clusterer si hay muchos marcadores
-        if (useClustering && allMarkersForClustering.length > 0) {
-            const renderer = {
-                render: ({ count, position }) => {
-                    const color = count > 100 ? '#f5576c' : count > 50 ? '#87D665' : '#667eea';
-                    const size = count > 100 ? 60 : count > 50 ? 55 : 50;
-                    
-                    return new google.maps.Marker({
-                        position,
-                        icon: {
-                            url: \`data:image/svg+xml;charset=UTF-8,\${encodeURIComponent(\`
-                                <svg xmlns="http://www.w3.org/2000/svg" width="\${size}" height="\${size}" viewBox="0 0 \${size} \${size}">
-                                    <circle cx="\${size/2}" cy="\${size/2}" r="\${size/2 - 2}" fill="\${color}" stroke="white" stroke-width="3"/>
-                                    <text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="white" font-family="Arial, sans-serif" font-size="14" font-weight="bold">\${count}</text>
-                                </svg>
-                            \`)}\`,
-                            scaledSize: new google.maps.Size(size, size),
-                        },
-                        label: {
-                            text: String(count),
-                            color: 'transparent',
-                        },
-                        zIndex: Number(google.maps.Marker.MAX_ZINDEX) + count,
-                    });
-                },
-            };
-
-            new markerClusterer.MarkerClusterer({
-                map,
-                markers: allMarkersForClustering,
-                renderer: renderer,
-            });
-        }
-
-        if (bounds.isEmpty() === false) {
-            map.fitBounds(bounds);
-        }
-        }
-    </script>
-    <script async defer src="https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap&libraries=geometry"></script>
-    </body>
-    </html>`;
-  };
-
-  const { stats, pedidosPorVendedor } = processedMapData;
-
-  // Configuración Gráfica 1: Dona de Estado General
-  const doughnutData = {
-    labels: [
-      'En Ubicación',
-      'Fuera de Ubicación',
-      'Sin GPS Cliente',
-      gpsMode === 'envio' ? 'Sin GPS Envío' : 'Sin GPS Captura',
-      'En Tools',
-    ],
-    datasets: [
-      {
-        label: 'Pedidos',
-        data: [
-          stats?.pedidosConMatch || 0,
-          stats?.pedidosSinMatch || 0,
-          stats?.pedidosSinGpsCliente || 0,
-          stats?.pedidosSinGps || 0,
-          stats?.pedidosEnMatriz || 0,
-        ],
-        backgroundColor: [
-          '#22c55e', // Verde (match)
-          '#ef4444', // Rojo (no match)
-          '#f59e0b', // Naranja (sin GPS cliente)
-          '#6b7280', // Gris (sin GPS envío)
-          '#3b82f6', // Azul (en Tools)
-        ],
-        borderColor: ['#ffffff'],
-        borderWidth: 3,
-      },
-    ],
-  };
-
-  const doughnutOptions = {
-    responsive: true,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Estado de Pedidos',
-        font: { size: 16 },
-      },
-    },
-  };
-
-  // Configuración Gráfica 2: Barras por Vendedor
-  const barData = {
-    labels: pedidosPorVendedor?.map((v) => v.vendedor) || [],
-    datasets: [
-      {
-        label: 'En Ubicación',
-        data: pedidosPorVendedor?.map((v) => v.match) || [],
-        backgroundColor: '#22c55e',
-      },
-      {
-        label: 'Fuera de Ubicación',
-        data: pedidosPorVendedor?.map((v) => v.noMatch) || [],
-        backgroundColor: '#ef4444',
-      },
-    ],
-  };
-
-  const barOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: {
-        position: 'top' as const,
-      },
-      title: {
-        display: true,
-        text: 'Rendimiento por Vendedor',
-        font: { size: 16 },
-      },
-    },
-    scales: {
-      x: {
-        stacked: true,
-      },
-      y: {
-        stacked: true,
-      },
-    },
-  };
-
   const downloadPedidosExcel = () => {
     if (
       !pedidosData ||
@@ -1107,12 +806,26 @@ export default function PedidosTracker() {
         alignment: { horizontal: 'center', vertical: 'center' },
       },
       header: {
-        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        font: {
+          name: 'Arial',
+          sz: 11,
+          bold: true,
+          color: { rgb: 'FFFFFFFF' },
+        },
         fill: { fgColor: { rgb: 'FF4F81BD' } },
-        alignment: { wrapText: true, vertical: 'center', horizontal: 'center' },
+        alignment: {
+          wrapText: true,
+          vertical: 'center',
+          horizontal: 'center',
+        },
       },
       vendorHeader: {
-        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        font: {
+          name: 'Arial',
+          sz: 11,
+          bold: true,
+          color: { rgb: 'FFFFFFFF' },
+        },
         fill: { fgColor: { rgb: 'FF00B050' } },
         alignment: { horizontal: 'center', vertical: 'center' },
       },
@@ -1140,7 +853,12 @@ export default function PedidosTracker() {
         alignment: { vertical: 'center', horizontal: 'left' },
       },
       nonVisitedHeader: {
-        font: { name: 'Arial', sz: 11, bold: true, color: { rgb: 'FFFFFFFF' } },
+        font: {
+          name: 'Arial',
+          sz: 11,
+          bold: true,
+          color: { rgb: 'FFFFFFFF' },
+        },
         fill: { fgColor: { rgb: 'FFC00000' } },
         alignment: { horizontal: 'center' },
       },
@@ -1153,9 +871,23 @@ export default function PedidosTracker() {
         alignment: { horizontal: 'left' },
       },
       subHeader: {
-        font: { name: 'Arial', sz: 12, bold: true, color: { rgb: 'FFFFFFFF' } },
+        font: {
+          name: 'Arial',
+          sz: 12,
+          bold: true,
+          color: { rgb: 'FFFFFFFF' },
+        },
         fill: { fgColor: { rgb: 'FF4F81BD' } },
         alignment: { vertical: 'center', horizontal: 'center' },
+      },
+      noDataRow: {
+        font: {
+          name: 'Arial',
+          sz: 10,
+          italic: true,
+          color: { rgb: 'FF555555' },
+        },
+        alignment: { horizontal: 'center', vertical: 'center' },
       },
     };
 
@@ -1166,29 +898,59 @@ export default function PedidosTracker() {
       return isAllVendors ? true : p.vendedor === selectedVendor;
     });
 
-    const clientesConCoincidencia: IPedido[] = [];
-    const clientesFueraUbicacion: IPedido[] = [];
+    interface IPedidoExport extends IPedido {
+      finalClientName: string;
+      finalClientKey: string;
+    }
+
+    const clientesConCoincidencia: IPedidoExport[] = [];
+    const clientesFueraUbicacion: IPedidoExport[] = [];
     const clientesConPedidos = new Set<string>();
 
     for (const pedido of filteredPedidos) {
       const gpsAAnalizar =
         gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
+
+      let masterClient = allClientsFromFile.find(
+        (c) => c.key === pedido.clienteNum
+      );
+
+      if (['3689', '6395'].includes(pedido.clienteNum)) {
+        const clientByName = allClientsFromFile.find(
+          (c) =>
+            c.name.trim().toLowerCase() ===
+            pedido.clienteName.trim().toLowerCase()
+        );
+        if (clientByName) {
+          masterClient = clientByName;
+        }
+      }
+
+      const clientGps = masterClient
+        ? { lat: masterClient.lat, lng: masterClient.lng }
+        : null;
+
+      let displayName = toTitleCase(pedido.clienteName);
+      let displayKey = pedido.clienteNum;
+
+      if (masterClient) {
+        displayName = toTitleCase(masterClient.name);
+        displayKey = masterClient.key;
+      } else if (['3689', '6395'].includes(pedido.clienteNum)) {
+        displayName = 'Tools de México (Oficina)';
+      }
+
+      clientesConPedidos.add(displayKey);
+
       let isMatch = false;
 
       if (!gpsAAnalizar) {
         if (pedido.impMXN > 0 || pedido.impUS > 0) {
-          isMatch = true;
+          isMatch = false;
         } else {
           continue;
         }
       } else {
-        const masterClient = allClientsFromFile.find(
-          (c) => c.key === pedido.clienteNum
-        );
-        const clientGps = masterClient
-          ? { lat: masterClient.lat, lng: masterClient.lng }
-          : pedido.pedidoClientGps;
-
         if (clientGps) {
           const distance = calculateDistance(
             clientGps.lat,
@@ -1200,19 +962,26 @@ export default function PedidosTracker() {
         }
       }
 
-      clientesConPedidos.add(pedido.clienteNum);
+      const pedidoExport: IPedidoExport = {
+        ...pedido,
+        finalClientName: displayName,
+        finalClientKey: displayKey,
+      };
+
       if (isMatch) {
-        clientesConCoincidencia.push(pedido);
+        clientesConCoincidencia.push(pedidoExport);
       } else {
-        clientesFueraUbicacion.push(pedido);
+        clientesFueraUbicacion.push(pedidoExport);
       }
     }
 
     const clientesVendedor = isAllVendors
       ? allClientsFromFile
       : allClientsFromFile.filter((c) => c.vendor === selectedVendor);
+
     const clientesSinPedidos =
       clientesVendedor.filter((c) => !clientesConPedidos.has(c.key)) || [];
+
     const grandTotalPedidosEnUbicacion = clientesConCoincidencia.length;
     const grandTotalPedidosFueraUbicacion = clientesFueraUbicacion.length;
     const grandTotalSinPedidos = clientesSinPedidos.length;
@@ -1256,34 +1025,28 @@ export default function PedidosTracker() {
       'Imp USD',
     ];
     const colsPedidos = [
-      { wch: 17 }, // # Pedido
-      { wch: 12 }, // Fecha
-      { wch: 43 }, // Cliente
-      { wch: 25 }, // Sucursal
-      { wch: 15 }, // Imp MXN
-      { wch: 15 }, // Imp USD
+      { wch: 17 },
+      { wch: 12 },
+      { wch: 43 },
+      { wch: 25 },
+      { wch: 15 },
+      { wch: 15 },
     ];
     const headersSinPedidos = ['Cliente', 'Sucursal'];
-    const colsSinPedidos = [
-      { wch: 40 }, // Cliente
-      { wch: 25 }, // Sucursal
-    ];
-    const summaryColWidths = [
-      { wch: 2 }, // Espaciador
-      { wch: 30 }, // Titulo
-      { wch: 25 }, // Value
-    ];
+    const colsSinPedidos = [{ wch: 40 }, { wch: 25 }];
+    const summaryColWidths = [{ wch: 2 }, { wch: 30 }, { wch: 25 }];
 
-    // --- HOJA 1: Clientes en Ubicación ---
-    {
-      const wsName = 'Clientes en Ubicación';
+    const generatePedidoSheet = (
+      sheetTitle: string,
+      pedidosList: IPedidoExport[]
+    ) => {
       const data: any[][] = [];
       const merges: XLSX.Range[] = [];
       let currentRow = 0;
       const tableWidth = headersPedidos.length;
       const summaryStartCol = tableWidth + 1;
 
-      data.push(['Clientes en Ubicación']);
+      data.push([sheetTitle]);
       merges.push({
         s: { r: currentRow, c: 0 },
         e: { r: currentRow, c: summaryStartCol + 1 },
@@ -1292,74 +1055,116 @@ export default function PedidosTracker() {
       data.push([]);
       currentRow = 2;
 
-      for (const vendor of vendorsToProcess) {
-        const vendorPedidos = clientesConCoincidencia
-          .filter((p) => p.vendedor === vendor)
-          .sort((a, b) => a.clienteName.localeCompare(b.clienteName));
-        if (vendorPedidos.length === 0) continue;
+      if (isAllVendors && pedidosList.length === 0) {
+        data.push([
+          'No se encontraron pedidos en esta sección para ningún vendedor',
+        ]);
+        merges.push({
+          s: { r: currentRow, c: 0 },
+          e: { r: currentRow, c: tableWidth - 1 },
+        });
+        currentRow++;
+        const totalRow = ['', '', '', 'Total General:', 0, 0];
+        data.push(totalRow);
+        merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 3 } });
+      } else {
+        for (const vendor of vendorsToProcess) {
+          const vendorPedidos = pedidosList
+            .filter((p) => p.vendedor === vendor)
+            .sort((a, b) => a.finalClientName.localeCompare(b.finalClientName));
 
-        let vendorTotalMXN = 0;
-        let vendorTotalUSD = 0;
+          if (isAllVendors && vendorPedidos.length === 0) continue;
 
-        if (isAllVendors) {
-          data.push([`Vendedor: ${vendor}`]);
+          let vendorTotalMXN = 0;
+          let vendorTotalUSD = 0;
+
+          if (isAllVendors) {
+            data.push([`Vendedor: ${vendor}`]);
+            merges.push({
+              s: { r: currentRow, c: 0 },
+              e: { r: currentRow, c: tableWidth - 1 },
+            });
+            currentRow++;
+          }
+
+          data.push([...headersPedidos]);
+          currentRow++;
+
+          if (vendorPedidos.length === 0) {
+            const noDataRow = [
+              'No se encontraron pedidos en esta sección',
+              '',
+              '',
+              '',
+              '',
+              '',
+            ];
+            data.push(noDataRow);
+            merges.push({
+              s: { r: currentRow, c: 0 },
+              e: { r: currentRow, c: tableWidth - 1 },
+            });
+            currentRow++;
+          } else {
+            vendorPedidos.forEach((p) => {
+              const clientName = p.finalClientName;
+              const clientKey = p.finalClientKey;
+              let branchInfo = '--';
+              if (
+                p.sucursalNum &&
+                p.sucursalNum !== '0' &&
+                p.sucursalNum !== ''
+              ) {
+                branchInfo = p.sucursalName
+                  ? `Suc. ${p.sucursalName}`
+                  : `Suc. ${p.sucursalNum}`;
+              }
+              const row = [
+                p.pedidoNum,
+                p.fechaStr,
+                `${clientKey} - ${clientName}`,
+                branchInfo,
+                p.impMXN,
+                p.impUS,
+              ];
+              data.push(row);
+              vendorTotalMXN += p.impMXN;
+              vendorTotalUSD += p.impUS;
+              currentRow++;
+            });
+          }
+
+          const totalRow = [
+            '',
+            '',
+            '',
+            'Total Vendedor:',
+            vendorTotalMXN,
+            vendorTotalUSD,
+          ];
+          data.push(totalRow);
           merges.push({
             s: { r: currentRow, c: 0 },
-            e: { r: currentRow, c: tableWidth - 1 },
+            e: { r: currentRow, c: 3 },
           });
           currentRow++;
         }
-
-        data.push([...headersPedidos]);
-        currentRow++;
-
-        vendorPedidos.forEach((p) => {
-          const clientName = p.clienteName;
-          const clientKey = p.clienteNum;
-          let branchInfo = '--';
-          if (p.sucursalNum && p.sucursalNum !== '0' && p.sucursalNum !== '') {
-            branchInfo = p.sucursalName
-              ? `Suc. ${p.sucursalName}`
-              : `Suc. ${p.sucursalNum}`;
-          }
-          const row = [
-            p.pedidoNum,
-            p.fechaStr,
-            `${clientKey} - ${clientName}`,
-            branchInfo,
-            p.impMXN,
-            p.impUS,
-          ];
-          data.push(row);
-          vendorTotalMXN += p.impMXN;
-          vendorTotalUSD += p.impUS;
-          currentRow++;
-        });
-
-        const totalRow = [
-          '',
-          '',
-          '',
-          'Total Vendedor:',
-          vendorTotalMXN,
-          vendorTotalUSD,
-        ];
-        data.push(totalRow);
-        merges.push({
-          s: { r: currentRow, c: 0 },
-          e: { r: currentRow, c: 3 },
-        });
-        currentRow++;
       }
 
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws['!cols'] = [...colsPedidos, ...summaryColWidths];
+      ws['!merges'] = merges;
 
       ws['A1'].s = styles.title;
       data.forEach((row, rIdx) => {
         if (row.length === 0) return;
-
-        if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
+        if (
+          row[0] === 'No se encontraron pedidos en esta sección' ||
+          row[0] ===
+            'No se encontraron pedidos en esta sección para ningún vendedor'
+        ) {
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s = styles.noDataRow;
+        } else if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
           for (let cIdx = 0; cIdx < tableWidth; cIdx++) {
             const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
             if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
@@ -1368,11 +1173,12 @@ export default function PedidosTracker() {
         } else if (row[0] === '# Pedido') {
           for (let cIdx = 0; cIdx < row.length; cIdx++) {
             const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
-            if (ws[cellRef]) {
-              ws[cellRef].s = styles.header;
-            }
+            if (ws[cellRef]) ws[cellRef].s = styles.header;
           }
-        } else if (row[3] === 'Total Vendedor:') {
+        } else if (
+          row[3] === 'Total Vendedor:' ||
+          row[3] === 'Total General:'
+        ) {
           ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.totalRow;
           ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
             ...styles.totalRow,
@@ -1382,7 +1188,11 @@ export default function PedidosTracker() {
             ...styles.totalRow,
             numFmt: '"$"#,##0.00',
           };
-        } else if (rIdx > 0 && !row[0]?.startsWith('Clientes en Ubicación')) {
+        } else if (
+          rIdx > 0 &&
+          !row[0]?.startsWith('Clientes') &&
+          !row[0]?.startsWith('Vendedor:')
+        ) {
           if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })])
             ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s =
               styles.cellCentered;
@@ -1407,146 +1217,11 @@ export default function PedidosTracker() {
         }
       });
 
-      ws['!merges'] = merges;
-      XLSX.utils.book_append_sheet(wb, ws, wsName);
-    }
+      XLSX.utils.book_append_sheet(wb, ws, sheetTitle);
+    };
 
-    // --- HOJA 2: Clientes Fuera de Ubicación ---
-    {
-      const wsName = 'Clientes Fuera Ubicación';
-      const data: any[][] = [];
-      const merges: XLSX.Range[] = [];
-      let currentRow = 0;
-      const tableWidth = headersPedidos.length;
-      const summaryStartCol = tableWidth + 1;
-
-      data.push(['Clientes Fuera de Ubicación']);
-      merges.push({
-        s: { r: currentRow, c: 0 },
-        e: { r: currentRow, c: summaryStartCol + 1 },
-      });
-
-      data.push([]);
-      currentRow = 2;
-
-      for (const vendor of vendorsToProcess) {
-        const vendorPedidos = clientesFueraUbicacion
-          .filter((p) => p.vendedor === vendor)
-          .sort((a, b) => a.clienteName.localeCompare(b.clienteName));
-        if (vendorPedidos.length === 0) continue;
-
-        let vendorTotalMXN = 0;
-        let vendorTotalUSD = 0;
-
-        if (isAllVendors) {
-          data.push([`Vendedor: ${vendor}`]);
-          merges.push({
-            s: { r: currentRow, c: 0 },
-            e: { r: currentRow, c: tableWidth - 1 },
-          });
-          currentRow++;
-        }
-
-        data.push([...headersPedidos]);
-        currentRow++;
-
-        vendorPedidos.forEach((p) => {
-          const clientName = p.clienteName;
-          const clientKey = p.clienteNum;
-          let branchInfo = '--';
-          if (p.sucursalNum && p.sucursalNum !== '0' && p.sucursalNum !== '') {
-            branchInfo = p.sucursalName
-              ? `Suc. ${p.sucursalName}`
-              : `Suc. ${p.sucursalNum}`;
-          }
-          const row = [
-            p.pedidoNum,
-            p.fechaStr,
-            `${clientKey} - ${clientName}`,
-            branchInfo,
-            p.impMXN,
-            p.impUS,
-          ];
-          data.push(row);
-          vendorTotalMXN += p.impMXN;
-          vendorTotalUSD += p.impUS;
-          currentRow++;
-        });
-
-        const totalRow = [
-          '',
-          '',
-          '',
-          'Total Vendedor:',
-          vendorTotalMXN,
-          vendorTotalUSD,
-        ];
-        data.push(totalRow);
-        merges.push({
-          s: { r: currentRow, c: 0 },
-          e: { r: currentRow, c: 3 },
-        });
-        currentRow++;
-      }
-
-      const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['!cols'] = [...colsPedidos, ...summaryColWidths];
-
-      ws['A1'].s = styles.title;
-      data.forEach((row, rIdx) => {
-        if (row.length === 0) return;
-
-        if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
-          for (let cIdx = 0; cIdx < tableWidth; cIdx++) {
-            const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
-            if (!ws[cellRef]) ws[cellRef] = { v: '', t: 's' };
-            ws[cellRef].s = styles.vendorHeader;
-          }
-        } else if (row[0] === '# Pedido') {
-          for (let cIdx = 0; cIdx < row.length; cIdx++) {
-            const cellRef = XLSX.utils.encode_cell({ r: rIdx, c: cIdx });
-            if (ws[cellRef]) {
-              ws[cellRef].s = styles.header;
-            }
-          }
-        } else if (row[3] === 'Total Vendedor:') {
-          ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.totalRow;
-          ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
-            ...styles.totalRow,
-            numFmt: '"$"#,##0.00',
-          };
-          ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })].s = {
-            ...styles.totalRow,
-            numFmt: '"$"#,##0.00',
-          };
-        } else if (rIdx > 0 && !row[0]?.startsWith('Clientes Fuera')) {
-          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })])
-            ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s =
-              styles.cellCentered;
-          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })])
-            ws[XLSX.utils.encode_cell({ r: rIdx, c: 1 })].s =
-              styles.cellCentered;
-          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })])
-            ws[XLSX.utils.encode_cell({ r: rIdx, c: 2 })].s =
-              styles.clientVisitCell;
-          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })])
-            ws[XLSX.utils.encode_cell({ r: rIdx, c: 3 })].s = styles.cell;
-          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })])
-            ws[XLSX.utils.encode_cell({ r: rIdx, c: 4 })].s = {
-              ...styles.cellRight,
-              numFmt: '"$"#,##0.00',
-            };
-          if (ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })])
-            ws[XLSX.utils.encode_cell({ r: rIdx, c: 5 })].s = {
-              ...styles.cellRight,
-              numFmt: '"$"#,##0.00',
-            };
-        }
-      });
-
-      ws['!merges'] = merges;
-      XLSX.utils.book_append_sheet(wb, ws, wsName);
-    }
+    generatePedidoSheet('Clientes en Ubicación', clientesConCoincidencia);
+    generatePedidoSheet('Clientes Fuera Ubicación', clientesFueraUbicacion);
 
     // --- HOJA 3: Clientes Sin Pedidos ---
     {
@@ -1563,41 +1238,66 @@ export default function PedidosTracker() {
       });
       currentRow += 2;
 
-      for (const vendor of vendorsToProcess) {
-        const vendorClientesSin = clientesSinPedidos
-          .filter((c) => c.vendor === vendor)
-          .sort((a, b) => a.name.localeCompare(b.name));
-        if (vendorClientesSin.length === 0) continue;
-
-        if (isAllVendors) {
-          data.push([`Vendedor: ${vendor}`]);
-          merges.push({
-            s: { r: currentRow, c: 0 },
-            e: { r: currentRow, c: tableWidth - 1 },
-          });
-          currentRow++;
-        }
-
-        data.push(headersSinPedidos);
-        currentRow++;
-
-        vendorClientesSin.forEach((c) => {
-          const row = [`${c.key} - ${c.name}`, c.branchName || '--'];
-          data.push(row);
-          currentRow++;
+      if (isAllVendors && clientesSinPedidos.length === 0) {
+        data.push(['Todos los clientes tienen pedidos (¡Felicidades!)']);
+        merges.push({
+          s: { r: currentRow, c: 0 },
+          e: { r: currentRow, c: tableWidth - 1 },
         });
+        currentRow++;
+        const totalRow = ['Total Vendedor:', 0];
+        data.push(totalRow);
+        merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 0 } });
+      } else {
+        for (const vendor of vendorsToProcess) {
+          const vendorClientesSin = clientesSinPedidos
+            .filter((c) => c.vendor === vendor)
+            .sort((a, b) => a.name.localeCompare(b.name));
 
-        if (isAllVendors) {
-          const totalRow = ['Total Vendedor:', vendorClientesSin.length];
-          data.push(totalRow);
-          merges.push({
-            s: { r: currentRow, c: 0 },
-            e: { r: currentRow, c: 0 },
-          });
+          if (isAllVendors && vendorClientesSin.length === 0) continue;
+
+          if (isAllVendors) {
+            data.push([`Vendedor: ${vendor}`]);
+            merges.push({
+              s: { r: currentRow, c: 0 },
+              e: { r: currentRow, c: tableWidth - 1 },
+            });
+            currentRow++;
+          }
+
+          data.push(headersSinPedidos);
+          currentRow++;
+
+          if (vendorClientesSin.length === 0) {
+            data.push(['Todos los clientes tienen pedidos']);
+            merges.push({
+              s: { r: currentRow, c: 0 },
+              e: { r: currentRow, c: tableWidth - 1 },
+            });
+            currentRow++;
+          } else {
+            vendorClientesSin.forEach((c) => {
+              const row = [
+                `${c.key} - ${toTitleCase(c.name)}`,
+                c.branchName || '--',
+              ];
+              data.push(row);
+              currentRow++;
+            });
+          }
+
+          if (isAllVendors) {
+            const totalRow = ['Total Vendedor:', vendorClientesSin.length];
+            data.push(totalRow);
+            merges.push({
+              s: { r: currentRow, c: 0 },
+              e: { r: currentRow, c: 0 },
+            });
+            currentRow++;
+          }
+          data.push([]);
           currentRow++;
         }
-        data.push([]);
-        currentRow++;
       }
 
       const ws = XLSX.utils.aoa_to_sheet(data);
@@ -1607,7 +1307,12 @@ export default function PedidosTracker() {
       ws['A1'].s = styles.title;
       data.forEach((row, rIdx) => {
         if (row.length === 0) return;
-        if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
+        if (
+          row[0] === 'Todos los clientes tienen pedidos' ||
+          row[0] === 'Todos los clientes tienen pedidos (¡Felicidades!)'
+        ) {
+          ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s = styles.noDataRow;
+        } else if (isAllVendors && row[0]?.startsWith('Vendedor:')) {
           ws[XLSX.utils.encode_cell({ r: rIdx, c: 0 })].s = styles.vendorHeader;
         } else if (row[0] === 'Cliente') {
           row.forEach((_, cIdx) => {
@@ -1651,23 +1356,17 @@ export default function PedidosTracker() {
           : colsPedidos.length;
       const startCol = tableCols + 1;
       const startRow = 2;
-
       const merges = ws['!merges'] || [];
 
       summaryData.forEach((row, rIdx) => {
         const r = startRow + rIdx;
         XLSX.utils.sheet_add_aoa(ws, [row], { origin: { r, c: startCol } });
-
         const cellRefA = XLSX.utils.encode_cell({ r, c: startCol });
         const cellRefB = XLSX.utils.encode_cell({ r, c: startCol + 1 });
-
         if (rIdx === 0 || rIdx === 4) {
           if (ws[cellRefA]) ws[cellRefA].s = styles.subHeader;
           if (ws[cellRefB]) ws[cellRefB].s = styles.subHeader;
-          merges.push({
-            s: { r, c: startCol },
-            e: { r, c: startCol + 1 },
-          });
+          merges.push({ s: { r, c: startCol }, e: { r, c: startCol + 1 } });
         } else if (row.length > 1) {
           if (ws[cellRefA]) ws[cellRefA].s = styles.infoLabel;
           if (ws[cellRefB]) ws[cellRefB].s = styles.infoValue;
@@ -1675,15 +1374,11 @@ export default function PedidosTracker() {
             String(row[0]).includes('MXN') ||
             String(row[0]).includes('USD')
           ) {
-            ws[cellRefB].s = {
-              ...styles.infoValue,
-              numFmt: '"$"#,##0.00',
-            };
+            ws[cellRefB].s = { ...styles.infoValue, numFmt: '"$"#,##0.00' };
           }
         }
       });
       ws['!merges'] = merges;
-
       if (!ws['!cols']) ws['!cols'] = [];
       ws['!cols'][startCol - 1] = { wch: 3 };
       ws['!cols'][startCol] = { wch: 30 };
@@ -1695,6 +1390,160 @@ export default function PedidosTracker() {
 
     XLSX.writeFile(wb, fileName);
   };
+
+  const { stats, pedidosPorVendedor } = processedMapData;
+
+  const doughnutData = {
+    labels: [
+      'En Ubicación',
+      'Fuera de Ubicación',
+      'Sin GPS Cliente',
+      gpsMode === 'envio' ? 'Sin GPS Envío' : 'Sin GPS Captura',
+      'En Tools',
+    ],
+    datasets: [
+      {
+        label: 'Pedidos',
+        data: [
+          stats?.pedidosConMatch || 0,
+          stats?.pedidosSinMatch || 0,
+          stats?.pedidosSinGpsCliente || 0,
+          stats?.pedidosSinGps || 0,
+          stats?.pedidosEnMatriz || 0,
+        ],
+        backgroundColor: [
+          '#22c55e',
+          '#ef4444',
+          '#f59e0b',
+          '#6b7280',
+          '#3b82f6',
+        ],
+        borderColor: ['#ffffff'],
+        borderWidth: 3,
+      },
+    ],
+  };
+
+  const doughnutOptions = {
+    responsive: true,
+    plugins: {
+      legend: { position: 'top' as const },
+      title: { display: true, text: 'Estado de Pedidos', font: { size: 16 } },
+    },
+  };
+
+  const barData = {
+    labels: pedidosPorVendedor?.map((v) => v.vendedor) || [],
+    datasets: [
+      {
+        label: 'En Ubicación',
+        data: pedidosPorVendedor?.map((v) => v.match) || [],
+        backgroundColor: '#22c55e',
+      },
+      {
+        label: 'Fuera de Ubicación',
+        data: pedidosPorVendedor?.map((v) => v.noMatch) || [],
+        backgroundColor: '#ef4444',
+      },
+    ],
+  };
+
+  const barOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { position: 'top' as const },
+      title: {
+        display: true,
+        text: 'Rendimiento por Vendedor',
+        font: { size: 16 },
+      },
+    },
+    scales: { x: { stacked: true }, y: { stacked: true } },
+  };
+
+  const clustererOptions = useMemo(
+    () => ({
+      gridSize: 30,
+      maxZoom: 14,
+      minimumClusterSize: 2,
+      averageCenter: true,
+    }),
+    []
+  );
+
+  const totalMarkersCount =
+    processedMapData.clientMarkers.length +
+    processedMapData.pedidoMarkers.length +
+    (showNoVisitados ? processedMapData.clientesNoVisitados.length : 0);
+
+  const shouldCluster = totalMarkersCount > 30;
+
+  const renderMarkers = (clusterer: any = null) => (
+    <>
+      {/* 1. Marcadores Clientes */}
+      {processedMapData.clientMarkers.map((client: any, idx: number) => (
+        <Marker
+          key={`c-${idx}`}
+          position={{ lat: client.lat, lng: client.lng }}
+          clusterer={clusterer}
+          icon={{
+            path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+            fillColor:
+              client.number === processedMapData.closestSpecialClientKey
+                ? '#002FFF'
+                : '#000000',
+            fillOpacity: 1,
+            strokeWeight: 0,
+            strokeColor: '#fff',
+            scale: 1.3,
+            anchor: new google.maps.Point(12, 24),
+          }}
+          onClick={() => setSelectedMarker({ ...client, type: 'client' })}
+        />
+      ))}
+
+      {/* 2. Marcadores Pedidos */}
+      {processedMapData.pedidoMarkers.map((pedido: any, idx: number) => (
+        <Marker
+          key={`p-${idx}`}
+          position={{ lat: pedido.lat, lng: pedido.lng }}
+          clusterer={clusterer}
+          icon={{
+            path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
+            fillColor: pedido.isMatch ? '#22c55e' : '#ef4444',
+            fillOpacity: 1,
+            strokeWeight: 0,
+            scale: 1.5,
+            anchor: new google.maps.Point(12, 24),
+          }}
+          onClick={() => setSelectedMarker({ ...pedido, type: 'pedido' })}
+        />
+      ))}
+
+      {/* 3. Marcadores No Visitados */}
+      {showNoVisitados &&
+        processedMapData.clientesNoVisitados.map((client: any, idx: number) => (
+          <Marker
+            key={`nv-${idx}`}
+            position={{ lat: client.lat, lng: client.lng }}
+            clusterer={clusterer}
+            icon={{
+              path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
+              fillColor: '#636970',
+              fillOpacity: 0.8,
+              strokeWeight: 1,
+              strokeColor: 'white',
+              scale: 1.2,
+              anchor: new google.maps.Point(12, 24),
+            }}
+            onClick={() =>
+              setSelectedMarker({ ...client, type: 'no-visitado' })
+            }
+          />
+        ))}
+    </>
+  );
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">
@@ -1789,36 +1638,145 @@ export default function PedidosTracker() {
                 <h3 className="text-sm font-semibold text-gray-700">
                   3. Filtros
                 </h3>
-                {/* Filtro de Fecha */}
-                <div>
-                  <label
-                    htmlFor="date-select"
-                    className="flex text-sm font-medium text-gray-700 mb-1 items-center gap-2"
-                  >
-                    <CalendarDays className="w-4 h-4" />
-                    Selecciona una Fecha
+                {/* Seleccion de fecha */}
+                <div className="relative">
+                  <label className="flex text-sm font-medium text-gray-700 mb-1 items-center gap-2">
+                    <CalendarDays className="w-4 h-4" /> Selecciona una Fecha
                   </label>
-                  <select
-                    id="date-select"
-                    value={selectedDate || ''}
-                    onChange={(e) => setSelectedDate(e.target.value || null)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  >
-                    <option value="">Seleccionar</option>
 
-                    {availableDates.map((date) => (
-                      <option key={date} value={date}>
-                        {date === '__ALL_DATES__' ? 'Todas las Fechas' : date}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Boton para abrir el selector de la fecha */}
+                  <div>
+                    <button
+                      onClick={() => {
+                        setIsDateSelectorOpen(true);
+                        setDateSearchTerm('');
+                      }}
+                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 flex items-center justify-between hover:border-blue-500 hover:ring-1 hover:ring-blue-500 transition-all group shadow-sm"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        {/* El icono se pone azul si hay ALGO seleccionado (Todas o Fecha especifica), sino gris */}
+                        <div
+                          className={`p-2 rounded-full ${
+                            selectedDate
+                              ? 'bg-blue-100 text-blue-600'
+                              : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          <Calendar className="w-5 h-5" />
+                        </div>
+                        <div className="flex flex-col items-start truncate">
+                          <span className="text-xs text-gray-500 font-medium">
+                            Filtro actual:
+                          </span>
+                          <span className="text-sm font-bold text-gray-800 truncate">
+                            {/* --- AQUÍ ESTABA EL ERROR DE LÓGICA --- */}
+                            {selectedDate === '__ALL_DATES__'
+                              ? 'Todas las Fechas'
+                              : selectedDate
+                                ? selectedDate
+                                : 'Seleccionar Fecha'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-gray-400 group-hover:text-blue-500">
+                        <Search className="w-4 h-4" />
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Menú Desplegable */}
+                  {isDateSelectorOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-30"
+                        onClick={() => setIsDateSelectorOpen(false)}
+                      />
+
+                      <div className="absolute z-40 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 flex flex-col">
+                        {/* Barra de Búsqueda Interna */}
+                        <div className="p-2 border-b border-gray-100 sticky top-0 bg-white rounded-t-md">
+                          <div className="relative">
+                            <Search className="absolute left-2 top-2.5 w-3 h-3 text-gray-400" />
+                            <input
+                              type="text"
+                              className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded bg-gray-50 focus:outline-none focus:border-blue-500 text-gray-700"
+                              placeholder="Buscar (ej. 2023-10...)"
+                              value={dateSearchTerm}
+                              onChange={(e) =>
+                                setDateSearchTerm(e.target.value)
+                              }
+                              autoFocus
+                            />
+                          </div>
+                        </div>
+
+                        {/* Lista de Opciones */}
+                        <ul className="overflow-auto flex-1 py-1">
+                          {/* Opción Fija: Todas las fechas */}
+                          <li
+                            className={`px-3 py-2 text-sm cursor-pointer flex items-center justify-between hover:bg-blue-50 transition-colors ${
+                              selectedDate === '__ALL_DATES__'
+                                ? 'bg-blue-50 text-blue-700 font-medium'
+                                : 'text-gray-700'
+                            }`}
+                            onClick={() => {
+                              setSelectedDate('__ALL_DATES__');
+                              setIsDateSelectorOpen(false);
+                            }}
+                          >
+                            <span>Todas las Fechas</span>
+                            {/* Solo muestra Check si explícitamente se seleccionó TODAS */}
+                            {selectedDate === '__ALL_DATES__' && (
+                              <Check className="w-4 h-4" />
+                            )}
+                          </li>
+
+                          <div className="border-t border-gray-100 my-1 mx-2"></div>
+
+                          {/* Fechas Filtradas */}
+                          {availableDates
+                            .filter((date) => date !== '__ALL_DATES__')
+                            .filter((date) => date.includes(dateSearchTerm))
+                            .map((date) => (
+                              <li
+                                key={date}
+                                className={`px-3 py-2 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 transition-colors ${
+                                  selectedDate === date
+                                    ? 'bg-blue-50 text-blue-700 font-medium'
+                                    : 'text-gray-700'
+                                }`}
+                                onClick={() => {
+                                  setSelectedDate(date);
+                                  setIsDateSelectorOpen(false);
+                                }}
+                              >
+                                <span>{date}</span>
+                                {selectedDate === date && (
+                                  <Check className="w-4 h-4" />
+                                )}
+                              </li>
+                            ))}
+
+                          {/* Mensaje si no hay resultados */}
+                          {availableDates.filter(
+                            (d) =>
+                              d !== '__ALL_DATES__' &&
+                              d.includes(dateSearchTerm)
+                          ).length === 0 && (
+                            <li className="px-3 py-4 text-xs text-center text-gray-400 italic">
+                              No se encontraron fechas
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </>
+                  )}
                 </div>
 
-                {/* Seleccion de Vendedor*/}
+                {/* Seleccion de un vendedor */}
                 <div>
                   <label className="flex text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                    <UserCheck className="w-4 h-4" />
-                    Selecciona un Vendedor
+                    <UserCheck className="w-4 h-4" /> Selecciona un Vendedor
                   </label>
                   <div className="space-y-2">
                     <div className="flex flex-wrap gap-2 mt-2 mb-2">
@@ -1831,22 +1789,18 @@ export default function PedidosTracker() {
                               : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-sky-100 hover:border-blue-400'
                           }`}
                         >
-                          <Users className="w-4 h-4" />
-                          TODOS LOS VENDEDORES
+                          <Users className="w-4 h-4" /> TODOS LOS VENDEDORES
                         </button>
                       )}
                       {availableVendors.map((vendor) => (
                         <button
                           key={vendor}
                           onClick={() => setSelectedVendor(vendor)}
-                          className={`
-                            px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
-                            ${
-                              selectedVendor === vendor
-                                ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
-                                : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
-                            }
-                          `}
+                          className={`px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out ${
+                            selectedVendor === vendor
+                              ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
+                              : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
+                          }`}
                         >
                           {vendor}
                         </button>
@@ -1855,12 +1809,10 @@ export default function PedidosTracker() {
                   </div>
                 </div>
 
-                {/* Toggle de Modo GPS */}
                 <div className="flex items-center justify-between mt-4">
                   <label htmlFor="toggle-gps-mode" className="flex flex-col">
                     <span className="flex text-sm font-medium text-gray-700 items-center gap-2">
-                      <Crosshair className="w-4 h-4" />
-                      Tipo de GPS
+                      <Crosshair className="w-4 h-4" /> Tipo de GPS
                     </span>
                     <span className="text-xs text-gray-500">
                       Modo:{' '}
@@ -1871,8 +1823,6 @@ export default function PedidosTracker() {
                       )}
                     </span>
                   </label>
-
-                  {/* El Switch */}
                   <button
                     type="button"
                     role="switch"
@@ -1895,24 +1845,19 @@ export default function PedidosTracker() {
                   </button>
                 </div>
 
-                {/* Toggle de Clientes No Visitados */}
                 {selectedVendor != '__ALL__' && (
                   <div className="flex items-center justify-between pt-2">
-                    {/* El título */}
                     <label
                       htmlFor="toggle-no-visitados"
                       className="flex flex-col"
                     >
                       <span className="flex text-sm font-medium text-gray-700 items-center gap-2">
-                        <UserX className="w-4 h-4" />
-                        Clientes No Visitados
+                        <UserX className="w-4 h-4" /> Clientes No Visitados
                       </span>
                       <span className="text-xs text-gray-500">
                         {showNoVisitados ? 'Mostrando en el mapa' : 'Ocultos'}
                       </span>
                     </label>
-
-                    {/* Switch */}
                     <button
                       type="button"
                       role="switch"
@@ -1932,7 +1877,6 @@ export default function PedidosTracker() {
                   </div>
                 )}
 
-                {/* Filtro de Radio */}
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Radio de detección de cliente
@@ -1949,7 +1893,6 @@ export default function PedidosTracker() {
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-
                     <input
                       type="range"
                       min={10}
@@ -1960,7 +1903,6 @@ export default function PedidosTracker() {
                       className="flex-1 accent-blue-600"
                       aria-label="Radio de detección de cliente"
                     />
-
                     <button
                       type="button"
                       aria-label="Aumentar radio"
@@ -1972,7 +1914,6 @@ export default function PedidosTracker() {
                     >
                       <Plus className="w-3 h-3" />
                     </button>
-
                     <span className="text-sm font-semibold text-gray-700 w-16 text-right">
                       {matchRadius} m
                     </span>
@@ -1983,7 +1924,6 @@ export default function PedidosTracker() {
           </div>
         )}
 
-        {/* Iconos colapsados */}
         {sidebarCollapsed && (
           <div className="flex-1 flex flex-col items-center justify-center space-y-6 py-8">
             <button
@@ -1999,7 +1939,6 @@ export default function PedidosTracker() {
 
       {/* MAIN */}
       <main className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
         <div className="bg-white shadow-sm px-6 py-3 flex items-center justify-between border-b border-gray-200">
           <h2 className="text-md font-semibold text-gray-800">
             {isLoading
@@ -2020,8 +1959,7 @@ export default function PedidosTracker() {
                 onClick={downloadPedidosExcel}
                 className="sm:flex items-center text-sm font-medium justify-center px-4 py-2 gap-2 text-white bg-green-500 hover:text-green-600 hover:bg-green-100 rounded-lg transition-all"
               >
-                <Download className="w-4 h-4" />
-                Descargar Excel
+                <Download className="w-4 h-4" /> Descargar Excel
               </button>
               <button
                 onClick={() => setShowAnalytics(!showAnalytics)}
@@ -2049,38 +1987,262 @@ export default function PedidosTracker() {
         </div>
 
         {/* Contenido (Mapa) */}
-        <div className="flex-1 overflow-hidden bg-gray-50">
-          {selectedDate && selectedVendor !== undefined && !isLoading ? (
-            processedMapData.clientMarkers.length > 0 ||
-            processedMapData.pedidoMarkers.length > 0 ? (
-              <iframe
-                srcDoc={generateMapHTML()}
-                className="w-full h-full border-0"
-                title="Mapa de Pedidos"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center">
-                  <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">
-                    No se encontraron datos
-                  </p>
-                  <p className="text-gray-400 text-sm mt-2">
-                    No hay pedidos para esta selección en esta fecha.
+        <div className="flex-1 overflow-hidden bg-gray-50 relative">
+          {isLoading ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+              <p>Procesando datos...</p>
+            </div>
+          ) : selectedVendor === '__ALL__' &&
+            selectedDate === '__ALL_DATES__' ? (
+            /* CASO: TODOS LOS VENDEDORES (Mapa oculto) */
+            <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 p-8">
+              <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-lg text-center">
+                <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 px-2">
+                  {/* <MapPinOff className="w-10 h-10 text-blue-600" /> */}
+                  <FontAwesomeIcon
+                    icon={faMapLocationDot}
+                    className="min-w-14 min-h-14 text-blue-600"
+                  />
+                </div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-3">
+                  Vista de Mapa Deshabilitada
+                </h3>
+                <p className="text-gray-600 mb-5 leading-relaxed">
+                  Se seleccionó <strong>"Todos los Vendedores"</strong> y{' '}
+                  <strong>"Todas las Fechas"</strong>. Debido a la gran cantidad
+                  de puntos, el mapa se desactivó para evitar problemas de
+                  rendimiento.
+                </p>
+                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800">
+                  <p className="font-medium flex items-center justify-center gap-2">
+                    <ChartNoAxesCombined className="w-4 h-4" />
+                    Aún se pueden ver las estadísticas y descargar el reporte.
                   </p>
                 </div>
+                <p className="text-xs text-gray-500 mt-6">
+                  Para ver el mapa, selecciona un vendedor específico.
+                </p>
+              </div>
+            </div>
+          ) : selectedDate &&
+            selectedVendor !== undefined &&
+            (processedMapData.clientMarkers.length > 0 ||
+              processedMapData.pedidoMarkers.length > 0) ? (
+            /* CASO: UN VENDEDOR (Mapa visible) */
+            isLoaded ? (
+              <GoogleMap
+                mapContainerStyle={mapContainerStyle}
+                center={defaultCenter}
+                zoom={5}
+                onLoad={onLoad}
+                onUnmount={onUnmount}
+                options={{
+                  mapTypeControl: false,
+                  streetViewControl: true,
+                  fullscreenControl: false,
+                  gestureHandling: 'greedy',
+                }}
+              >
+                {shouldCluster ? (
+                  <MarkerClusterer options={clustererOptions}>
+                    {(clusterer) => renderMarkers(clusterer)}
+                  </MarkerClusterer>
+                ) : (
+                  renderMarkers(null)
+                )}
+
+                {/* VENTANAS DE INFORMACIÓN (ESTILO RESTAURADO) */}
+                {selectedMarker && (
+                  <InfoWindow
+                    position={{
+                      lat: selectedMarker.lat,
+                      lng: selectedMarker.lng,
+                    }}
+                    onCloseClick={() => setSelectedMarker(null)}
+                    options={{
+                      pixelOffset: new window.google.maps.Size(0, -25),
+                    }}
+                  >
+                    <div className="font-sans text-sm">
+                      {/* CLIENTE */}
+                      {selectedMarker.type === 'client' && (
+                        <div className="pr-4">
+                          <h3 className="text-[15px] font-bold mb-2 flex items-center gap-2 text-black">
+                            <FontAwesomeIcon icon={faHouse} /> Cliente
+                          </h3>
+                          <div className="text-[#059669] mb-2">
+                            <p className="font-medium m-0 text-xs">
+                              <strong># {selectedMarker.number}</strong>
+                            </p>
+                            <p className="font-bold m-0 text-xs">
+                              {toTitleCase(selectedMarker.name)}
+                            </p>
+                            {selectedMarker.branchName && (
+                              <p className="text-[#2563eb] font-bold text-xs m-0">
+                                {selectedMarker.branchName}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-[#374151] font-medium text-xs mt-1">
+                            {selectedMarker.lat.toFixed(6)},{' '}
+                            {selectedMarker.lng.toFixed(6)}
+                          </p>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${selectedMarker.lat},${selectedMarker.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#1a73e8] font-semibold text-xs hover:underline block mb-2"
+                          >
+                            View on Google Maps
+                          </a>
+                          <div className="pt-1 pb-4 border-t border-gray-200 text-xs text-black">
+                            <p className="m-0 font-semibold">
+                              Vendedor: {selectedMarker.vendor}
+                            </p>
+                            <p className="m-0 font-semibold">
+                              Pedidos: {selectedMarker.totalPedidos}
+                            </p>
+                            <p className="m-0 font-semibold">
+                              MXN:{' '}
+                              {selectedMarker.totalMXN.toLocaleString('es-MX', {
+                                style: 'currency',
+                                currency: 'MXN',
+                              })}
+                            </p>
+                            <p className="m-0 font-semibold">
+                              USD:{' '}
+                              {selectedMarker.totalUS.toLocaleString('en-US', {
+                                style: 'currency',
+                                currency: 'USD',
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PEDIDO */}
+                      {selectedMarker.type === 'pedido' && (
+                        <div className="pr-4">
+                          <h3 className="text-[15px] font-bold mb-1 flex items-center gap-2 text-black">
+                            <FontAwesomeIcon icon={faCartShopping} /> Pedido #
+                            {selectedMarker.number}
+                          </h3>
+                          <div className="mb-2">
+                            <strong className="block text-xs font-bold text-black">
+                              #{selectedMarker.clienteKey}
+                            </strong>
+                            <p className="text-[#374151] text-xs font-bold m-0">
+                              Cliente: {toTitleCase(selectedMarker.clienteName)}
+                            </p>
+                            <p className="text-[#374151] text-xs font-medium m-0">
+                              Vendedor:{' '}
+                              <strong>{selectedMarker.vendedor}</strong>
+                            </p>
+                          </div>
+                          <div className="mb-1">
+                            {selectedMarker.isMatch ? (
+                              <div className="text-[#059669] font-bold text-xs flex items-center gap-1">
+                                <MapPinCheckInside className="w-3 h-3" /> En
+                                ubicación
+                              </div>
+                            ) : (
+                              <div className="text-[#FC2121] font-bold text-xs flex items-center gap-1">
+                                <MapPinXInside className="w-3 h-3" /> Fuera de
+                                ubicación
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-[#374151] font-medium text-xs mt-2">
+                            {selectedMarker.lat.toFixed(6)},{' '}
+                            {selectedMarker.lng.toFixed(6)}
+                          </p>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${selectedMarker.lat},${selectedMarker.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#1a73e8] text-xs font-semibold hover:underline block mb-2"
+                          >
+                            View on Google Maps
+                          </a>
+                          <div className="pt-1 pb-4 border-t border-gray-200 text-xs font-semibold text-black">
+                            <p className="m-0">
+                              MXN:{' '}
+                              {selectedMarker.impMXN.toLocaleString('es-MX', {
+                                style: 'currency',
+                                currency: 'MXN',
+                              })}
+                            </p>
+                            <p className="m-0">
+                              USD:{' '}
+                              {selectedMarker.impUS.toLocaleString('en-US', {
+                                style: 'currency',
+                                currency: 'USD',
+                              })}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* NO VISITADO */}
+                      {selectedMarker.type === 'no-visitado' && (
+                        <div className="pr-4">
+                          <h3 className="text-[14px] font-bold mb-2 flex items-center gap-2 text-[#212121]">
+                            <UserX className="w-4 h-4" /> Cliente No Visitado
+                          </h3>
+                          <div className="text-[#212121] mb-2">
+                            <p className="font-medium m-0 text-xs">
+                              <strong># {selectedMarker.number}</strong>
+                            </p>
+                            <p className="font-bold m-0 text-xs">
+                              {toTitleCase(selectedMarker.name)}
+                            </p>
+                            {selectedMarker.branchName && (
+                              <p className="text-[#2563eb] font-semibold text-xs m-0">
+                                {selectedMarker.branchName}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-[#374151] font-medium text-xs mt-2">
+                            {selectedMarker.lat.toFixed(6)},{' '}
+                            {selectedMarker.lng.toFixed(6)}
+                          </p>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${selectedMarker.lat},${selectedMarker.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-[#1a73e8] text-xs font-semibold hover:underline block mb-2"
+                          >
+                            View on Google Maps
+                          </a>
+                          <div className="pt-1 pb-4 border-t border-gray-200 text-xs font-semibold text-black">
+                            <p className="m-0">
+                              Vendedor: {selectedMarker.vendor}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </InfoWindow>
+                )}
+              </GoogleMap>
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                Cargando mapa...
               </div>
             )
           ) : (
             <div className="w-full h-full flex items-center justify-center">
               <div className="text-center">
-                <Coins className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <MapPin className="w-16 h-16 text-gray-300 mx-auto mb-4" />
                 <p className="text-gray-500 text-lg">
-                  {isLoading ? 'Cargando...' : 'Selecciona archivos y filtros'}
+                  {selectedVendor && !isLoading
+                    ? 'No se encontraron datos'
+                    : 'Selecciona archivos y filtros'}
                 </p>
-                {!isLoading && (
+                {selectedVendor && !isLoading && (
                   <p className="text-gray-400 text-sm mt-2">
-                    Carga un archivo de pedidos y de clientes.
+                    No hay pedidos para esta selección en esta fecha.
                   </p>
                 )}
               </div>
@@ -2095,7 +2257,6 @@ export default function PedidosTracker() {
               Análisis y datos
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {/* Total Pedidos */}
               <div className="bg-blue-50 text-center rounded-lg p-4 border border-blue-200 text-blue-800">
                 <div className="justify-center flex items-center gap-2 mb-2">
                   <Package className="w-5 h-5 text-blue-600 animate-pulse" />
@@ -2106,9 +2267,7 @@ export default function PedidosTracker() {
                 </p>
               </div>
 
-              {/* % Match */}
               <div className="grid grid-cols-2">
-                {/* Con coincidencia */}
                 <div className="bg-green-50 text-center rounded-l-lg p-3 border-y border-l border-green-200 text-green-800">
                   <div className="justify-center flex items-center gap-2 mb-2">
                     <MapPinCheckInside className="w-5 h-5 text-green-600 animate-pulse" />
@@ -2126,7 +2285,6 @@ export default function PedidosTracker() {
                     </p>
                   </div>
                 </div>
-                {/* Sin coincidencia */}
                 <div className="bg-red-50 text-center rounded-r-lg p-3 border-y border-r border-red-200 text-red-800">
                   <div className="justify-center flex items-center gap-2 mb-2">
                     <MapPinXInside className="w-6 h-6 text-ref-600 animate-pulse" />
@@ -2148,10 +2306,8 @@ export default function PedidosTracker() {
                 </div>
               </div>
 
-              {/* Clientes (Visitados vs. No Visitados) */}
               {selectedVendor != '__ALL__' && (
                 <div className="grid grid-cols-2">
-                  {/* Visitados */}
                   <div className="bg-yellow-50 text-center rounded-l-lg p-4 border-y border-l border-yellow-200 text-yellow-800">
                     <div className="justify-center flex items-center gap-2 mb-2">
                       <Users className="w-5 h-5 text-yellow-600 animate-pulse" />
@@ -2163,8 +2319,6 @@ export default function PedidosTracker() {
                       </p>
                     </div>
                   </div>
-
-                  {/* No Visitados */}
                   <div className="bg-orange-50 text-center rounded-r-lg pt-4 2xl:p-4 border-y border-r border-orange-200 text-orange-800">
                     <div className="justify-center flex items-center gap-2 mb-2">
                       <UserX className="w-5 h-5 text-orange-600 animate-pulse" />
@@ -2179,7 +2333,6 @@ export default function PedidosTracker() {
                 </div>
               )}
 
-              {/* Clientes */}
               {selectedVendor === '__ALL__' && (
                 <div className="bg-yellow-50 text-center rounded-lg p-4 border border-yellow-200 text-yellow-800">
                   <div className="justify-center flex items-center gap-2 mb-2">
@@ -2192,7 +2345,6 @@ export default function PedidosTracker() {
                 </div>
               )}
 
-              {/* Ventas */}
               <div className="grid grid-cols-2">
                 <div className="bg-sky-50 text-center rounded-l-lg border-y border-l border-sky-200 text-sky-800">
                   <div className="justify-center px-4 pt-4 flex items-center gap-2 mb-2">
@@ -2221,14 +2373,10 @@ export default function PedidosTracker() {
               </div>
             </div>
 
-            {/* SECCIÓN DE GRÁFICAS */}
             <div className="mt-8 flex flex-wrap lg:flex-nowrap justify-center gap-8">
-              {/* Gráfica 1: Dona*/}
               <div className="bg-white p-4 rounded-lg border border-gray-300 w-full max-w-md">
                 <Doughnut options={doughnutOptions} data={doughnutData} />
               </div>
-
-              {/* Gráfica 2: Barras ('TODOS') */}
               {selectedVendor === '__ALL__' &&
                 pedidosPorVendedor &&
                 pedidosPorVendedor.length > 0 && (
@@ -2241,19 +2389,13 @@ export default function PedidosTracker() {
         )}
       </main>
 
-      {/* ERROR TOAST */}
       {error && (
         <div
-          className={`
-            fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg 
-            flex items-center gap-3 max-w-md z-50
-            transition-all duration-500 ease-in-out
-            ${
-              isToastVisible
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 translate-x-10'
-            }
-          `}
+          className={`fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 max-w-md z-50 transition-all duration-500 ease-in-out ${
+            isToastVisible
+              ? 'opacity-100 translate-x-0'
+              : 'opacity-0 translate-x-10'
+          }`}
         >
           <XCircle className="w-5 h-5 flex-shrink-0" />
           <p className="text-sm">{error}</p>
