@@ -1,12 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState, useRef, useEffect } from 'react'; // <-- Se añadió useRef y useEffect
+import { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import {
   Upload,
-  Users,
   Download,
   AlertCircle,
-  UserCheck,
   CalendarDays,
   Users2,
   Info,
@@ -19,15 +17,17 @@ import {
   Minus,
   ChartNoAxesCombined,
   ChartBar,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
+import { useClients } from '../context/ClientContext';
 
 import {
   processTripData,
   parseVehicleInfo,
   calculateDistance,
   formatDuration,
-  processMasterClientFile,
   type Client,
   type ProcessedTrip,
   type VehicleInfo,
@@ -122,17 +122,17 @@ const getDayOfWeek = (dateString: string): string => {
 };
 
 export default function ReportesView() {
+  const {
+    masterClients,
+    loading: isLoadingClients,
+    refreshClients,
+  } = useClients();
   const [vehicleFiles, setVehicleFiles] = useState<File[]>([]);
-  const [clientFile, setClientFile] = useState<File | null>(null);
   const [reportData, setReportData] =
     usePersistentState<WeeklyReportData | null>('rv_reportData', null);
   const [nonVisitedClients, setNonVisitedClients] = usePersistentState<
     Client[]
   >('rv_nonVisitedClients', []);
-  const [clientData] = usePersistentState<Client[] | null>(
-    'rv_clientData',
-    null
-  );
   const [minStopDuration, setMinStopDuration] = usePersistentState<number>(
     'rv_minStopDuration',
     5
@@ -141,22 +141,12 @@ export default function ReportesView() {
     'rv_clientRadius',
     50
   );
-  const [vehicleFileNames, setVehicleFileNames] = usePersistentState<string[]>(
-    'rv_vehicleFileNames',
-    []
-  );
+  const [vehicleFileNames, setVehicleFileNames] = useState<string[]>([]);
 
-  const [clientFileName, setClientFileName] = usePersistentState<string | null>(
-    'rv_clientFileName',
-    null
-  );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  const [allClientsFromFile, setAllClientsFromFile] = usePersistentState<
-    Client[] | null
-  >('rv_allClients', null);
   const [availableVendors, setAvailableVendors] = usePersistentState<string[]>(
     'rv_vendors',
     []
@@ -172,6 +162,18 @@ export default function ReportesView() {
   const [isToastVisible, setIsToastVisible] = useState(false);
   const toastTimerRef = useRef<number | null>(null);
   const [showAllNonVisited, setShowAllNonVisited] = useState(false);
+
+  // ACTUALIZAR VENDEDORES DISPONIBLES CUANDO LLEGAN LOS CLIENTES DEL CONTEXTO
+  useEffect(() => {
+    if (masterClients && masterClients.length > 0) {
+      const vendors = Array.from(
+        new Set(masterClients.map((c) => c.vendor))
+      ).sort();
+      if (JSON.stringify(vendors) !== JSON.stringify(availableVendors)) {
+        setAvailableVendors(vendors);
+      }
+    }
+  }, [masterClients, availableVendors, setAvailableVendors]);
 
   useEffect(() => {
     if (toastTimerRef.current) {
@@ -216,6 +218,11 @@ export default function ReportesView() {
       reader.onerror = (error) => reject(error);
       reader.readAsBinaryString(file);
     });
+  };
+
+  const handleSelection = (selected: string) => {
+    const newMode = availableVendors.includes(selected) ? 'vendor' : 'driver';
+    setSelection({ mode: newMode, value: selected });
   };
 
   // Funcion para manejar el cambio en los archivos de viaje
@@ -290,43 +297,6 @@ export default function ReportesView() {
     setVehicleFileNames(validFiles.map((f) => f.name));
   };
 
-  // Funcion para manejar el cambio en el archivo de clientes
-  const handleClientFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] || null;
-    setClientFile(file);
-    setClientFileName(file?.name || null);
-    setReportData(null);
-    setNonVisitedClients([]);
-    setAllClientsFromFile(null);
-    setAvailableVendors([]);
-    setSelection({ mode: 'vendor', value: null });
-    setError(null);
-    setWarnings([]);
-    setReportMetadata(null);
-
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          if (!event.target?.result)
-            throw new Error('No se pudo leer el archivo.');
-          const bstr = event.target.result as string;
-          const wb = XLSX.read(bstr, { type: 'binary' });
-          const wsname = wb.SheetNames[0];
-          const ws = wb.Sheets[wsname];
-          const { clients, vendors } = processMasterClientFile(ws);
-          setAllClientsFromFile(clients);
-          setAvailableVendors(vendors);
-        } catch (err: any) {
-          setError(`Error al procesar archivo de clientes: ${err.message}`);
-          setAllClientsFromFile(null);
-          setAvailableVendors([]);
-        }
-      };
-      reader.readAsBinaryString(file);
-    }
-  };
-
   // Funcion para procesar un solo archivo de viaje
   const processSingleTripFile = async (file: File): Promise<TripFileResult> => {
     const bstr = await readFileAsBinary(file);
@@ -393,11 +363,26 @@ export default function ReportesView() {
       throw new Error(`No hay eventos con coordenadas en: ${file.name}`);
 
     try {
+      let clientsForProcessing: Client[] = [];
+      if (masterClients) {
+        if (selection.mode === 'driver') {
+          clientsForProcessing = masterClients;
+        } else {
+          const vendorClients = masterClients.filter(
+            (c) => c.vendor === selection.value && !c.isVendorHome
+          );
+          const vendorHome = masterClients.find(
+            (c) => c.isVendorHome && c.vendorHomeInitial === selection.value
+          );
+          clientsForProcessing = [...vendorClients];
+          if (vendorHome) clientsForProcessing.push(vendorHome);
+        }
+      }
       const processedTrip = processTripData(
         data,
         'current',
         vehicleInfo.fecha,
-        clientData
+        clientsForProcessing
       );
       return { vehicleInfo, processedTrip, fileName: file.name };
     } catch (error: any) {
@@ -461,7 +446,7 @@ export default function ReportesView() {
       );
       return;
     }
-    if (vehicleFiles.length === 0 || !clientFile) {
+    if (vehicleFiles.length === 0 || !masterClients) {
       setError(
         'Por favor, sube los archivos de viajes y el archivo de clientes.'
       );
@@ -484,10 +469,16 @@ export default function ReportesView() {
     try {
       let clientsForReport: Client[] = [];
       if (selection.mode === 'driver') {
-        clientsForReport = allClientsFromFile || [];
+        clientsForReport = masterClients || [];
       } else {
-        clientsForReport =
-          allClientsFromFile?.filter((c) => c.vendor === selection.value) || [];
+        const filtered = masterClients.filter(
+          (c) => c.vendor === selection.value && !c.isVendorHome
+        );
+        const home = masterClients.find(
+          (c) => c.isVendorHome && c.vendorHomeInitial === selection.value
+        );
+        clientsForReport = [...filtered];
+        if (home) clientsForReport.push(home);
       }
 
       if (clientsForReport.length === 0) {
@@ -1194,177 +1185,179 @@ export default function ReportesView() {
                 />
               </label>
             </div>
-            <div>
-              <h2 className="text-sm font-semibold text-gray-700 mb-2">
-                2. Cargar Archivo de Clientes
-              </h2>
-              <label
-                htmlFor="client-file"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100"
-              >
-                <Users className="w-8 h-8 mb-2 text-green-500 motion-safe:animate-bounce" />
-                {clientFileName ? (
-                  <span className="font-semibold text-green-700 text-xs px-2 text-center">
-                    {clientFileName}
-                  </span>
-                ) : (
-                  <span className="text-xs font-semibold text-green-600">
-                    Seleccionar archivo...
-                  </span>
-                )}
-                <input
-                  id="client-file"
-                  type="file"
-                  className="hidden"
-                  onChange={handleClientFileChange}
-                  accept=".xlsx, .xls"
-                />
-              </label>
-            </div>
 
-            {/* Selección de Vendedor o Chofer */}
-            {availableVendors.length > 0 && (
+            {/* Selección de Vendedor */}
+            {vehicleFiles.length > 0 && availableVendors.length > 0 && (
               <div>
-                <label className="text-sm font-medium text-gray-700 flex items-center gap-2 mb-2">
-                  <UserCheck className="w-4 h-4" />
-                  Selecciona un vendedor:
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  2. Seleccionar Vendedor
                 </label>
-                <div className="flex flex-wrap gap-2 mb-4">
-                  {availableVendors.map((vendor) => (
-                    <button
-                      key={vendor}
-                      onClick={() =>
-                        setSelection({ mode: 'vendor', value: vendor })
-                      }
-                      className={`px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out ${
-                        selection.mode === 'vendor' &&
-                        selection.value === vendor
-                          ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
-                          : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
-                      }`}
-                    >
-                      {vendor}
-                    </button>
-                  ))}
+                {/* INDICADOR DE CARGA AUTOMATICA DE CLIENTES (DESDE SQL) */}
+                <div className="bg-green-50 p-2 rounded border border-green-200 mb-4 flex justify-between items-center">
+                  {masterClients && masterClients.length > 0 ? (
+                    <div className="flex items-center gap-2 text-green-700">
+                      <Database className="w-4 h-4" />
+                      <span className="text-xs font-semibold">
+                        {masterClients.length} clientes sincronizados (SQL)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-orange-600 flex items-center gap-2">
+                      {isLoadingClients ? 'Cargando...' : 'Sin conexión a BD'}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => refreshClients(true)}
+                    className="text-gray-500 hover:text-blue-600 transition-colors"
+                    title="Recargar clientes desde servidor"
+                    disabled={isLoadingClients}
+                  >
+                    <RefreshCw
+                      className={`w-3 h-3 ${isLoadingClients ? 'animate-spin' : ''}`}
+                    />
+                  </button>
                 </div>
-                <button
-                  key="driver-mode"
-                  onClick={() =>
-                    setSelection({ mode: 'driver', value: 'CHOFER' })
-                  }
-                  className={`w-full px-3 py-2 text-xs font-medium rounded flex items-center justify-center gap-2 transition-all ${
-                    selection.mode === 'driver'
-                      ? 'bg-red-500 text-white border-red-500 shadow-md transform scale-105'
-                      : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-red-100'
-                  }`}
-                >
-                  <Truck className="w-4 h-4" />
-                  CHOFER
-                </button>
+
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {availableVendors.map((vendor) => (
+                      <button
+                        key={vendor}
+                        onClick={() => handleSelection(vendor)}
+                        className={`
+                            px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out
+                            ${
+                              selection.value === vendor
+                                ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
+                                : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
+                            }
+                          `}
+                      >
+                        {vendor}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => handleSelection('chofer')}
+                    className={`w-full px-3 py-2 text-xs font-medium rounded border flex items-center justify-center gap-2 transition-all ${
+                      selection.value === 'chofer'
+                        ? 'bg-red-500 text-white border-red-500 shadow-md transform scale-105'
+                        : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-red-100 hover:border-red-400'
+                    }`}
+                  >
+                    <Truck className="w-4 h-4" />
+                    MODO CHOFER
+                  </button>
+                </div>
               </div>
             )}
 
             {/* Configuración del Reporte */}
-            <div className="space-y-3">
-              <h2 className="text-sm font-semibold text-gray-700 mb-3">
-                3. Configurar Reporte
-              </h2>
+            {vehicleFiles.length > 0 && availableVendors.length > 0 && (
               <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Duración mínima de paradas
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label="Disminuir duración"
-                      onClick={() =>
-                        setMinStopDuration((prev) => Math.max(1, prev - 1))
-                      }
-                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
-                      disabled={minStopDuration <= 1}
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
+                <h2 className="text-sm font-semibold text-gray-700 mb-3">
+                  3. Configurar Reporte
+                </h2>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Duración mínima de paradas
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="Disminuir duración"
+                        onClick={() =>
+                          setMinStopDuration((prev) => Math.max(1, prev - 1))
+                        }
+                        className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                        disabled={minStopDuration <= 1}
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
 
-                    <input
-                      type="range"
-                      min={1}
-                      max={60}
-                      step={1}
-                      value={minStopDuration}
-                      onChange={(e) =>
-                        setMinStopDuration(Number(e.target.value))
-                      }
-                      className="flex-1 accent-blue-600"
-                      aria-label="Duración mínima de paradas"
-                    />
+                      <input
+                        type="range"
+                        min={1}
+                        max={60}
+                        step={1}
+                        value={minStopDuration}
+                        onChange={(e) =>
+                          setMinStopDuration(Number(e.target.value))
+                        }
+                        className="flex-1 accent-blue-600"
+                        aria-label="Duración mínima de paradas"
+                      />
 
-                    <button
-                      type="button"
-                      aria-label="Aumentar duración"
-                      onClick={() =>
-                        setMinStopDuration((prev) => Math.min(120, prev + 1))
-                      }
-                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
-                      disabled={minStopDuration >= 120}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
+                      <button
+                        type="button"
+                        aria-label="Aumentar duración"
+                        onClick={() =>
+                          setMinStopDuration((prev) => Math.min(120, prev + 1))
+                        }
+                        className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                        disabled={minStopDuration >= 120}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
 
-                    <span className="text-sm font-semibold text-gray-700 w-16 text-right">
-                      {minStopDuration} min
-                    </span>
+                      <span className="text-sm font-semibold text-gray-700 w-16 text-right">
+                        {minStopDuration} min
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Radio de detección de cliente
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label="Disminuir radio"
-                      onClick={() =>
-                        setClientRadius((prev) => Math.max(10, prev - 10))
-                      }
-                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
-                      disabled={clientRadius <= 10}
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Radio de detección de cliente
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label="Disminuir radio"
+                        onClick={() =>
+                          setClientRadius((prev) => Math.max(10, prev - 10))
+                        }
+                        className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                        disabled={clientRadius <= 10}
+                      >
+                        <Minus className="w-3 h-3" />
+                      </button>
 
-                    <input
-                      type="range"
-                      min={10}
-                      max={500}
-                      step={10}
-                      value={clientRadius}
-                      onChange={(e) => setClientRadius(Number(e.target.value))}
-                      className="flex-1 accent-blue-600"
-                      aria-label="Radio de detección de cliente"
-                    />
+                      <input
+                        type="range"
+                        min={10}
+                        max={500}
+                        step={10}
+                        value={clientRadius}
+                        onChange={(e) =>
+                          setClientRadius(Number(e.target.value))
+                        }
+                        className="flex-1 accent-blue-600"
+                        aria-label="Radio de detección de cliente"
+                      />
 
-                    <button
-                      type="button"
-                      aria-label="Aumentar radio"
-                      onClick={() =>
-                        setClientRadius((prev) => Math.min(1000, prev + 10))
-                      }
-                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
-                      disabled={clientRadius >= 1000}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
+                      <button
+                        type="button"
+                        aria-label="Aumentar radio"
+                        onClick={() =>
+                          setClientRadius((prev) => Math.min(1000, prev + 10))
+                        }
+                        className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
+                        disabled={clientRadius >= 1000}
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
 
-                    <span className="text-sm font-semibold text-gray-700 w-16 text-right">
-                      {clientRadius} m
-                    </span>
+                      <span className="text-sm font-semibold text-gray-700 w-16 text-right">
+                        {clientRadius} m
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1376,7 +1369,7 @@ export default function ReportesView() {
               disabled={
                 isLoading ||
                 vehicleFiles.length === 0 ||
-                !clientFile ||
+                !masterClients ||
                 !selection.value
               }
               className="w-full flex items-center justify-center px-6 py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed transform hover:scale-105"

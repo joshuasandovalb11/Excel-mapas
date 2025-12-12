@@ -15,9 +15,12 @@ import {
   Route,
   ChartBar,
   CalendarClock,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { useIndexedDBState } from '../hooks/useIndexedDBState';
+import { useClients } from '../context/ClientContext';
 
 import { parseISO, format as formatDate } from 'date-fns';
 import { es } from 'date-fns/locale';
@@ -29,7 +32,6 @@ import {
   parseVehicleInfo,
   calculateDistance,
   formatDuration,
-  processMasterClientFile,
   type ProcessedTrip,
   type VehicleInfo,
   type Client,
@@ -46,11 +48,11 @@ export default function VehicleTracker() {
   const [allTripsData, setAllTripsData] = useIndexedDBState<
     Record<string, TripStorage>
   >('vt_allTripsData_db', {});
-
-  const [allClientsFromFile, setAllClientsFromFile] = useIndexedDBState<
-    Client[] | null
-  >('vt_allClients_db', null);
-
+  const {
+    masterClients,
+    loading: isLoadingClients,
+    refreshClients,
+  } = useClients();
   const [tripData, setTripData] = useState<ProcessedTrip | null>(null);
   const [rawTripData, setRawTripData] = useState<any[] | null>(null);
   const [vehicleInfo, setVehicleInfo] = useState<VehicleInfo | null>(null);
@@ -62,10 +64,6 @@ export default function VehicleTracker() {
   );
   const [fileName, setFileName] = usePersistentState<string | null>(
     'vt_fileName',
-    null
-  );
-  const [clientFileName, setClientFileName] = usePersistentState<string | null>(
-    'vt_clientFileName',
     null
   );
   const [minStopDuration, setMinStopDuration] = usePersistentState<number>(
@@ -100,6 +98,43 @@ export default function VehicleTracker() {
     'config'
   );
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
+
+  // ACTUALIZAR VENDEDORES DISPONIBLES CUANDO LLEGAN LOS CLIENTES DEL CONTEXTO
+  useEffect(() => {
+    if (masterClients && masterClients.length > 0) {
+      const vendors = Array.from(
+        new Set(masterClients.map((c) => c.vendor))
+      ).sort();
+      if (vendors.length !== availableVendors.length) {
+        setAvailableVendors(vendors);
+      }
+    }
+  }, [masterClients, availableVendors.length, setAvailableVendors]);
+
+  // Restaurar la vista de clientes al regresar a la pestaña
+  useEffect(() => {
+    if (masterClients && masterClients.length > 0 && selection.value) {
+      if (selection.mode === 'driver') {
+        setClientData(masterClients);
+      } else {
+        const filteredClients = masterClients.filter(
+          (client) => client.vendor === selection.value && !client.isVendorHome
+        );
+
+        const vendorHome = masterClients.find(
+          (client) =>
+            client.isVendorHome && client.vendorHomeInitial === selection.value
+        );
+
+        const finalClientList = [...filteredClients];
+        if (vendorHome) {
+          finalClientList.push(vendorHome);
+        }
+
+        setClientData(finalClientList);
+      }
+    }
+  }, [masterClients, selection.value, selection.mode, setClientData]);
 
   // Efecto para establecer si hay match con respecto a la ubicacion y al cliente
   useEffect(() => {
@@ -184,7 +219,6 @@ export default function VehicleTracker() {
     };
   }, [error]);
 
-  // Función para cerrar el toast manualmente
   const handleCloseToast = () => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current);
@@ -203,7 +237,7 @@ export default function VehicleTracker() {
           rawTripData,
           viewMode,
           vehicleInfo?.fecha || '',
-          clientData
+          clientData // Pasamos los datos completos
         );
         setTripData(processed);
       } catch (err) {
@@ -239,7 +273,7 @@ export default function VehicleTracker() {
     setFileName,
   ]);
 
-  // Funcion para leer el archivo EXCEL para las rutas
+  // Funcion para leer el archivo EXCEL para las rutas (GPS)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -270,6 +304,7 @@ export default function VehicleTracker() {
                 header: 1,
                 defval: '',
               });
+              // ... lógica de detección de headers ...
               const expectedHeaders = [
                 'latitud',
                 'longitud',
@@ -315,23 +350,19 @@ export default function VehicleTracker() {
                 });
 
                 if (!speedKey) return false;
-
                 const val = row[speedKey];
-
                 if (typeof val === 'number') return val > 0;
-
                 if (typeof val === 'string') {
                   const clean = val.replace(/[^\d.,-]/g, '').replace(',', '.');
                   const speed = parseFloat(clean);
                   return !isNaN(speed) && speed > 0;
                 }
-
                 return false;
               });
 
               if (!hasMovement) {
                 throw new Error(
-                  `El archivo NO tiene movimiento (Velocidad 0 km/h en todo el viaje): ${file.name}`
+                  `El archivo NO tiene movimiento (Velocidad 0 km/h): ${file.name}`
                 );
               }
 
@@ -409,96 +440,10 @@ export default function VehicleTracker() {
     }
   };
 
-  // FUNCIÓN PARA PROCESAR EL ARCHIVO MAESTRO DE CLIENTES
-  const handleClientFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setClientFileName(file.name);
-    setError(null);
-    setClientData(null);
-    setSelection({ mode: 'vendor', value: null });
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (!event.target?.result)
-          throw new Error('No se pudo leer el archivo.');
-        const bstr = event.target.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-
-        const { clients, vendors } = processMasterClientFile(ws);
-
-        setAllClientsFromFile(clients);
-        setAvailableVendors(vendors);
-      } catch (err) {
-        console.error(err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'Ocurrió un error crítico al procesar el archivo de clientes.'
-        );
-        setAllClientsFromFile(null);
-        setAvailableVendors([]);
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
   // FUNCIÓN PARA MANEJAR LA SELECCIÓN DE VENDEDOR O MODO CHOFER
   const handleSelection = (selected: string) => {
     const newMode = availableVendors.includes(selected) ? 'vendor' : 'driver';
     setSelection({ mode: newMode, value: selected });
-
-    if (allClientsFromFile) {
-      if (newMode === 'driver') {
-        setClientData(allClientsFromFile);
-      } else {
-        const filteredClients = allClientsFromFile.filter(
-          (client) => client.vendor === selected && !client.isVendorHome
-        );
-
-        const allHomes = allClientsFromFile.filter((c) => c.isVendorHome);
-        console.log(
-          'Todas las casas disponibles:',
-          allHomes.map((h) => ({
-            key: h.key,
-            name: h.name,
-            vendor: h.vendor,
-            vendorHomeInitial: h.vendorHomeInitial,
-          }))
-        );
-
-        const vendorHome = allClientsFromFile.find(
-          (client) =>
-            client.isVendorHome && client.vendorHomeInitial === selected
-        );
-
-        console.log(
-          'Casa encontrada:',
-          vendorHome
-            ? {
-                key: vendorHome.key,
-                name: vendorHome.name,
-                vendor: vendorHome.vendor,
-                vendorHomeInitial: vendorHome.vendorHomeInitial,
-              }
-            : 'NINGUNA'
-        );
-
-        const finalClientList = [...filteredClients];
-        if (vendorHome) {
-          finalClientList.push(vendorHome);
-          console.log('✓ Casa agregada a la lista final');
-        } else {
-          console.warn('✗ No se agregó ninguna casa');
-        }
-
-        setClientData(finalClientList);
-      }
-    }
   };
 
   // Funcion para formatear fechas en Excel
@@ -542,7 +487,7 @@ export default function VehicleTracker() {
 
     let clientsForReport: Client[] = [];
     if (selection.mode === 'driver') {
-      clientsForReport = allClientsFromFile || [];
+      clientsForReport = masterClients || [];
     } else {
       clientsForReport = clientData || [];
     }
@@ -1511,11 +1456,12 @@ export default function VehicleTracker() {
   // Función para descargar el mapa HTML
   const downloadMap = () => {
     const summaryStats = calculateSummaryStats();
+    const mapClients = selection.mode === 'driver' ? [] : clientData;
 
     const htmlContent = generateMapHTML(
       tripData,
       vehicleInfo,
-      clientData,
+      mapClients,
       matchedStopsCount,
       selection.value,
       minStopDuration,
@@ -1535,13 +1481,16 @@ export default function VehicleTracker() {
     URL.revokeObjectURL(url);
   };
 
-  // FUNCIÓN PARA ABRIR EL MAPA EN UNA NUEVA PESTAÑA
+  // FUNCIÓN PARA ABRIR EL MAPA
   const openMapInTab = () => {
     const summaryStats = calculateSummaryStats();
+
+    const mapClients = selection.mode === 'driver' ? [] : clientData;
+
     const htmlContent = generateMapHTML(
       tripData,
       vehicleInfo,
-      clientData,
+      mapClients,
       matchedStopsCount,
       selection.value,
       minStopDuration,
@@ -1994,41 +1943,40 @@ export default function VehicleTracker() {
                   </label>
                 </div>
 
-                {/* Upload de Clientes */}
-                {tripData && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      2. Archivo de Clientes (Opcional)
-                    </label>
-                    <label
-                      htmlFor="clients-file"
-                      className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100 transition-colors"
-                    >
-                      <Users className="w-6 h-6 mb-1 text-green-500 animate-bounce" />
-                      {clientFileName ? (
-                        <p className="text-xs font-semibold text-green-700 text-center px-2">
-                          {clientFileName}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-gray-600">XLSX, XLS</p>
-                      )}
-                      <input
-                        id="clients-file"
-                        type="file"
-                        className="hidden"
-                        onChange={handleClientFileUpload}
-                        accept=".xlsx, .xls"
-                      />
-                    </label>
-                  </div>
-                )}
-
                 {/* Selección de Vendedor */}
-                {availableVendors.length > 0 && (
+                {tripData && availableVendors.length > 0 && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      3. Seleccionar Vendedor
+                      2. Seleccionar Vendedor
                     </label>
+                    {/* INDICADOR DE CARGA AUTOMATICA DE CLIENTES (DESDE SQL) */}
+                    <div className="bg-green-50 p-2 rounded border border-green-200 mb-4 flex justify-between items-center">
+                      {masterClients && masterClients.length > 0 ? (
+                        <div className="flex items-center gap-2 text-green-700">
+                          <Database className="w-4 h-4" />
+                          <span className="text-xs font-semibold">
+                            {masterClients.length} clientes sincronizados (SQL)
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-orange-600 flex items-center gap-2">
+                          {isLoadingClients
+                            ? 'Cargando...'
+                            : 'Sin conexión a BD'}
+                        </div>
+                      )}
+                      <button
+                        onClick={() => refreshClients(true)}
+                        className="text-gray-500 hover:text-blue-600 transition-colors"
+                        title="Recargar clientes desde servidor"
+                        disabled={isLoadingClients}
+                      >
+                        <RefreshCw
+                          className={`w-3 h-3 ${isLoadingClients ? 'animate-spin' : ''}`}
+                        />
+                      </button>
+                    </div>
+
                     <div className="space-y-2">
                       <div className="flex flex-wrap gap-2 mt-2">
                         {availableVendors.map((vendor) => (
@@ -2513,21 +2461,10 @@ export default function VehicleTracker() {
         {/* Contenedor del Mapa */}
         <div className="flex-1 overflow-hidden bg-gray-50">
           {tripData ? (
-            // <iframe
-            //   srcDoc={generateMapHTML(
-            //     vehicleInfo,
-            //     clientData,
-            //     matchedStopsCount,
-            //     selection.value,
-            //     summaryStats
-            //   )}
-            //   className="w-full h-full border-0"
-            //   title="Vista Previa del Mapa"
-            // />
             <InteractiveMap
               tripData={tripData}
               vehicleInfo={vehicleInfo}
-              clientData={clientData}
+              clientData={selection.mode === 'driver' ? [] : clientData}
               minStopDuration={minStopDuration}
               selection={selection.value}
               viewMode={viewMode}

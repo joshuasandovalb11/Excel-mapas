@@ -1,17 +1,15 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-/* eslint-disable @typescript-eslint/no-explicit-any */
-import React, {
-  useMemo,
-  useState,
-  useRef,
-  useEffect,
-  useCallback,
-} from 'react';
-import * as XLSX from 'xlsx-js-style';
-import { Download, Users, MapPinned, XCircle } from 'lucide-react';
-import { usePersistentState } from '../hooks/usePersistentState';
+import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import {
-  processMasterClientFile,
+  Download,
+  MapPinned,
+  XCircle,
+  Database,
+  RefreshCw,
+} from 'lucide-react';
+import { usePersistentState } from '../hooks/usePersistentState';
+import { useClients } from '../context/ClientContext';
+import {
   type Client,
   calculateDistance,
   toTitleCase,
@@ -23,7 +21,7 @@ import {
   InfoWindow,
 } from '@react-google-maps/api';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUser } from '@fortawesome/free-solid-svg-icons';
+import { faUser, faHouseUser } from '@fortawesome/free-solid-svg-icons';
 import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 
 const mapContainerStyle = {
@@ -41,26 +39,20 @@ const mapOptions = {
 };
 
 interface RoutesViewState {
-  allClients: Client[] | null;
-  availableVendors: string[];
   selectedVendor: string | null;
-  clientFileName: string | null;
   error: string | null;
-  isLoading: boolean;
 }
 
 export default function Routes() {
   const [state, setState] = usePersistentState<RoutesViewState>(
-    'routes_view_state',
+    'routes_view_state_v3',
     {
-      allClients: null,
-      availableVendors: [],
       selectedVendor: null,
-      clientFileName: null,
       error: null,
-      isLoading: false,
     }
   );
+
+  const { masterClients, loading: isLoading, refreshClients } = useClients();
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isToastVisible, setIsToastVisible] = useState(false);
@@ -74,14 +66,7 @@ export default function Routes() {
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
-  const {
-    allClients,
-    availableVendors,
-    selectedVendor,
-    clientFileName,
-    error,
-    isLoading,
-  } = state;
+  const { selectedVendor, error } = state;
 
   useEffect(() => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -111,17 +96,31 @@ export default function Routes() {
 
   const specialClientKeys = ['3689', '6395'];
 
+  const availableVendors = useMemo(() => {
+    if (!masterClients) return [];
+    return Array.from(new Set(masterClients.map((c) => c.vendor))).sort();
+  }, [masterClients]);
+
   const { regularClients, closestSpecialClient } = useMemo(() => {
-    if (!allClients || !selectedVendor) {
+    if (!masterClients || !selectedVendor) {
       return {
         regularClients: [],
         closestSpecialClient: null,
       };
     }
 
-    const allVendorClients = allClients.filter(
-      (c) => c.vendor === selectedVendor
+    const filteredClients = masterClients.filter(
+      (c) => c.vendor === selectedVendor && !c.isVendorHome
     );
+
+    const vendorHome = masterClients.find(
+      (c) => c.isVendorHome && c.vendorHomeInitial === selectedVendor
+    );
+
+    const allVendorClients = [...filteredClients];
+    if (vendorHome) {
+      allVendorClients.push(vendorHome);
+    }
 
     const newRegularClients = allVendorClients.filter(
       (c) => !specialClientKeys.includes(c.key)
@@ -166,7 +165,7 @@ export default function Routes() {
       regularClients: newRegularClients,
       closestSpecialClient: newClosestSpecialClient,
     };
-  }, [allClients, selectedVendor]);
+  }, [masterClients, selectedVendor]);
 
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
@@ -191,47 +190,6 @@ export default function Routes() {
       map.fitBounds(bounds);
     }
   }, [map, regularClients, closestSpecialClient]);
-
-  const handleClientFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setState({
-      ...state,
-      isLoading: true,
-      error: null,
-      clientFileName: file.name,
-      allClients: null,
-      availableVendors: [],
-      selectedVendor: null,
-    });
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (!event.target?.result)
-          throw new Error('No se pudo leer el archivo.');
-        const bstr = event.target.result as string;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const { clients, vendors } = processMasterClientFile(ws);
-        setState((prevState) => ({
-          ...prevState,
-          allClients: clients,
-          availableVendors: vendors,
-          isLoading: false,
-        }));
-      } catch (err: any) {
-        setState((prevState) => ({
-          ...prevState,
-          error: `Error al procesar archivo de clientes: ${err.message}`,
-          isLoading: false,
-        }));
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
 
   const generateMapHTML = () => {
     let staticMapCenter = '{ lat: 28.6139, lng: -106.0889 }';
@@ -309,9 +267,11 @@ export default function Routes() {
                     Vendedor: <strong style="font-weight: 700; color: #FF0000; font-size: 12px;"> \${client.vendor} </strong>
                   </p>\` : '';
                 
+                const titleIcon = client.isVendorHome ? '<i class="fa-solid fa-house-user"></i> Casa Vendedor' : '<i class="fa-solid fa-user"></i> Cliente';
+
                 return \`<div class="info-window" style="padding: 4px; color: black; background: white;">
                   <h3 style="font-size: 15px; margin: 0 0 8px 0; display: flex; align-items: center; gap: 6px;">
-                    <i class="fa-solid fa-user"></i> Cliente
+                    \${titleIcon}
                   </h3>
 
                   <div style="color:#059669;">
@@ -331,13 +291,15 @@ export default function Routes() {
               };
 
               regularClients.forEach(client => {
+                const fillColor = client.isVendorHome ? '#5D00FF' : '#000000'; // Morado si es casa, Negro si es cliente
+                
                 const marker = new google.maps.Marker({
                   position: { lat: client.lat, lng: client.lng },
                   map: map,
                   title: \`\${client.name}\`,
                   icon: {
                     path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                    fillColor: '#000000',
+                    fillColor: fillColor,
                     fillOpacity: 1,
                     strokeColor: "white",
                     strokeWeight: 0,
@@ -441,31 +403,36 @@ export default function Routes() {
 
         {!sidebarCollapsed && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                1. Cargar Archivo de Clientes
-              </label>
-              <label
-                htmlFor="client-file-routes"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100"
+            {/* INDICADOR DE ESTADO SQL */}
+            <div className="bg-green-50 p-2 rounded border border-green-200 mb-4 flex justify-between items-center">
+              {masterClients && masterClients.length > 0 ? (
+                <div className="flex items-center gap-2 text-green-700">
+                  <Database className="w-4 h-4" />
+                  <span className="text-xs font-semibold">
+                    {masterClients.length} clientes sincronizados (SQL)
+                  </span>
+                </div>
+              ) : (
+                <div className="text-xs text-orange-600 flex items-center gap-2">
+                  {isLoading ? 'Cargando...' : 'Sin conexión a BD'}
+                </div>
+              )}
+              <button
+                onClick={() => refreshClients(true)}
+                className="text-gray-500 hover:text-blue-600 transition-colors"
+                title="Recargar clientes desde servidor"
+                disabled={isLoading}
               >
-                <Users className="w-8 h-8 mb-2 text-green-500 animate-bounce" />
-                <span className="text-xs font-semibold text-green-700 text-center px-2">
-                  {clientFileName || 'Seleccionar archivo...'}
-                </span>
-                <input
-                  id="client-file-routes"
-                  type="file"
-                  className="hidden"
-                  onChange={handleClientFileChange}
-                  accept=".xlsx, .xls"
+                <RefreshCw
+                  className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`}
                 />
-              </label>
+              </button>
             </div>
+
             {availableVendors.length > 0 && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  2. Selecciona un vendedor:
+                  1. Selecciona un vendedor:
                 </label>
                 <div className="flex flex-wrap gap-2 mt-2">
                   {availableVendors.map((vendor) => (
@@ -516,7 +483,7 @@ export default function Routes() {
               ? 'Cargando...'
               : selectedVendor
                 ? `Mapa de Vendedor: ${selectedVendor}`
-                : 'Carga un archivo y selecciona un vendedor'}
+                : 'Selecciona un vendedor para ver el mapa'}
           </h2>
 
           {availableVendors.length > 0 && (
@@ -548,14 +515,14 @@ export default function Routes() {
                 onUnmount={onUnmount}
                 options={mapOptions}
               >
-                {/* 1. Marcadores de Clientes Regulares */}
+                {/* 1. Marcadores de Clientes Regulares (AHORA CON LÓGICA DE COLOR) */}
                 {regularClients.map((client, index) => (
                   <Marker
                     key={`reg-${index}`}
                     position={{ lat: client.lat, lng: client.lng }}
                     icon={{
                       path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-                      fillColor: '#000000',
+                      fillColor: client.isVendorHome ? '#5D00FF' : '#000000',
                       fillOpacity: 1,
                       strokeColor: 'white',
                       strokeWeight: 0,
@@ -600,29 +567,57 @@ export default function Routes() {
                   >
                     <div className="font-sans text-sm pr-4">
                       <h3 className="text-[15px] font-bold mb-2 flex items-center gap-2 text-black">
-                        <FontAwesomeIcon icon={faUser} /> Cliente
+                        {/* ICONO DINÁMICO */}
+                        {selectedClient.isVendorHome ? (
+                          <FontAwesomeIcon icon={faHouseUser} />
+                        ) : (
+                          <FontAwesomeIcon icon={faUser} />
+                        )}{' '}
+                        {selectedClient.isVendorHome
+                          ? 'Casa Vendedor'
+                          : 'Cliente'}
                       </h3>
-                      <div className="text-[#059669] mb-2">
-                        <p className="font-medium m-0 text-xs">
-                          <strong># {selectedClient.key}</strong>
-                        </p>
-                        <p className="font-bold m-0 text-xs">
-                          {toTitleCase(selectedClient.name)}
-                        </p>
-                        {selectedClient.branchNumber && (
-                          <p className="text-[#2563eb] font-bold text-xs m-0">
-                            {selectedClient.branchName
-                              ? `Suc. ${toTitleCase(selectedClient.branchName)}`
-                              : `Suc. ${selectedClient.branchNumber}`}
+
+                      {selectedClient.isVendorHome ? (
+                        <div className="text-[#5D00FF] mb-2">
+                          <p className="font-medium m-0 text-xs">
+                            <strong># {selectedClient.key}</strong>
                           </p>
-                        )}
-                      </div>
+                          <p className="font-bold m-0 text-xs">
+                            {toTitleCase(selectedClient.name)}
+                          </p>
+                          {selectedClient.branchNumber && (
+                            <p className="text-[#2563eb] font-bold text-xs m-0">
+                              {selectedClient.branchName
+                                ? `Suc. ${toTitleCase(selectedClient.branchName)}`
+                                : `Suc. ${selectedClient.branchNumber}`}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-[#059669] mb-2">
+                          <p className="font-medium m-0 text-xs">
+                            <strong># {selectedClient.key}</strong>
+                          </p>
+                          <p className="font-bold m-0 text-xs">
+                            {toTitleCase(selectedClient.name)}
+                          </p>
+                          {selectedClient.branchNumber && (
+                            <p className="text-[#2563eb] font-bold text-xs m-0">
+                              {selectedClient.branchName
+                                ? `Suc. ${toTitleCase(selectedClient.branchName)}`
+                                : `Suc. ${selectedClient.branchNumber}`}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
                       <p className="text-[#374151] font-medium text-xs mt-1">
                         {selectedClient.lat.toFixed(6)},{' '}
                         {selectedClient.lng.toFixed(6)}
                       </p>
                       <a
-                        href={`https://www.google.com/maps/search/?api=1&query=${selectedClient.lat},${selectedClient.lng}`}
+                        href={`https://www.google.com/maps/search/?api=1&query=\${selectedClient.lat},${selectedClient.lng}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[#1a73e8] font-semibold text-xs hover:underline block mb-2"
@@ -657,7 +652,8 @@ export default function Routes() {
                 </p>
                 {!isLoading && (
                   <p className="text-gray-400 text-sm mt-2">
-                    Carga un archivo desde el panel lateral
+                    Sincroniza los clientes desde el servidor SQL si no ves
+                    datos.
                   </p>
                 )}
               </div>

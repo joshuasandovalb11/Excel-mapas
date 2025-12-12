@@ -28,7 +28,8 @@ import {
   Search,
   Check,
   Calendar,
-  // MapPinOff,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -56,12 +57,12 @@ import {
 } from '@react-google-maps/api';
 import { usePersistentState } from '../hooks/usePersistentState';
 import {
-  processMasterClientFile,
   type Client,
   calculateDistance,
   toTitleCase,
 } from '../utils/tripUtils';
 import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
+import { useClients } from '../context/ClientContext';
 
 interface IPedidoRaw {
   '#Pedido': string | number;
@@ -222,6 +223,12 @@ export default function PedidosTracker() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
+  const {
+    masterClients,
+    loading: isLoadingClients,
+    refreshClients,
+  } = useClients();
+
   const [pedidosData, setPedidosData] = usePersistentState<IPedido[] | null>(
     'pt_pedidosData',
     null
@@ -229,14 +236,6 @@ export default function PedidosTracker() {
   const [pedidosFileName, setPedidosFileName] = usePersistentState<
     string | null
   >('pt_pedidosFileName', null);
-
-  const [allClientsFromFile, setAllClientsFromFile] = usePersistentState<
-    Client[] | null
-  >('pt_allClients', null);
-  const [clientFileName, setClientFileName] = usePersistentState<string | null>(
-    'pt_clientFileName',
-    null
-  );
 
   const [availableDates, setAvailableDates] = usePersistentState<string[]>(
     'pt_availableDates',
@@ -285,7 +284,7 @@ export default function PedidosTracker() {
   const processedMapData = useMemo(() => {
     if (
       !pedidosData ||
-      !allClientsFromFile ||
+      !masterClients ||
       !selectedDate ||
       selectedVendor === null
     ) {
@@ -323,12 +322,10 @@ export default function PedidosTracker() {
       const gpsAAnalizar =
         gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
 
-      let masterClient = allClientsFromFile.find(
-        (c) => c.key === pedido.clienteNum
-      );
+      let masterClient = masterClients.find((c) => c.key === pedido.clienteNum);
 
       if (['3689', '6395'].includes(pedido.clienteNum)) {
-        const clientByName = allClientsFromFile.find(
+        const clientByName = masterClients.find(
           (c) =>
             c.name.trim().toLowerCase() ===
             pedido.clienteName.trim().toLowerCase()
@@ -472,7 +469,7 @@ export default function PedidosTracker() {
     const clientMarkers = Array.from(clientMap.values());
     const visitedClientKeys = new Set(clientMap.keys());
 
-    const allVendorClients = allClientsFromFile.filter(
+    const allVendorClients = masterClients.filter(
       (c) => selectedVendor === '__ALL__' || c.vendor === selectedVendor
     );
 
@@ -586,14 +583,14 @@ export default function PedidosTracker() {
     };
   }, [
     pedidosData,
-    allClientsFromFile,
+    masterClients,
     selectedDate,
     selectedVendor,
     matchRadius,
     gpsMode,
   ]);
 
-  // Funciones para controlar el mapa (ahora pueden usar processedMapData)
+  // Funciones para controlar el mapa
   const onLoad = useCallback(
     (map: google.maps.Map) => {
       const bounds = new window.google.maps.LatLngBounds();
@@ -666,35 +663,6 @@ export default function PedidosTracker() {
     }
     setIsToastVisible(false);
     setTimeout(() => setError(null), 500);
-  };
-
-  const handleClientFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsLoading(true);
-    setClientFileName(file.name);
-    setError(null);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (!event.target?.result)
-          throw new Error('No se pudo leer el archivo de clientes.');
-        const bstr = event.target.result as string;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const { clients } = processMasterClientFile(ws);
-        setAllClientsFromFile(clients);
-      } catch (err: any) {
-        setError(`Error al procesar archivo de clientes: ${err.message}`);
-        setAllClientsFromFile(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    reader.readAsBinaryString(file);
   };
 
   const handlePedidosFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -788,12 +756,7 @@ export default function PedidosTracker() {
   };
 
   const downloadPedidosExcel = () => {
-    if (
-      !pedidosData ||
-      !selectedDate ||
-      !selectedVendor ||
-      !allClientsFromFile
-    ) {
+    if (!pedidosData || !selectedDate || !selectedVendor || !masterClients) {
       setError('No hay datos suficientes para generar el reporte.');
       return;
     }
@@ -913,12 +876,10 @@ export default function PedidosTracker() {
       const gpsAAnalizar =
         gpsMode === 'envio' ? pedido.envioGps : pedido.capturaGps;
 
-      let masterClient = allClientsFromFile.find(
-        (c) => c.key === pedido.clienteNum
-      );
+      let masterClient = masterClients.find((c) => c.key === pedido.clienteNum);
 
       if (['3689', '6395'].includes(pedido.clienteNum)) {
-        const clientByName = allClientsFromFile.find(
+        const clientByName = masterClients.find(
           (c) =>
             c.name.trim().toLowerCase() ===
             pedido.clienteName.trim().toLowerCase()
@@ -978,8 +939,8 @@ export default function PedidosTracker() {
     }
 
     const clientesVendedor = isAllVendors
-      ? allClientsFromFile
-      : allClientsFromFile.filter((c) => c.vendor === selectedVendor);
+      ? masterClients
+      : masterClients.filter((c) => c.vendor === selectedVendor);
 
     const clientesSinPedidos =
       clientesVendedor.filter((c) => !clientesConPedidos.has(c.key)) || [];
@@ -1611,31 +1572,41 @@ export default function PedidosTracker() {
               </label>
             </div>
 
-            {/* 2. Cargar Archivo de Clientes */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                2. Archivo de Clientes
-              </label>
-              <label
-                htmlFor="client-file-pedidos"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-green-300 border-dashed rounded-lg cursor-pointer bg-green-50 hover:bg-green-100"
-              >
-                <Users className="w-8 h-8 mb-2 text-green-500 animate-bounce" />
-                <span className="text-xs font-semibold text-green-700 text-center px-2">
-                  {clientFileName || 'Seleccionar archivo...'}
-                </span>
-                <input
-                  id="client-file-pedidos"
-                  type="file"
-                  className="hidden"
-                  onChange={handleClientFileChange}
-                  accept=".xlsx,.xls"
-                />
-              </label>
-            </div>
+            {/* 2. Clientes */}
+            {pedidosData && masterClients && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  2. Base de Datos de Clientes
+                </label>
+                <div className="bg-green-50 p-2 rounded border border-green-200 flex justify-between items-center">
+                  {masterClients && masterClients.length > 0 ? (
+                    <div className="flex items-center gap-2 text-green-700">
+                      <Database className="w-4 h-4" />
+                      <span className="text-xs font-semibold">
+                        {masterClients.length} clientes (SQL)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-orange-600 flex items-center gap-2">
+                      {isLoadingClients ? 'Cargando...' : 'Sin conexión a BD'}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => refreshClients(true)}
+                    className="text-gray-500 hover:text-blue-600 transition-colors"
+                    title="Recargar clientes"
+                    disabled={isLoadingClients}
+                  >
+                    <RefreshCw
+                      className={`w-3 h-3 ${isLoadingClients ? 'animate-spin' : ''}`}
+                    />
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 3. Filtros */}
-            {pedidosData && allClientsFromFile && (
+            {pedidosData && masterClients && (
               <div className="space-y-4 pt-2 border-t border-gray-200">
                 <h3 className="text-sm font-semibold text-gray-700">
                   3. Filtros
@@ -1656,7 +1627,6 @@ export default function PedidosTracker() {
                       className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 flex items-center justify-between hover:border-blue-500 hover:ring-1 hover:ring-blue-500 transition-all group shadow-sm"
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
-                        {/* El icono se pone azul si hay ALGO seleccionado (Todas o Fecha especifica), sino gris */}
                         <div
                           className={`p-2 rounded-full ${
                             selectedDate
@@ -1671,7 +1641,6 @@ export default function PedidosTracker() {
                             Filtro actual:
                           </span>
                           <span className="text-sm font-bold text-gray-800 truncate">
-                            {/* --- AQUÍ ESTABA EL ERROR DE LÓGICA --- */}
                             {selectedDate === '__ALL_DATES__'
                               ? 'Todas las Fechas'
                               : selectedDate
@@ -1997,7 +1966,7 @@ export default function PedidosTracker() {
             </div>
           ) : selectedVendor === '__ALL__' &&
             selectedDate === '__ALL_DATES__' ? (
-            /* CASO: TODOS LOS VENDEDORES (Mapa oculto) */
+            /* CASO: TODOS LOS VENDEDORES */
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 p-8">
               <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-lg text-center">
                 <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 px-2">
@@ -2031,7 +2000,7 @@ export default function PedidosTracker() {
             selectedVendor !== undefined &&
             (processedMapData.clientMarkers.length > 0 ||
               processedMapData.pedidoMarkers.length > 0) ? (
-            /* CASO: UN VENDEDOR (Mapa visible) */
+            /* CASO: UN VENDEDOR */
             isLoaded ? (
               <GoogleMap
                 mapContainerStyle={mapContainerStyle}
@@ -2054,7 +2023,7 @@ export default function PedidosTracker() {
                   renderMarkers(null)
                 )}
 
-                {/* VENTANAS DE INFORMACIÓN (ESTILO RESTAURADO) */}
+                {/* VENTANAS DE INFORMACIÓN */}
                 {selectedMarker && (
                   <InfoWindow
                     position={{

@@ -29,7 +29,7 @@ export default function Login({ onLoginTransition }: LoginProps) {
   const [isForgotModalOpen, setIsForgotModalOpen] = useState(false);
   const [buttonSuccess, setButtonSuccess] = useState(false);
   const errorTimerRef = useRef<number | null>(null);
-  const [isErrorVisible, setIsErrorVisible] = useState(false);
+  const [, setIsErrorVisible] = useState(false);
 
   useEffect(() => {
     if (errorTimerRef.current) {
@@ -79,6 +79,16 @@ export default function Login({ onLoginTransition }: LoginProps) {
         setError('Correo o contraseña incorrectos.');
       } else if (err.code === 'auth/too-many-requests') {
         setError('Demasiados intentos fallidos. Intenta más tarde.');
+      } else if (err.code === 'auth/user-not-found') {
+        setError(
+          'No existe un registro de usuario que corresponda al correo electrónico proporcionado.'
+        );
+      } else if (err.code === 'auth/network-request-failed') {
+        setError('Ocurrio un error de red. Verifica tu conexion a internet');
+      } else if (err.code === 'auth/user-disabled') {
+        setError(
+          'La cuenta de este usuario fue desabilitada por un administrador. El usuario no puede acceder a menos que el administrador re-habilite la cuenta'
+        );
       } else {
         setError('Error al iniciar sesión. Intenta nuevamente.');
       }
@@ -89,8 +99,8 @@ export default function Login({ onLoginTransition }: LoginProps) {
     <div className="min-h-screen bg-slate-300 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row h-auto min-h-[600px]">
         {/* FORMULARIO DE LOGIN */}
-        <div className="w-full md:w-1/2 p-8 md:p-12 flex flex-col justify-center">
-          <div className="text-center mb-8">
+        <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col justify-center">
+          <div className="text-center mb-2">
             <div className="bg-blue-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
               <LockKeyhole className="w-10 h-10 text-white animate-pulse" />
             </div>
@@ -100,19 +110,23 @@ export default function Login({ onLoginTransition }: LoginProps) {
             <p className="text-gray-500">Ingresa las credenciales.</p>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
-            {error && (
-              <div
-                className={`bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 border border-red-100 transition-all duration-500 ease-in-out ${
-                  isErrorVisible
-                    ? 'opacity-100 translate-x-0'
-                    : 'opacity-0 translate-x-10'
-                }`}
-              >
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                {error}
-              </div>
-            )}
+          <form onSubmit={handleLogin} className="space-y-5">
+            {/* Mensaje de Error Animado */}
+            <div className="h-14 relative">
+              <AnimatePresence>
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: 20 }}
+                    className="absolute inset-0 bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 border border-red-100"
+                  >
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {error}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

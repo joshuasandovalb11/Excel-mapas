@@ -1,8 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React, { useState, useEffect } from 'react';
-import { Lock, Eye, EyeOff, AlertCircle, CheckCircle, X } from 'lucide-react';
+import {
+  Lock,
+  Eye,
+  EyeOff,
+  AlertCircle,
+  CheckCircle,
+  X,
+  KeyRound,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
+import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { auth } from '../firebaseConfig';
 
 interface ChangePasswordModalProps {
   isOpen: boolean;
@@ -13,18 +23,20 @@ export default function ChangePassword({
   isOpen,
   onClose,
 }: ChangePasswordModalProps) {
-  const { changePassword } = useAuth();
+  const { changePassword, logout, user } = useAuth();
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
 
-  const { user } = useAuth();
+  const [showPassword, setShowPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setError(null);
@@ -45,37 +57,67 @@ export default function ChangePassword({
     e.preventDefault();
     setError(null);
 
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('Todos los campos son obligatorios.');
+      return;
+    }
+
     if (/\s/.test(newPassword)) {
       setError('La contraseña no puede contener espacios en blanco.');
       return;
     }
 
     if (newPassword.length < 6) {
-      setError('La contraseña debe tener al menos 6 caracteres.');
+      setError('La contraseña nueva debe tener al menos 6 caracteres.');
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setError('Las contraseñas no coinciden.');
+      setError('Las contraseñas nuevas no coinciden.');
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      setError('La nueva contraseña no puede ser igual a la anterior.');
       return;
     }
 
     setLoading(true);
 
     try {
+      if (auth.currentUser && user?.email) {
+        const credential = EmailAuthProvider.credential(
+          user.email,
+          currentPassword
+        );
+        await reauthenticateWithCredential(auth.currentUser, credential);
+      } else {
+        throw new Error('No hay sesión activa.');
+      }
+
       await changePassword(newPassword);
+
       setSuccess(true);
       setTimeout(() => {
         onClose();
       }, 2000);
-    } catch (err: any) {
-      console.error(err);
-      if (err.code === 'auth/requires-recent-login') {
-        setError(
-          'Por seguridad, debes cerrar sesión y volver a entrar antes de cambiar tu contraseña.'
-        );
+    } catch (error: any) {
+      console.error(error);
+      const errorCode = error.code;
+
+      if (
+        errorCode === 'auth/invalid-credential' ||
+        errorCode === 'auth/wrong-password'
+      ) {
+        setError('La contraseña actual es incorrecta.');
+      } else if (errorCode === 'auth/requires-recent-login') {
+        setError('Por seguridad, tu sesión expiró. Redirigiendo...');
+        setTimeout(async () => {
+          onClose();
+          await logout();
+        }, 2000);
       } else {
-        setError('Error al actualizar la contraseña. Inténtalo de nuevo.');
+        setError('Error al actualizar. Inténtalo de nuevo.');
       }
     } finally {
       setLoading(false);
@@ -95,7 +137,6 @@ export default function ChangePassword({
             onClick={onClose}
           />
 
-          {/* TARJETA DEL MODAL */}
           <motion.div
             className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden relative z-10"
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -104,8 +145,7 @@ export default function ChangePassword({
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div className="bg-blue-600 p-6 flex justify-between items-center">
+            <div className="bg-slate-800 p-6 flex justify-between items-center">
               <h3 className="text-xl font-bold text-white flex items-center gap-2">
                 <Lock className="w-6 h-6" /> Cambiar Contraseña
               </h3>
@@ -117,7 +157,6 @@ export default function ChangePassword({
               </button>
             </div>
 
-            {/* Body */}
             <div className="p-6">
               {success ? (
                 <motion.div
@@ -136,48 +175,60 @@ export default function ChangePassword({
                   </p>
                 </motion.div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-5">
-                  {/* Mensaje de Error */}
-                  {error && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="bg-red-50 border border-red-100 text-red-600 p-3 rounded-lg text-sm flex items-start gap-2"
-                    >
-                      <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                      <span>{error}</span>
-                    </motion.div>
-                  )}
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  {/* ERROR */}
+                  <AnimatePresence>
+                    {error && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="bg-red-50 border border-red-100 text-red-600 py-2 px-3 rounded-lg text-sm flex items-start gap-2"
+                      >
+                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+                        <span>{error}</span>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
-                  {/* Nueva Contraseña */}
+                  {/* INFO USUARIO */}
                   <div>
-                    <div className="pb-5">
-                      <p className="text-sm font-semibold text-gray-700 tracking-wider mb-0.5">
-                        Usuario
-                      </p>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                      Usuario
+                    </p>
+                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      <div className="bg-blue-100 p-1 rounded-full">
+                        <KeyRound className="w-4 h-4 text-blue-600" />
+                      </div>
                       <p
-                        className="text-sm font-bold text-blue-300 truncate bg-blue-50 border border-blue-300 rounded-lg px-4 py-2.5"
+                        className="text-sm font-medium text-gray-700 truncate"
                         title={user?.email || ''}
                       >
                         {user?.email || ''}
                       </p>
                     </div>
+                  </div>
+
+                  {/* CONTRASEÑA ACTUAL */}
+                  <div className="pb-2">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nueva Contraseña
+                      Contraseña Actual
                     </label>
                     <div className="relative">
                       <input
                         type={showPassword ? 'text' : 'password'}
-                        className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                        placeholder="Mínimo 6 caracteres"
-                        value={newPassword}
-                        onChange={(e) => handleInputChange(e, setNewPassword)}
+                        className="block w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        placeholder="Ingresa tu contraseña actual"
+                        value={currentPassword}
+                        onChange={(e) =>
+                          handleInputChange(e, setCurrentPassword)
+                        }
                         required
                       />
                       <button
                         type="button"
                         onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                        className="absolute cursor-pointer right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                        tabIndex={-1}
                       >
                         {showPassword ? (
                           <EyeOff className="w-5 h-5" />
@@ -188,23 +239,53 @@ export default function ChangePassword({
                     </div>
                   </div>
 
-                  {/* Confirmar Contraseña */}
+                  <div className="border-t border-gray-300 my-2 pt-2"></div>
+
+                  {/* NUEVA CONTRASEÑA */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Confirmar Contraseña
+                      Nueva Contraseña
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        className="block w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                        placeholder="Mínimo 6 caracteres"
+                        value={newPassword}
+                        onChange={(e) => handleInputChange(e, setNewPassword)}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                        className="absolute cursor-pointer right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                        tabIndex={-1}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="w-5 h-5" />
+                        ) : (
+                          <Eye className="w-5 h-5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CONFIRMAR CONTRASEÑA */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Confirmar Nueva Contraseña
                     </label>
                     <input
-                      type={showPassword ? 'text' : 'password'}
-                      className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      placeholder="Repite la contraseña"
+                      type={showNewPassword ? 'text' : 'password'}
+                      className="block w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      placeholder="Repite la nueva contraseña"
                       value={confirmPassword}
                       onChange={(e) => handleInputChange(e, setConfirmPassword)}
                       required
                     />
                   </div>
 
-                  {/* Botones de Acción */}
-                  <div className="flex gap-3 pt-2">
+                  <div className="flex gap-3 pt-4">
                     <button
                       type="button"
                       onClick={onClose}
@@ -214,13 +295,18 @@ export default function ChangePassword({
                     </button>
                     <button
                       type="submit"
-                      disabled={loading || !newPassword || !confirmPassword}
+                      disabled={
+                        loading ||
+                        !currentPassword ||
+                        !newPassword ||
+                        !confirmPassword
+                      }
                       className="flex-1 py-2.5 px-4 cursor-pointer bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2"
                     >
                       {loading ? (
                         <>
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Guardando...
+                          Procesando...
                         </>
                       ) : (
                         'Guardar Cambios'

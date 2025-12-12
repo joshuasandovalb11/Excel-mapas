@@ -79,37 +79,14 @@ export interface Client {
   displayName: string;
   isVendorHome?: boolean;
   vendorHomeInitial?: string;
+  city?: string;
+  commercialName?: string;
 }
 
 export interface MasterClientData {
   clients: Client[];
   vendors: string[];
 }
-
-// Se usa para identificar la casa de un vendedor por su nombre
-const VENDOR_NAME_TO_INITIALS: Record<string, string> = {
-  'EDGAR BARBOSA HIGUERA': 'BHE',
-  'JUAN CARLOS CABANILLAS GAXIOLA': 'CGC',
-  'LETICIA CERVANTES GONZALEZ': 'CGL',
-  'MARCELINA DIAZ MILLAN': 'DMM',
-  'DENISSE YURIRIA FLORES VELAZQUEZ': 'FVD',
-  'LAURA NALLELY GARCIA REYES': 'GRL',
-  'CARLOS JULIAN GARCIA VEGA': 'GVJ',
-  'ANA LILIA GONZALEZ LARA': 'GLA',
-  'CARLA GUADALUPE HERRERA LOPEZ': 'HLC',
-  'GABRIELA MARTINEZ MADERA': 'MMG',
-  'MEDINA JARAMILLO MARLIN': 'MJM',
-  'JESUS ANGEL MEDRANO ELIZALDE': 'MEJ',
-  'MARIO ENRIQUE MONTES PINEDA': 'MPM',
-  'RODRIGO OLIVAS BATRES': 'OBR',
-  'JESUS PEÑA GONZALEZ': 'PGJ',
-  'JOEL PEREZ HERNANDEZ': 'PHJ',
-  'YOLANDA RENTERIA RODRIGUEZ': 'RRY',
-  'ANA MARIA REYES NEVARES': 'RNA',
-  'MARIA ANTONIA RODRIGUEZ IBARRA': 'RIA',
-  'YASMIN VIRIDIANA RODRIGUEZ PRECIADO': 'RPV',
-  'ANDRES TAPIA LEDEZMA': 'TLA',
-};
 
 // Funcion para convertir una cadena a Title Case
 export const toTitleCase = (str: string): string => {
@@ -357,7 +334,6 @@ export const processMasterClientFile = (
     header: 1,
     defval: '',
   });
-
   let headerRowIndex = -1;
   let isNewFormat = false;
 
@@ -367,20 +343,12 @@ export const processMasterClientFile = (
         .toUpperCase()
         .trim()
     );
-
-    // Verificar formato nuevo (VEND, #CLIENTE, NOMBRE CLIENTE, GPS)
     const hasNewFormatHeaders =
       row.some((cell) => cell === 'VEND') &&
-      row.some((cell) => cell.includes('#CLIENTE')) &&
-      row.some((cell) => cell.includes('NOMBRE') && cell.includes('CLIENTE')) &&
-      row.some((cell) => cell === 'GPS');
-
-    // Verificar formato anterior (VND, CLAVE, RAZON, GPS)
+      row.some((cell) => cell.includes('#CLIENTE'));
     const hasOldFormatHeaders =
       row.some((cell) => cell.includes('VND')) &&
-      row.some((cell) => cell.includes('CLAVE')) &&
-      row.some((cell) => cell.includes('RAZON')) &&
-      row.some((cell) => cell.includes('GPS'));
+      row.some((cell) => cell.includes('CLAVE'));
 
     if (hasNewFormatHeaders || hasOldFormatHeaders) {
       headerRowIndex = i;
@@ -389,29 +357,20 @@ export const processMasterClientFile = (
     }
   }
 
-  if (headerRowIndex === -1) {
-    throw new Error(
-      'Archivo de clientes: No se encontraron los encabezados requeridos. ' +
-        'Formato esperado: (VND/Vend, CLAVE/#Cliente, RAZON/Nombre del Cliente, GPS)'
-    );
-  }
+  if (headerRowIndex === -1)
+    throw new Error('No se encontraron encabezados de clientes.');
 
   const data: any[] = XLSX.utils.sheet_to_json(worksheet, {
     range: headerRowIndex,
   });
-
   const allVendors = new Set<string>();
 
   const clients = data
     .map((row): Client | null => {
-      let vendor: string;
-      let clientKey: string;
-      let clientName: string;
-      let gpsString: string;
-      let branchNumber: string | undefined;
-      let branchName: string | undefined;
+      let vendor, clientKey, clientName, gpsString, branchNumber, branchName;
       let isVendorHome = false;
-      let vendorHomeInitial: string | undefined;
+      let city = undefined;
+      let commercialName = undefined;
 
       if (isNewFormat) {
         vendor = String(row['Vend'] || 'N/A')
@@ -423,7 +382,11 @@ export const processMasterClientFile = (
         branchNumber = String(row['#Suc'] || '').trim();
         branchName = String(row['Sucursal'] || '').trim();
 
-        const commercialName = String(
+        // EXTRACCIÓN DE CIUDAD
+        city = String(row['Ciudad'] || row['Poblacion'] || '').trim();
+
+        // EXTRACCIÓN NOMBRE COMERCIAL
+        commercialName = String(
           row['Nombre Comercial'] || row['Nombre_Comercial'] || ''
         )
           .toUpperCase()
@@ -431,25 +394,6 @@ export const processMasterClientFile = (
 
         if (commercialName === 'EMPLEADO TME') {
           isVendorHome = true;
-
-          const clientNameUpper = clientName
-            .toUpperCase()
-            .trim()
-            .replace(/\s+/g, ' ')
-            .normalize('NFC');
-
-          if (VENDOR_NAME_TO_INITIALS[clientNameUpper]) {
-            vendorHomeInitial = VENDOR_NAME_TO_INITIALS[clientNameUpper];
-            console.log(`  ✓ Iniciales asignadas: ${vendorHomeInitial}`);
-          } else {
-            console.warn(
-              `  ✗ No se encontraron iniciales para: "${clientNameUpper}"`
-            );
-            console.warn(
-              '  Nombres disponibles:',
-              Object.keys(VENDOR_NAME_TO_INITIALS)
-            );
-          }
         }
       } else {
         vendor = String(row['VND'] || 'N/A')
@@ -458,25 +402,16 @@ export const processMasterClientFile = (
         clientKey = String(row['CLAVE'] || 'N/A').trim();
         clientName = String(row['RAZON'] || '').trim();
         gpsString = String(row['GPS'] || '').trim();
-        branchNumber = undefined;
-        branchName = undefined;
-        isVendorHome = false;
       }
 
-      if (vendor && vendor !== 'N/A') {
-        allVendors.add(vendor);
-      }
-
+      if (vendor && vendor !== 'N/A') allVendors.add(vendor);
       if (!gpsString) return null;
       gpsString = gpsString.replace('&', ',');
       const coords = gpsString.split(',');
       if (coords.length !== 2) return null;
-
       const lat = Number(coords[0]?.trim());
       const lng = Number(coords[1]?.trim());
       if (isNaN(lat) || isNaN(lng)) return null;
-
-      const displayName = toTitleCase(clientName);
 
       return {
         key: clientKey,
@@ -485,24 +420,19 @@ export const processMasterClientFile = (
         lng,
         vendor,
         branchNumber:
-          branchNumber && branchNumber !== '' && branchNumber !== '0'
-            ? branchNumber
-            : undefined,
-        branchName:
-          branchName && branchName !== '' ? toTitleCase(branchName) : undefined,
-        displayName,
+          branchNumber && branchNumber !== '0' ? branchNumber : undefined,
+        branchName: branchName ? toTitleCase(branchName) : undefined,
+        displayName: toTitleCase(clientName),
         isVendorHome,
-        vendorHomeInitial,
+        // ENVIAMOS ESTOS CAMPOS AL SERVIDOR AHORA:
+        city: city || undefined,
+        commercialName: commercialName || undefined,
+        vendorHomeInitial: undefined, // El server lo calcula
       };
     })
     .filter((c): c is Client => c !== null);
 
-  if (clients.length === 0) {
-    throw new Error(
-      'No se pudo extraer ningún dato de cliente válido del archivo.'
-    );
-  }
-
+  if (clients.length === 0) throw new Error('No hay clientes válidos.');
   return { clients, vendors: Array.from(allVendors).sort() };
 };
 
@@ -806,10 +736,8 @@ export const processTripData = (
     );
   }
 
-  // 1. Detectar nombres reales de las columnas en la primera fila
   const firstRow = rawData.length > 0 ? rawData[0] : {};
 
-  // Buscamos columnas que se parezcan a "Descripción" o "Evento"
   const descColumn =
     findColumnName(firstRow, [
       'descripción',
