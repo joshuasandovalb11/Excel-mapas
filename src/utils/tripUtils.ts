@@ -334,6 +334,7 @@ export const processMasterClientFile = (
     header: 1,
     defval: '',
   });
+
   let headerRowIndex = -1;
   let isNewFormat = false;
 
@@ -343,9 +344,11 @@ export const processMasterClientFile = (
         .toUpperCase()
         .trim()
     );
+
     const hasNewFormatHeaders =
       row.some((cell) => cell === 'VEND') &&
       row.some((cell) => cell.includes('#CLIENTE'));
+
     const hasOldFormatHeaders =
       row.some((cell) => cell.includes('VND')) &&
       row.some((cell) => cell.includes('CLAVE'));
@@ -357,82 +360,106 @@ export const processMasterClientFile = (
     }
   }
 
-  if (headerRowIndex === -1)
-    throw new Error('No se encontraron encabezados de clientes.');
+  if (headerRowIndex === -1) {
+    throw new Error(
+      'Archivo de clientes: No se encontraron los encabezados requeridos.'
+    );
+  }
 
   const data: any[] = XLSX.utils.sheet_to_json(worksheet, {
     range: headerRowIndex,
   });
+
   const allVendors = new Set<string>();
 
-  const clients = data
-    .map((row): Client | null => {
-      let vendor, clientKey, clientName, gpsString, branchNumber, branchName;
-      let isVendorHome = false;
-      let city = undefined;
-      let commercialName = undefined;
+  const clients: Client[] = data.map((row) => {
+    let vendor = '';
+    let clientKey = '';
+    let clientName = '';
+    let gpsString = '';
+    let branchNumber: string | undefined;
+    let branchName: string | undefined;
+    let isVendorHome = false;
+    let city: string | undefined;
+    let commercialName: string | undefined;
 
-      if (isNewFormat) {
-        vendor = String(row['Vend'] || 'N/A')
-          .trim()
-          .toUpperCase();
-        clientKey = String(row['#Cliente'] || 'N/A').trim();
-        clientName = String(row['Nombre del Cliente'] || '').trim();
-        gpsString = String(row['GPS'] || '').trim();
-        branchNumber = String(row['#Suc'] || '').trim();
-        branchName = String(row['Sucursal'] || '').trim();
+    if (isNewFormat) {
+      vendor = String(row['Vend'] || 'N/A')
+        .trim()
+        .toUpperCase();
+      clientKey = String(row['#Cliente'] || 'N/A').trim();
+      clientName = String(row['Nombre del Cliente'] || '').trim();
+      gpsString = String(row['GPS'] || '').trim();
+      branchNumber = String(row['#Suc'] || '').trim();
+      branchName = String(row['Sucursal'] || '').trim();
 
-        // EXTRACCIÓN DE CIUDAD
-        city = String(row['Ciudad'] || row['Poblacion'] || '').trim();
+      city = String(row['Ciudad'] || row['Poblacion'] || '').trim();
 
-        // EXTRACCIÓN NOMBRE COMERCIAL
-        commercialName = String(
-          row['Nombre Comercial'] || row['Nombre_Comercial'] || ''
-        )
-          .toUpperCase()
-          .trim();
+      commercialName = String(
+        row['Nombre Comercial'] || row['Nombre_Comercial'] || ''
+      )
+        .toUpperCase()
+        .trim();
 
-        if (commercialName === 'EMPLEADO TME') {
-          isVendorHome = true;
-        }
-      } else {
-        vendor = String(row['VND'] || 'N/A')
-          .trim()
-          .toUpperCase();
-        clientKey = String(row['CLAVE'] || 'N/A').trim();
-        clientName = String(row['RAZON'] || '').trim();
-        gpsString = String(row['GPS'] || '').trim();
+      if (commercialName === 'EMPLEADO TME') {
+        isVendorHome = true;
       }
+    } else {
+      vendor = String(row['VND'] || 'N/A')
+        .trim()
+        .toUpperCase();
+      clientKey = String(row['CLAVE'] || 'N/A').trim();
+      clientName = String(row['RAZON'] || '').trim();
+      gpsString = String(row['GPS'] || '').trim();
+    }
 
-      if (vendor && vendor !== 'N/A') allVendors.add(vendor);
-      if (!gpsString) return null;
-      gpsString = gpsString.replace('&', ',');
-      const coords = gpsString.split(',');
-      if (coords.length !== 2) return null;
-      const lat = Number(coords[0]?.trim());
-      const lng = Number(coords[1]?.trim());
-      if (isNaN(lat) || isNaN(lng)) return null;
+    if (vendor && vendor !== 'N/A') {
+      allVendors.add(vendor);
+    }
 
-      return {
-        key: clientKey,
-        name: toTitleCase(clientName),
-        lat,
-        lng,
-        vendor,
-        branchNumber:
-          branchNumber && branchNumber !== '0' ? branchNumber : undefined,
-        branchName: branchName ? toTitleCase(branchName) : undefined,
-        displayName: toTitleCase(clientName),
-        isVendorHome,
-        // ENVIAMOS ESTOS CAMPOS AL SERVIDOR AHORA:
-        city: city || undefined,
-        commercialName: commercialName || undefined,
-        vendorHomeInitial: undefined, // El server lo calcula
-      };
-    })
-    .filter((c): c is Client => c !== null);
+    let lat = 0;
+    let lng = 0;
 
-  if (clients.length === 0) throw new Error('No hay clientes válidos.');
+    if (gpsString) {
+      const cleanGps = gpsString.replace('&', ',');
+      const coords = cleanGps.split(',');
+      if (coords.length === 2) {
+        const parsedLat = Number(coords[0]?.trim());
+        const parsedLng = Number(coords[1]?.trim());
+
+        if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+          lat = parsedLat;
+          lng = parsedLng;
+        }
+      }
+    }
+
+    const displayName = toTitleCase(clientName);
+
+    return {
+      key: clientKey,
+      name: toTitleCase(clientName),
+      lat: lat,
+      lng: lng,
+      vendor,
+      branchNumber:
+        branchNumber && branchNumber !== '0' ? branchNumber : undefined,
+      branchName:
+        branchName && branchName !== '' ? toTitleCase(branchName) : undefined,
+      displayName,
+      isVendorHome,
+      vendorHomeInitial: undefined,
+      city: city || undefined,
+      commercialName: commercialName || undefined,
+    };
+  });
+
+  if (clients.length === 0) {
+    throw new Error(
+      'No se pudo extraer ningún dato de cliente válido del archivo.'
+    );
+  }
+
   return { clients, vendors: Array.from(allVendors).sort() };
 };
 

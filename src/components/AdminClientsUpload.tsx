@@ -29,6 +29,10 @@ export default function AdminClientsUpload({
   >('upload');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [validationWarning, setValidationWarning] = useState<string | null>(
+    null
+  );
+
   const [fileName, setFileName] = useState<string | null>(null);
 
   const [previewData, setPreviewData] = useState<{
@@ -39,10 +43,10 @@ export default function AdminClientsUpload({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Reiniciar estado al cerrar
   const handleClose = () => {
     setStep('upload');
     setError(null);
+    setValidationWarning(null);
     setPreviewData(null);
     setFileName(null);
     onClose();
@@ -53,6 +57,7 @@ export default function AdminClientsUpload({
     if (!file) return;
 
     setError(null);
+    setValidationWarning(null);
     setFileName(file.name);
 
     const reader = new FileReader();
@@ -70,9 +75,10 @@ export default function AdminClientsUpload({
         const clientsWithGPS = clients.filter(
           (c) => c.lat !== 0 && c.lng !== 0
         ).length;
+
         if (clientsWithGPS < clients.length * 0.5) {
-          throw new Error(
-            'Más del 50% de los clientes no tienen GPS válido. Revisa el archivo.'
+          setValidationWarning(
+            `Solo el ${Math.round((clientsWithGPS / clients.length) * 100)}% de los clientes tienen GPS válido. Muchos registros no aparecerán en los mapas.`
           );
         }
 
@@ -134,7 +140,7 @@ export default function AdminClientsUpload({
               </h3>
               <button
                 onClick={handleClose}
-                className="text-slate-400 hover:text-white transition-colors"
+                className="text-slate-400 cursor-pointer hover:text-white transition-colors"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -152,7 +158,7 @@ export default function AdminClientsUpload({
                 >
                   <div className="text-center">
                     <h4 className="text-lg font-semibold text-gray-800">
-                      Carga de Archivo Maestro
+                      Carga de Archivo de Clientes
                     </h4>
                     <p className="text-sm text-gray-500 mt-1">
                       Selecciona el Excel (.xlsx) con la lista actualizada de
@@ -169,9 +175,9 @@ export default function AdminClientsUpload({
 
                   <label className="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-blue-300 rounded-xl cursor-pointer bg-blue-50 hover:bg-blue-100 transition-all group">
                     <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                      <Upload className="w-10 h-10 text-blue-500 mb-3 group-hover:scale-110 transition-transform" />
+                      <Upload className="w-10 h-10 text-blue-500 mb-3 group-hover:scale-110 transition-transform animate-pulse" />
                       <p className="mb-2 text-sm text-blue-700 font-semibold">
-                        Clic para seleccionar archivo
+                        Haz Clic para seleccionar archivo
                       </p>
                       <p className="text-xs text-blue-500">
                         Formato Excel (.xlsx)
@@ -197,8 +203,9 @@ export default function AdminClientsUpload({
                   exit={{ scale: 0.95, opacity: 0, y: 20 }}
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {/* ADVERTENCIA DE DATOS */}
                   <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
-                    <div className="flex items-center">
+                    <div className="flex items-start">
                       <AlertTriangle className="w-5 h-5 text-yellow-600 mt-0.5 mr-3 flex-shrink-0" />
                       <div>
                         <h4 className="text-sm font-bold text-yellow-800">
@@ -211,6 +218,17 @@ export default function AdminClientsUpload({
                       </div>
                     </div>
                   </div>
+
+                  {/* ADVERTENCIA DE CALIDAD */}
+                  {validationWarning && (
+                    <div className="bg-orange-50 border border-orange-200 p-3 rounded-lg flex items-start gap-3">
+                      <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 mt-0.5" />
+                      <p className="flex text-sm text-orange-800">
+                        <p className="font-bold mr-2">Atención: {''}</p>
+                        {validationWarning}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="bg-gray-50 rounded-lg p-4 border border-gray-200 space-y-3">
                     <div className="flex justify-between items-center pb-2 border-b border-gray-200">
@@ -247,6 +265,7 @@ export default function AdminClientsUpload({
                       onClick={() => {
                         setStep('upload');
                         setPreviewData(null);
+                        setValidationWarning(null);
                       }}
                       className="flex-1 cursor-pointer py-2.5 px-4 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
                     >

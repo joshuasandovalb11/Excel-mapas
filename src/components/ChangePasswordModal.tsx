@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Lock,
   Eye,
@@ -33,6 +33,28 @@ export default function ChangePassword({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const errorTimerRef = useRef<number | null>(null);
+  const [, setIsErrorVisible] = useState(false);
+
+  useEffect(() => {
+    if (errorTimerRef.current) {
+      clearTimeout(errorTimerRef.current);
+    }
+    if (error) {
+      setIsErrorVisible(true);
+      errorTimerRef.current = window.setTimeout(() => {
+        setIsErrorVisible(false);
+        setTimeout(() => setError(null), 500);
+      }, 5000);
+    } else {
+      setIsErrorVisible(false);
+    }
+    return () => {
+      if (errorTimerRef.current) {
+        clearTimeout(errorTimerRef.current);
+      }
+    };
+  }, [error]);
 
   useEffect(() => {
     if (isOpen) {
@@ -182,7 +204,8 @@ export default function ChangePassword({
                       <motion.div
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
-                        className="bg-red-50 border border-red-100 text-red-600 py-2 px-3 rounded-lg text-sm flex items-start gap-2"
+                        exit={{ opacity: 0, x: 20 }}
+                        className="bg-red-50 border border-red-100 text-red-600 py-2 px-3 rounded-lg text-sm flex items-center gap-2"
                       >
                         <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                         <span>{error}</span>
