@@ -597,7 +597,7 @@ export default function InteractiveMap({
           style={{
             backgroundColor: bgColor,
             color: textColor,
-            paddingBottom: '4px',
+            paddingBottom: '6px',
             paddingRight: '10px',
           }}
         >
@@ -673,7 +673,7 @@ export default function InteractiveMap({
           style={{
             backgroundColor: bgColor,
             color: textColor,
-            paddingBottom: '4px',
+            paddingBottom: '6px',
             paddingRight: '10px',
           }}
         >
@@ -815,7 +815,7 @@ export default function InteractiveMap({
           style={{
             backgroundColor: bgColor,
             color: textColor,
-            paddingBottom: '4px',
+            paddingBottom: '6px',
             paddingRight: '10px',
           }}
         >
@@ -937,7 +937,7 @@ export default function InteractiveMap({
       >
         <div
           style={{
-            paddingBottom: '4px',
+            paddingBottom: '6px',
             paddingRight: '10px',
             overflow: 'hidden',
           }}

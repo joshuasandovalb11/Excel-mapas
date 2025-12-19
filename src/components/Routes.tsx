@@ -419,12 +419,12 @@ export default function Routes() {
               )}
               <button
                 onClick={() => refreshClients(true)}
-                className="text-gray-500 hover:text-blue-600 transition-colors"
-                title="Recargar clientes desde servidor"
+                className="bg-green-100 rounded-full p-1 text-green-700 hover:text-green-900 hover:scale-120 transition-transform"
+                title="Recargar clientes"
                 disabled={isLoading}
               >
                 <RefreshCw
-                  className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`}
+                  className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`}
                 />
               </button>
             </div>

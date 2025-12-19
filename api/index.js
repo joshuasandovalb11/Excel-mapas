@@ -75,6 +75,82 @@ app.post('/api/clientes/sync', async (req, res) => {
   }
 });
 
+/**
+ * Puente: Frontend -> Vercel -> SQL Server
+ * GET: Buscar Pedidos (con filtros)
+ */
+app.get('/api/pedidos/buscar', async (req, res) => {
+  try {
+    const queryParams = new URLSearchParams(req.query).toString();
+    const targetUrl = `${SQL_API_URL}/pedidos/buscar?${queryParams}`;
+
+    console.log(`[Puente Vercel] Buscando pedidos: ${targetUrl}`);
+
+    const response = await fetch(targetUrl);
+
+    if (!response.ok) {
+      if (response.status === 404) return res.status(200).json([]);
+      throw new Error(`Error SQL: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log(`✅ [Puente Vercel] Encontrados ${data.length} pedidos.`);
+
+    res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=59');
+
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error Puente Pedidos (GET):', error.message);
+    res
+      .status(500)
+      .json({ error: 'No se pudo obtener los pedidos del servidor.' });
+  }
+});
+
+/**
+ * Puente: Frontend -> Vercel -> SQL Server
+ * POST: Sincronización masiva de Pedidos
+ */
+app.post('/api/pedidos/sync', async (req, res) => {
+  try {
+    console.log('[Puente Vercel] Sincronizando Pedidos...');
+
+    const response = await fetch(`${SQL_API_URL}/pedidos/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    });
+
+    if (!response.ok) throw new Error(`Error SQL: ${response.statusText}`);
+
+    const data = await response.json();
+    console.log('✅ Pedidos sincronizados.');
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error Puente Pedidos (Sync):', error);
+    res.status(500).json({ error: 'Fallo al sincronizar pedidos.' });
+  }
+});
+
+/**
+ * Puente: Health Check
+ * Verifica conexión end-to-end (Frontend -> Vercel -> SQL Server)
+ */
+app.get('/api/health', async (req, res) => {
+  try {
+    const response = await fetch(`${SQL_API_URL}/health`);
+
+    if (!response.ok) {
+      throw new Error(`SQL Server responde con error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    res.status(500).json({ status: 'OFFLINE', error: error.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 API Puente corriendo en http://localhost:${PORT}`);
 });

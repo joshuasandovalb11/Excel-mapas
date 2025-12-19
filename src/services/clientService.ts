@@ -4,8 +4,6 @@ const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:3000/api' : '/api';
 
 /**
  * OBTENER CLIENTES (GET)
- * Conecta con el puente de Vercel (api/index.js), el cual a su vez
- * conecta con tu SQL Server.
  */
 export const fetchClientsFromSQL = async (): Promise<Client[]> => {
   try {
@@ -30,7 +28,6 @@ export const fetchClientsFromSQL = async (): Promise<Client[]> => {
 
 /**
  * SINCRONIZAR CLIENTES (POST)
- * Envía la lista del Excel al servidor SQL para reemplazar la BD.
  */
 export const syncClientsToSQL = async (
   clients: Client[],
@@ -63,6 +60,3 @@ export const syncClientsToSQL = async (
     throw error;
   }
 };
-
-// Mantener compatibilidad de nombres
-export const fetchClientsFromFirestore = fetchClientsFromSQL;

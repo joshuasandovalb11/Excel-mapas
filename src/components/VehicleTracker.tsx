@@ -1967,12 +1967,12 @@ export default function VehicleTracker() {
                       )}
                       <button
                         onClick={() => refreshClients(true)}
-                        className="text-gray-500 hover:text-blue-600 transition-colors"
-                        title="Recargar clientes desde servidor"
+                        className="bg-green-100 rounded-full p-1 text-green-700 hover:text-green-900 hover:scale-120 transition-transform"
+                        title="Recargar clientes"
                         disabled={isLoadingClients}
                       >
                         <RefreshCw
-                          className={`w-3 h-3 ${isLoadingClients ? 'animate-spin' : ''}`}
+                          className={`w-3.5 h-3.5 ${isLoadingClients ? 'animate-spin' : ''}`}
                         />
                       </button>
                     </div>

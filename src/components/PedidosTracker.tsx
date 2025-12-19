@@ -1,18 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, {
-  useState,
-  useRef,
-  useEffect,
-  useMemo,
-  useCallback,
-} from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import * as XLSX from 'xlsx-js-style';
 import {
-  Upload,
   Users,
   MapPin,
   CalendarDays,
-  UserCheck,
   DollarSign,
   Package,
   XCircle,
@@ -30,6 +22,8 @@ import {
   Calendar,
   Database,
   RefreshCw,
+  ShoppingCart,
+  UserCheck,
 } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -63,23 +57,9 @@ import {
 } from '../utils/tripUtils';
 import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 import { useClients } from '../context/ClientContext';
+import { useOrders } from '../context/OrderContext';
 
-interface IPedidoRaw {
-  '#Pedido': string | number;
-  '#Vend': string;
-  Fecha: string | number;
-  '#Cliente': string | number;
-  'Nombre del Cliente': string;
-  '#Suc': string | number;
-  Sucursal: string;
-  'Imp MN': number;
-  'Imp US': number;
-  'Gps Cliente': string;
-  'GPS Captura': string;
-  'GPS Envio': string;
-  Procedencia: string;
-}
-
+// Mantenemos la interfaz interna que usa tu lógica actual
 interface IPedido {
   pedidoNum: string;
   vendedor: string;
@@ -152,28 +132,6 @@ const parseGps = (gpsString: string): { lat: number; lng: number } | null => {
   return { lat, lng };
 };
 
-const parseExcelDate = (fecha: string | number): string => {
-  if (typeof fecha === 'number') {
-    const date = new Date((fecha - 25569) * 86400 * 1000);
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  } else {
-    const str = String(fecha).split('T')[0];
-    if (str.includes('/')) {
-      const parts = str.split('/');
-      if (parts.length === 3) {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(
-          2,
-          '0'
-        )}`;
-      }
-    }
-    return str;
-  }
-};
-
 const applyOffsetsToMarkers = (markers: IPedidoMarker[]): IPedidoMarker[] => {
   const grouped = new Map<string, IPedidoMarker[]>();
   markers.forEach((marker) => {
@@ -221,7 +179,7 @@ const defaultCenter = { lat: 25.0, lng: -100.0 };
 
 export default function PedidosTracker() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading] = useState(false);
 
   const {
     masterClients,
@@ -229,13 +187,17 @@ export default function PedidosTracker() {
     refreshClients,
   } = useClients();
 
+  const {
+    orders: sqlOrders,
+    loading: isLoadingOrders,
+    error: ordersError,
+    refreshOrders,
+  } = useOrders();
+
   const [pedidosData, setPedidosData] = usePersistentState<IPedido[] | null>(
     'pt_pedidosData',
     null
   );
-  const [pedidosFileName, setPedidosFileName] = usePersistentState<
-    string | null
-  >('pt_pedidosFileName', null);
 
   const [availableDates, setAvailableDates] = usePersistentState<string[]>(
     'pt_availableDates',
@@ -280,6 +242,62 @@ export default function PedidosTracker() {
     googleMapsApiKey: import.meta.env.VITE_Maps_API_KEY,
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
+
+  useEffect(() => {
+    if (!sqlOrders || sqlOrders.length === 0) {
+      if (!isLoadingOrders && sqlOrders.length === 0) {
+        setPedidosData(null);
+        setAvailableDates([]);
+        setAvailableVendors([]);
+      }
+      return;
+    }
+
+    const processed: IPedido[] = sqlOrders.map((o) => ({
+      pedidoNum: String(o.pedidoId),
+      vendedor: o.vend,
+      fechaStr: o.fecha,
+      clienteNum: String(o.clienteId),
+      clienteName: o.nombreCliente,
+      sucursalNum: String(o.sucursalId),
+      sucursalName: o.sucursalNombre,
+      impMXN: o.importeMN,
+      impUS: o.importeUS,
+      pedidoClientGps: parseGps(o.gpsCliente),
+      capturaGps: parseGps(o.gpsCaptura),
+      envioGps: parseGps(o.gpsEnvio),
+      procedencia: o.procedencia,
+      isMatch: false,
+      distance: Infinity,
+    }));
+
+    setPedidosData(processed);
+
+    const dates = new Set<string>();
+    const vendors = new Set<string>();
+    processed.forEach((p) => {
+      dates.add(p.fechaStr);
+      vendors.add(p.vendedor);
+    });
+
+    const sortedDates = Array.from(dates).sort();
+    if (sortedDates.length > 1) {
+      sortedDates.unshift('__ALL_DATES__');
+    }
+    setAvailableDates(sortedDates);
+    setAvailableVendors(Array.from(vendors).sort());
+  }, [
+    sqlOrders,
+    isLoadingOrders,
+    setPedidosData,
+    setAvailableDates,
+    setAvailableVendors,
+  ]);
+
+  // Manejo de errores del contexto
+  useEffect(() => {
+    if (ordersError) setError(ordersError);
+  }, [ordersError]);
 
   const processedMapData = useMemo(() => {
     if (
@@ -663,96 +681,6 @@ export default function PedidosTracker() {
     }
     setIsToastVisible(false);
     setTimeout(() => setError(null), 500);
-  };
-
-  const handlePedidosFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsLoading(true);
-    setPedidosFileName(file.name);
-    setError(null);
-    setPedidosData(null);
-    setAvailableDates([]);
-    setAvailableVendors([]);
-    setSelectedDate(null);
-    setSelectedVendor(null);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        if (!event.target?.result)
-          throw new Error('No se pudo leer el archivo de pedidos.');
-        const bstr = event.target.result as string;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-
-        const data: IPedidoRaw[] = XLSX.utils.sheet_to_json(ws, {
-          defval: '',
-        });
-        if (data.length === 0)
-          throw new Error('El archivo de pedidos está vacío.');
-
-        const headers = Object.keys(data[0]);
-        const requiredHeaders = [
-          '#Pedido',
-          '#Vend',
-          'Fecha',
-          '#Cliente',
-          'GPS Envio',
-        ];
-        if (!requiredHeaders.every((h) => headers.includes(h))) {
-          throw new Error(
-            'El archivo de pedidos no tiene las cabeceras requeridas.'
-          );
-        }
-
-        const processed: IPedido[] = [];
-        const dates = new Set<string>();
-        const vendors = new Set<string>();
-
-        for (const row of data) {
-          const fechaStr = parseExcelDate(row.Fecha);
-          dates.add(fechaStr);
-          vendors.add(String(row['#Vend']));
-
-          processed.push({
-            pedidoNum: String(row['#Pedido']),
-            vendedor: String(row['#Vend']),
-            fechaStr,
-            clienteNum: String(row['#Cliente']),
-            clienteName: String(row['Nombre del Cliente']),
-            sucursalNum: String(row['#Suc']),
-            sucursalName: String(row.Sucursal),
-            impMXN: Number(row['Imp MN']) || 0,
-            impUS: Number(row['Imp US']) || 0,
-            pedidoClientGps: parseGps(String(row['Gps Cliente'])),
-            capturaGps: parseGps(String(row['GPS Captura'])),
-            envioGps: parseGps(String(row['GPS Envio'])),
-            procedencia: String(row.Procedencia),
-            isMatch: false,
-            distance: Infinity,
-          });
-        }
-
-        setPedidosData(processed);
-        const sortedDates = Array.from(dates).sort();
-
-        if (sortedDates.length > 1) {
-          sortedDates.unshift('__ALL_DATES__');
-        }
-
-        setAvailableDates(sortedDates);
-        setAvailableVendors(Array.from(vendors).sort());
-      } catch (err: any) {
-        setError(`Error al procesar archivo de pedidos: ${err.message}`);
-        setPedidosData(null);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    reader.readAsBinaryString(file);
   };
 
   const downloadPedidosExcel = () => {
@@ -1549,27 +1477,35 @@ export default function PedidosTracker() {
         {/* Contenido (Scrollable) */}
         {!sidebarCollapsed && (
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* 1. Cargar Archivo de Pedidos */}
+            {/* 1. ESTADO DE PEDIDOS (Reemplaza carga de archivo) */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                1. Archivo de Pedidos
+                1. Base de Datos de Pedidos
               </label>
-              <label
-                htmlFor="pedidos-file"
-                className="flex flex-col items-center justify-center w-full h-32 border-2 border-blue-300 border-dashed rounded-lg cursor-pointer bg-blue-50 hover:bg-blue-100"
-              >
-                <Upload className="w-8 h-8 mb-2 text-blue-500 animate-bounce" />
-                <span className="text-xs font-semibold text-blue-700 text-center px-2">
-                  {pedidosFileName || 'Seleccionar archivo...'}
-                </span>
-                <input
-                  id="pedidos-file"
-                  type="file"
-                  className="hidden"
-                  onChange={handlePedidosFileChange}
-                  accept=".xlsx,.xls,.csv"
-                />
-              </label>
+              <div className="bg-indigo-50 p-2 rounded-lg border border-indigo-200 flex justify-between items-center">
+                {pedidosData && pedidosData.length > 0 ? (
+                  <div className="flex items-center gap-2 text-indigo-700">
+                    <ShoppingCart className="w-4 h-4" />
+                    <span className="text-xs font-semibold">
+                      {pedidosData.length} pedidos (SQL)
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-xs text-orange-600 flex items-center gap-2">
+                    {isLoadingOrders ? 'Cargando BD...' : 'Sin pedidos'}
+                  </div>
+                )}
+                <button
+                  onClick={() => refreshOrders()}
+                  className="bg-indigo-100 rounded-full p-1 text-indigo-700 hover:text-indigo-900 hover:scale-120 transition-transform"
+                  title="Recargar Pedidos"
+                  disabled={isLoadingOrders}
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${isLoadingOrders ? 'animate-spin' : ''}`}
+                  />
+                </button>
+              </div>
             </div>
 
             {/* 2. Clientes */}
@@ -1593,12 +1529,12 @@ export default function PedidosTracker() {
                   )}
                   <button
                     onClick={() => refreshClients(true)}
-                    className="text-gray-500 hover:text-blue-600 transition-colors"
+                    className="bg-green-100 rounded-full p-1 text-green-700 hover:text-green-900 hover:scale-120 transition-transform"
                     title="Recargar clientes"
                     disabled={isLoadingClients}
                   >
                     <RefreshCw
-                      className={`w-3 h-3 ${isLoadingClients ? 'animate-spin' : ''}`}
+                      className={`w-3.5 h-3.5 ${isLoadingClients ? 'animate-spin' : ''}`}
                     />
                   </button>
                 </div>
@@ -1902,7 +1838,7 @@ export default function PedidosTracker() {
               className="p-3 py-20 bg-blue-100 text-blue-600 hover:text-white hover:bg-blue-500 rounded-lg transition-colors"
               title="Configuración"
             >
-              <Upload className="w-6 h-6 animate animate-bounce" />
+              <Users className="w-6 h-6 animate animate-bounce" />
             </button>
           </div>
         )}
@@ -1922,7 +1858,7 @@ export default function PedidosTracker() {
                       ? 'Todas las Fechas'
                       : selectedDate
                   }`
-                : 'Carga archivos y selecciona filtros'}
+                : 'Base de datos cargada. Selecciona filtros.'}
           </h2>
           {processedMapData.stats && (
             <div className="flex items-center gap-3">
@@ -1970,7 +1906,6 @@ export default function PedidosTracker() {
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 p-8">
               <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-lg text-center">
                 <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 px-2">
-                  {/* <MapPinOff className="w-10 h-10 text-blue-600" /> */}
                   <FontAwesomeIcon
                     icon={faMapLocationDot}
                     className="min-w-14 min-h-14 text-blue-600"
@@ -2209,7 +2144,7 @@ export default function PedidosTracker() {
                 <p className="text-gray-500 text-lg">
                   {selectedVendor && !isLoading
                     ? 'No se encontraron datos'
-                    : 'Selecciona archivos y filtros'}
+                    : 'Selecciona filtros'}
                 </p>
                 {selectedVendor && !isLoading && (
                   <p className="text-gray-400 text-sm mt-2">
