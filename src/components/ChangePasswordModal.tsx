@@ -5,9 +5,11 @@ import {
   Eye,
   EyeOff,
   AlertCircle,
-  CheckCircle,
+  ShieldCheck,
   X,
   KeyRound,
+  Loader2,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -24,30 +26,34 @@ export default function ChangePassword({
   onClose,
 }: ChangePasswordModalProps) {
   const { changePassword, logout, user } = useAuth();
+
+  // Estados
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+
+  const hasMinLength = newPassword.length >= 6;
+  const hasNoSpaces = !/\s/.test(newPassword) && newPassword.length > 0;
+  const passwordsMatch =
+    newPassword === confirmPassword && newPassword.length > 0;
+
   const errorTimerRef = useRef<number | null>(null);
-  const [, setIsErrorVisible] = useState(false);
 
   useEffect(() => {
     if (errorTimerRef.current) {
       clearTimeout(errorTimerRef.current);
     }
     if (error) {
-      setIsErrorVisible(true);
       errorTimerRef.current = window.setTimeout(() => {
-        setIsErrorVisible(false);
-        setTimeout(() => setError(null), 500);
+        setError(null);
       }, 5000);
-    } else {
-      setIsErrorVisible(false);
     }
     return () => {
       if (errorTimerRef.current) {
@@ -99,11 +105,6 @@ export default function ChangePassword({
       return;
     }
 
-    if (currentPassword === newPassword) {
-      setError('La nueva contraseña no puede ser igual a la anterior.');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -115,6 +116,12 @@ export default function ChangePassword({
         await reauthenticateWithCredential(auth.currentUser, credential);
       } else {
         throw new Error('No hay sesión activa.');
+      }
+
+      if (currentPassword === newPassword) {
+        setError('La nueva contraseña no puede ser igual a la anterior.');
+        setLoading(false);
+        return;
       }
 
       await changePassword(newPassword);
@@ -146,202 +153,234 @@ export default function ChangePassword({
     }
   };
 
+  const inputClasses =
+    'w-full pl-10 pr-10 py-3 bg-white border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all font-medium text-gray-700 placeholder:text-gray-400';
+
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 pt-10">
+        <motion.div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={onClose}
+        >
           <motion.div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            onClick={onClose}
-          />
-
-          <motion.div
-            className="bg-white rounded-xl shadow-2xl w-full max-w-md overflow-hidden relative z-10"
-            initial={{ opacity: 0, scale: 0.95, y: 10 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: 10 }}
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden relative"
+            initial={{ scale: 0.9, opacity: 0, x: -400 }}
+            animate={{ scale: 1, opacity: 1, x: 0 }}
+            exit={{ scale: 0.95, opacity: 0, x: 400 }}
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-slate-800 p-6 flex justify-between items-center">
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                <Lock className="w-6 h-6" /> Cambiar Contraseña
-              </h3>
-              <button
-                onClick={onClose}
-                className="text-blue-100 cursor-pointer hover:text-white transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -20, x: '-50%' }}
+                  animate={{ opacity: 1, y: 0, x: '-50%' }}
+                  exit={{ opacity: 0, y: -20, x: '-50%' }}
+                  className="absolute top-5 left-1/2 z-50 w-max max-w-[85%] bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm flex items-center gap-2 shadow-lg"
+                >
+                  <AlertCircle className="w-5 h-5 shrink-0" />
+                  <span className="font-medium truncate">{error}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-            <div className="p-6">
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 cursor-pointer text-gray-400 hover:text-gray-600 transition-colors z-10"
+            >
+              <X className="w-6 h-6" />
+            </button>
+
+            <div className="p-8">
               {success ? (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.8 }}
+                  initial={{ opacity: 0, scale: 0.9 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  className="flex flex-col items-center justify-center py-8 text-center"
+                  className="p-6 text-center"
                 >
-                  <div className="bg-green-100 p-4 rounded-full mb-4">
-                    <CheckCircle className="w-12 h-12 text-green-600" />
+                  <div className="flex justify-center mb-3">
+                    <ShieldCheck className="w-12 h-12 text-green-500" />
                   </div>
-                  <h4 className="text-xl font-bold text-gray-800">
+                  <h4 className="text-lg font-bold text-green-800 mb-2">
                     ¡Contraseña Actualizada!
                   </h4>
-                  <p className="text-gray-600 mt-2">
-                    Tu contraseña se ha cambiado correctamente.
+                  <p className="text-sm text-green-700 mb-4">
+                    Tu contraseña ha sido modificada correctamente.
                   </p>
                 </motion.div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-4">
-                  {/* ERROR */}
-                  <AnimatePresence>
-                    {error && (
-                      <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="bg-red-50 border border-red-100 text-red-600 py-2 px-3 rounded-lg text-sm flex items-center gap-2"
-                      >
-                        <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                        <span>{error}</span>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* INFO USUARIO */}
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
-                      Usuario
+                <form onSubmit={handleSubmit}>
+                  <div className="text-center mb-8">
+                    <div className="bg-blue-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <KeyRound className="w-8 h-8 text-blue-600" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900">
+                      Cambiar Contraseña
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-2">
+                      Usuario actual:{' '}
+                      <span className="font-medium text-gray-700">
+                        {user?.email}
+                      </span>
                     </p>
-                    <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
-                      <div className="bg-blue-100 p-1 rounded-full">
-                        <KeyRound className="w-4 h-4 text-blue-600" />
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* 1. Contraseña Actual */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1 ml-1 uppercase tracking-wide">
+                        Contraseña Actual
+                      </label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-3 text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                          <Lock className="w-5 h-5" />
+                        </div>
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          className={inputClasses}
+                          placeholder="Ingresa tu contraseña actual"
+                          value={currentPassword}
+                          onChange={(e) =>
+                            handleInputChange(e, setCurrentPassword)
+                          }
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 cursor-pointer"
+                          tabIndex={-1}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="w-5 h-5" />
+                          ) : (
+                            <Eye className="w-5 h-5" />
+                          )}
+                        </button>
                       </div>
-                      <p
-                        className="text-sm font-medium text-gray-700 truncate"
-                        title={user?.email || ''}
-                      >
-                        {user?.email || ''}
-                      </p>
                     </div>
-                  </div>
 
-                  {/* CONTRASEÑA ACTUAL */}
-                  <div className="pb-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Contraseña Actual
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        className="block w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                        placeholder="Ingresa tu contraseña actual"
-                        value={currentPassword}
-                        onChange={(e) =>
-                          handleInputChange(e, setCurrentPassword)
-                        }
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute cursor-pointer right-3 top-2.5 text-gray-400 hover:text-gray-600"
-                        tabIndex={-1}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="w-5 h-5" />
-                        ) : (
-                          <Eye className="w-5 h-5" />
-                        )}
-                      </button>
+                    <div className="border-t border-gray-100 my-2"></div>
+
+                    {/* 2. Nueva Contraseña */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1 ml-1 uppercase tracking-wide">
+                        Nueva Contraseña
+                      </label>
+                      <div className="relative group">
+                        <div className="absolute left-3 top-3 text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                          <KeyRound className="w-5 h-5" />
+                        </div>
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          className={inputClasses}
+                          placeholder="Ingresa la nueva contraseña"
+                          value={newPassword}
+                          onChange={(e) => handleInputChange(e, setNewPassword)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 cursor-pointer"
+                          tabIndex={-1}
+                        >
+                          {showNewPassword ? (
+                            <EyeOff className="w-5 h-5" />
+                          ) : (
+                            <Eye className="w-5 h-5" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="border-t border-gray-300 my-2 pt-2"></div>
-
-                  {/* NUEVA CONTRASEÑA */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Nueva Contraseña
-                    </label>
-                    <div className="relative">
+                    {/* 3. Confirmar Contraseña */}
+                    <div className="relative group">
+                      <div className="absolute left-3 top-3 text-gray-400 group-focus-within:text-blue-500 transition-colors">
+                        <ShieldCheck className="w-5 h-5" />
+                      </div>
                       <input
                         type={showNewPassword ? 'text' : 'password'}
-                        className="block w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                        placeholder="Mínimo 6 caracteres"
-                        value={newPassword}
-                        onChange={(e) => handleInputChange(e, setNewPassword)}
-                        required
+                        className={inputClasses}
+                        placeholder="Confirmar nueva contraseña"
+                        value={confirmPassword}
+                        onChange={(e) =>
+                          handleInputChange(e, setConfirmPassword)
+                        }
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowNewPassword(!showNewPassword)}
-                        className="absolute cursor-pointer right-3 top-2.5 text-gray-400 hover:text-gray-600"
-                        tabIndex={-1}
-                      >
-                        {showNewPassword ? (
-                          <EyeOff className="w-5 h-5" />
-                        ) : (
-                          <Eye className="w-5 h-5" />
-                        )}
-                      </button>
                     </div>
                   </div>
 
-                  {/* CONFIRMAR CONTRASEÑA */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Confirmar Nueva Contraseña
-                    </label>
-                    <input
-                      type={showNewPassword ? 'text' : 'password'}
-                      className="block w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                      placeholder="Repite la nueva contraseña"
-                      value={confirmPassword}
-                      onChange={(e) => handleInputChange(e, setConfirmPassword)}
-                      required
+                  <div className="mt-4 space-y-2">
+                    <RequirementItem
+                      met={hasMinLength}
+                      label="Mínimo 6 caracteres"
+                    />
+                    <RequirementItem
+                      met={hasNoSpaces}
+                      label="Sin espacios en blanco"
+                    />
+                    <RequirementItem
+                      met={passwordsMatch}
+                      label="Las contraseñas nuevas coinciden"
                     />
                   </div>
 
-                  <div className="flex gap-3 pt-4">
-                    <button
-                      type="button"
-                      onClick={onClose}
-                      className="flex-1 py-2.5 px-4 cursor-pointer border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-                    >
-                      Cancelar
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={
+                  <button
+                    type="submit"
+                    disabled={
+                      loading ||
+                      !currentPassword ||
+                      !hasMinLength ||
+                      !hasNoSpaces ||
+                      !passwordsMatch
+                    }
+                    className={`w-full mt-8 py-3 px-4 rounded-lg font-bold text-white shadow-md flex justify-center items-center gap-2 transition-all transform hover:shadow-lg active:scale-[0.98]
+                      ${
                         loading ||
                         !currentPassword ||
-                        !newPassword ||
-                        !confirmPassword
-                      }
-                      className="flex-1 py-2.5 px-4 cursor-pointer bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center gap-2"
-                    >
-                      {loading ? (
-                        <>
-                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Procesando...
-                        </>
-                      ) : (
-                        'Guardar Cambios'
-                      )}
-                    </button>
-                  </div>
+                        !hasMinLength ||
+                        !hasNoSpaces ||
+                        !passwordsMatch
+                          ? 'bg-gray-300 cursor-not-allowed shadow-none'
+                          : 'bg-blue-600 hover:bg-blue-700'
+                      }`}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />{' '}
+                        Procesando...
+                      </>
+                    ) : (
+                      'Guardar Cambios'
+                    )}
+                  </button>
                 </form>
               )}
             </div>
           </motion.div>
-        </div>
+        </motion.div>
       )}
     </AnimatePresence>
   );
 }
+
+const RequirementItem = ({ met, label }: { met: boolean; label: string }) => (
+  <div
+    className={`flex items-center gap-2 text-xs transition-colors duration-300 ${
+      met ? 'text-green-600 font-medium' : 'text-gray-400'
+    }`}
+  >
+    <div
+      className={`w-4 h-4 rounded-full flex items-center justify-center border transition-all duration-300 ${
+        met ? 'bg-green-500 border-green-500' : 'border-gray-300 bg-transparent'
+      }`}
+    >
+      {met && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+    </div>
+    <span>{label}</span>
+  </div>
+);

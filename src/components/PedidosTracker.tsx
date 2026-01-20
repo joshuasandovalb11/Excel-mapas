@@ -17,13 +17,10 @@ import {
   Crosshair,
   Download,
   ChartNoAxesCombined,
-  Search,
-  Check,
-  Calendar,
-  Database,
-  RefreshCw,
-  ShoppingCart,
   UserCheck,
+  Database,
+  ShoppingCart,
+  RefreshCw,
 } from 'lucide-react';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -58,6 +55,7 @@ import {
 import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 import { useClients } from '../context/ClientContext';
 import { useOrders } from '../context/OrderContext';
+import DateRangePicker from './DateRangePicker';
 
 // Mantenemos la interfaz interna que usa tu lógica actual
 interface IPedido {
@@ -179,14 +177,12 @@ const defaultCenter = { lat: 25.0, lng: -100.0 };
 
 export default function PedidosTracker() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isLoading] = useState(false);
 
   const {
     masterClients,
     loading: isLoadingClients,
     refreshClients,
   } = useClients();
-
   const {
     orders: sqlOrders,
     loading: isLoadingOrders,
@@ -194,25 +190,25 @@ export default function PedidosTracker() {
     refreshOrders,
   } = useOrders();
 
+  const isLoading = isLoadingClients || isLoadingOrders;
+
   const [pedidosData, setPedidosData] = usePersistentState<IPedido[] | null>(
     'pt_pedidosData',
     null
   );
 
-  const [availableDates, setAvailableDates] = usePersistentState<string[]>(
-    'pt_availableDates',
-    []
-  );
-  const [dateSearchTerm, setDateSearchTerm] = useState('');
-  const [isDateSelectorOpen, setIsDateSelectorOpen] = useState(false);
   const [availableVendors, setAvailableVendors] = usePersistentState<string[]>(
     'pt_availableVendors',
     []
   );
-  const [selectedDate, setSelectedDate] = usePersistentState<string | null>(
-    'pt_selectedDate',
-    null
+  const [availableDates, setAvailableDates] = usePersistentState<string[]>(
+    'pt_availableDates',
+    []
   );
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
+    start: '',
+    end: '',
+  });
   const [selectedVendor, setSelectedVendor] = usePersistentState<string | null>(
     'pt_selectedVendor',
     null
@@ -247,7 +243,6 @@ export default function PedidosTracker() {
     if (!sqlOrders || sqlOrders.length === 0) {
       if (!isLoadingOrders && sqlOrders.length === 0) {
         setPedidosData(null);
-        setAvailableDates([]);
         setAvailableVendors([]);
       }
       return;
@@ -290,8 +285,8 @@ export default function PedidosTracker() {
     sqlOrders,
     isLoadingOrders,
     setPedidosData,
-    setAvailableDates,
     setAvailableVendors,
+    setAvailableDates,
   ]);
 
   // Manejo de errores del contexto
@@ -300,12 +295,8 @@ export default function PedidosTracker() {
   }, [ordersError]);
 
   const processedMapData = useMemo(() => {
-    if (
-      !pedidosData ||
-      !masterClients ||
-      !selectedDate ||
-      selectedVendor === null
-    ) {
+    // 1. Validaciones iniciales
+    if (!pedidosData || !masterClients || selectedVendor === null) {
       return {
         clientMarkers: [],
         pedidoMarkers: [],
@@ -317,9 +308,20 @@ export default function PedidosTracker() {
     }
 
     const filteredPedidos = pedidosData.filter((p) => {
-      if (selectedDate !== '__ALL_DATES__' && p.fechaStr !== selectedDate) {
-        return false;
+      let dateMatch = true;
+
+      if (dateRange.start || dateRange.end) {
+        const pDate = p.fechaStr;
+
+        if (dateRange.start && pDate < dateRange.start) {
+          dateMatch = false;
+        }
+        if (dateRange.end && pDate > dateRange.end) {
+          dateMatch = false;
+        }
       }
+
+      if (!dateMatch) return false;
 
       if (selectedVendor === '__ALL__') {
         return true;
@@ -602,7 +604,7 @@ export default function PedidosTracker() {
   }, [
     pedidosData,
     masterClients,
-    selectedDate,
+    dateRange,
     selectedVendor,
     matchRadius,
     gpsMode,
@@ -684,7 +686,7 @@ export default function PedidosTracker() {
   };
 
   const downloadPedidosExcel = () => {
-    if (!pedidosData || !selectedDate || !selectedVendor || !masterClients) {
+    if (!pedidosData || !selectedVendor || !masterClients) {
       setError('No hay datos suficientes para generar el reporte.');
       return;
     }
@@ -785,9 +787,14 @@ export default function PedidosTracker() {
     };
 
     const filteredPedidos = pedidosData.filter((p) => {
-      if (selectedDate !== '__ALL_DATES__' && p.fechaStr !== selectedDate) {
-        return false;
+      let dateMatch = true;
+      if (dateRange.start || dateRange.end) {
+        const pDate = p.fechaStr;
+        if (dateRange.start && pDate < dateRange.start) dateMatch = false;
+        if (dateRange.end && pDate > dateRange.end) dateMatch = false;
       }
+      if (!dateMatch) return false;
+
       return isAllVendors ? true : p.vendedor === selectedVendor;
     });
 
@@ -890,19 +897,13 @@ export default function PedidosTracker() {
       0
     );
 
-    let dateRangeStr = selectedDate;
-    if (selectedDate === '__ALL_DATES__') {
-      const allDates = [...new Set(filteredPedidos.map((p) => p.fechaStr))]
-        .filter((date) => date)
-        .sort();
-
-      if (allDates.length === 0) {
-        dateRangeStr = 'N/A';
-      } else if (allDates.length === 1) {
-        dateRangeStr = allDates[0];
-      } else {
-        dateRangeStr = `${allDates[0]} a ${allDates[allDates.length - 1]}`;
-      }
+    let dateRangeStr = 'Todas las Fechas';
+    if (dateRange.start && dateRange.end) {
+      dateRangeStr = `${dateRange.start} a ${dateRange.end}`;
+    } else if (dateRange.start) {
+      dateRangeStr = `Desde ${dateRange.start}`;
+    } else if (dateRange.end) {
+      dateRangeStr = `Hasta ${dateRange.end}`;
     }
 
     const wb = XLSX.utils.book_new();
@@ -1436,6 +1437,16 @@ export default function PedidosTracker() {
     </>
   );
 
+  // Lógica para determinar qué pantalla mostrar en el sidebar
+  const hasClients = masterClients && masterClients.length > 0;
+  const hasOrders = pedidosData && pedidosData.length > 0;
+
+  // Función para recargar todo
+  const handleFullRefresh = async () => {
+    setError(null);
+    await Promise.all([refreshClients(true), refreshOrders()]);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-gray-100">
       {/* SIDEBAR */}
@@ -1476,359 +1487,248 @@ export default function PedidosTracker() {
 
         {/* Contenido (Scrollable) */}
         {!sidebarCollapsed && (
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* 1. ESTADO DE PEDIDOS (Reemplaza carga de archivo) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                1. Base de Datos de Pedidos
-              </label>
-              <div className="bg-indigo-50 p-2 rounded-lg border border-indigo-200 flex justify-between items-center">
-                {pedidosData && pedidosData.length > 0 ? (
-                  <div className="flex items-center gap-2 text-indigo-700">
-                    <ShoppingCart className="w-4 h-4" />
-                    <span className="text-xs font-semibold">
-                      {pedidosData.length} pedidos (SQL)
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-xs text-orange-600 flex items-center gap-2">
-                    {isLoadingOrders ? 'Cargando BD...' : 'Sin pedidos'}
-                  </div>
-                )}
-                <button
-                  onClick={() => refreshOrders()}
-                  className="bg-indigo-100 rounded-full p-1 text-indigo-700 hover:text-indigo-900 hover:scale-120 transition-transform"
-                  title="Recargar Pedidos"
-                  disabled={isLoadingOrders}
+          <>
+            {!isLoading && (!hasClients || !hasOrders) ? (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-6">
+                {/* Icono Dinámico */}
+                <div
+                  className={`p-4 rounded-full ${!hasClients && !hasOrders ? 'bg-red-50 text-red-500' : 'bg-orange-50 text-orange-500'}`}
                 >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 ${isLoadingOrders ? 'animate-spin' : ''}`}
-                  />
+                  {!hasClients ? (
+                    <Database className="w-10 h-10" />
+                  ) : (
+                    <ShoppingCart className="w-10 h-10" />
+                  )}
+                </div>
+
+                <div>
+                  <h3 className="text-lg font-bold text-gray-800">
+                    {!hasClients ? 'Sin Base de Datos' : 'Sin Pedidos'}
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-2">
+                    {!hasClients
+                      ? 'No se han cargado los clientes. Es necesario sincronizar para continuar.'
+                      : 'No se encontraron pedidos recientes. Sincroniza para obtener los últimos datos.'}
+                  </p>
+                </div>
+
+                {/* Botón de Acción Principal */}
+                <button
+                  onClick={handleFullRefresh}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all shadow-md font-medium w-full justify-center"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Sincronizar Todo
                 </button>
               </div>
-            </div>
+            ) : (
+              // VISTA NORMAL (FILTROS)
+              <div className="flex-1 overflow-y-auto p-4">
+                {/* 1. Filtros */}
+                {pedidosData && masterClients && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+                      Configuración de Filtros
+                    </h3>
 
-            {/* 2. Clientes */}
-            {pedidosData && masterClients && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  2. Base de Datos de Clientes
-                </label>
-                <div className="bg-green-50 p-2 rounded border border-green-200 flex justify-between items-center">
-                  {masterClients && masterClients.length > 0 ? (
-                    <div className="flex items-center gap-2 text-green-700">
-                      <Database className="w-4 h-4" />
-                      <span className="text-xs font-semibold">
-                        {masterClients.length} clientes (SQL)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-orange-600 flex items-center gap-2">
-                      {isLoadingClients ? 'Cargando...' : 'Sin conexión a BD'}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => refreshClients(true)}
-                    className="bg-green-100 rounded-full p-1 text-green-700 hover:text-green-900 hover:scale-120 transition-transform"
-                    title="Recargar clientes"
-                    disabled={isLoadingClients}
-                  >
-                    <RefreshCw
-                      className={`w-3.5 h-3.5 ${isLoadingClients ? 'animate-spin' : ''}`}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
+                    {/* DATE RANGE PICKER */}
+                    <div className="relative z-30">
+                      <label className="flex text-sm font-medium text-gray-700 mb-2 items-center gap-2">
+                        <CalendarDays className="w-4 h-4 text-blue-600" /> Rango
+                        de Fechas
+                      </label>
 
-            {/* 3. Filtros */}
-            {pedidosData && masterClients && (
-              <div className="space-y-4 pt-2 border-t border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-700">
-                  3. Filtros
-                </h3>
-                {/* Seleccion de fecha */}
-                <div className="relative">
-                  <label className="flex text-sm font-medium text-gray-700 mb-1 items-center gap-2">
-                    <CalendarDays className="w-4 h-4" /> Selecciona una Fecha
-                  </label>
-
-                  {/* Boton para abrir el selector de la fecha */}
-                  <div>
-                    <button
-                      onClick={() => {
-                        setIsDateSelectorOpen(true);
-                        setDateSearchTerm('');
-                      }}
-                      className="w-full bg-white border border-gray-300 rounded-lg px-4 py-3 flex items-center justify-between hover:border-blue-500 hover:ring-1 hover:ring-blue-500 transition-all group shadow-sm"
-                    >
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div
-                          className={`p-2 rounded-full ${
-                            selectedDate
-                              ? 'bg-blue-100 text-blue-600'
-                              : 'bg-gray-100 text-gray-500'
-                          }`}
-                        >
-                          <Calendar className="w-5 h-5" />
-                        </div>
-                        <div className="flex flex-col items-start truncate">
-                          <span className="text-xs text-gray-500 font-medium">
-                            Filtro actual:
-                          </span>
-                          <span className="text-sm font-bold text-gray-800 truncate">
-                            {selectedDate === '__ALL_DATES__'
-                              ? 'Todas las Fechas'
-                              : selectedDate
-                                ? selectedDate
-                                : 'Seleccionar Fecha'}
-                          </span>
-                        </div>
+                      <div className="w-full">
+                        <DateRangePicker
+                          startDate={dateRange.start}
+                          endDate={dateRange.end}
+                          availableDates={availableDates}
+                          onApply={(start, end) => setDateRange({ start, end })}
+                          onClear={() => setDateRange({ start: '', end: '' })}
+                        />
                       </div>
-                      <div className="text-gray-400 group-hover:text-blue-500">
-                        <Search className="w-4 h-4" />
-                      </div>
-                    </button>
-                  </div>
+                    </div>
 
-                  {/* Menú Desplegable */}
-                  {isDateSelectorOpen && (
-                    <>
-                      <div
-                        className="fixed inset-0 z-30"
-                        onClick={() => setIsDateSelectorOpen(false)}
-                      />
-
-                      <div className="absolute z-40 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 flex flex-col">
-                        {/* Barra de Búsqueda Interna */}
-                        <div className="p-2 border-b border-gray-100 sticky top-0 bg-white rounded-t-md">
-                          <div className="relative">
-                            <Search className="absolute left-2 top-2.5 w-3 h-3 text-gray-400" />
-                            <input
-                              type="text"
-                              className="w-full pl-7 pr-2 py-1.5 text-xs border border-gray-200 rounded bg-gray-50 focus:outline-none focus:border-blue-500 text-gray-700"
-                              placeholder="Buscar (ej. 2023-10...)"
-                              value={dateSearchTerm}
-                              onChange={(e) =>
-                                setDateSearchTerm(e.target.value)
-                              }
-                              autoFocus
-                            />
-                          </div>
-                        </div>
-
-                        {/* Lista de Opciones */}
-                        <ul className="overflow-auto flex-1 py-1">
-                          {/* Opción Fija: Todas las fechas */}
-                          <li
-                            className={`px-3 py-2 text-sm cursor-pointer flex items-center justify-between hover:bg-blue-50 transition-colors ${
-                              selectedDate === '__ALL_DATES__'
-                                ? 'bg-blue-50 text-blue-700 font-medium'
-                                : 'text-gray-700'
-                            }`}
-                            onClick={() => {
-                              setSelectedDate('__ALL_DATES__');
-                              setIsDateSelectorOpen(false);
-                            }}
-                          >
-                            <span>Todas las Fechas</span>
-                            {/* Solo muestra Check si explícitamente se seleccionó TODAS */}
-                            {selectedDate === '__ALL_DATES__' && (
-                              <Check className="w-4 h-4" />
-                            )}
-                          </li>
-
-                          <div className="border-t border-gray-100 my-1 mx-2"></div>
-
-                          {/* Fechas Filtradas */}
-                          {availableDates
-                            .filter((date) => date !== '__ALL_DATES__')
-                            .filter((date) => date.includes(dateSearchTerm))
-                            .map((date) => (
-                              <li
-                                key={date}
-                                className={`px-3 py-2 text-sm cursor-pointer flex items-center justify-between hover:bg-gray-50 transition-colors ${
-                                  selectedDate === date
-                                    ? 'bg-blue-50 text-blue-700 font-medium'
-                                    : 'text-gray-700'
-                                }`}
-                                onClick={() => {
-                                  setSelectedDate(date);
-                                  setIsDateSelectorOpen(false);
-                                }}
-                              >
-                                <span>{date}</span>
-                                {selectedDate === date && (
-                                  <Check className="w-4 h-4" />
-                                )}
-                              </li>
-                            ))}
-
-                          {/* Mensaje si no hay resultados */}
-                          {availableDates.filter(
-                            (d) =>
-                              d !== '__ALL_DATES__' &&
-                              d.includes(dateSearchTerm)
-                          ).length === 0 && (
-                            <li className="px-3 py-4 text-xs text-center text-gray-400 italic">
-                              No se encontraron fechas
-                            </li>
+                    {/* Seleccion de un vendedor */}
+                    <div>
+                      <label className="flex text-sm font-medium text-gray-700 mb-2 items-center gap-2">
+                        <UserCheck className="w-4 h-4 text-green-600" />{' '}
+                        Vendedor
+                      </label>
+                      <div className="bg-gray-50 p-2 rounded-xl border border-gray-200">
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {!showNoVisitados && (
+                            <button
+                              onClick={() => setSelectedVendor('__ALL__')}
+                              className={`flex w-full px-3 py-2 text-xs font-bold uppercase tracking-wide rounded-lg border items-center justify-center gap-2 transition-all cursor-pointer ${
+                                selectedVendor === '__ALL__'
+                                  ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200'
+                                  : 'bg-white text-gray-600 border-gray-200 hover:border-blue-300 hover:text-blue-600'
+                              }`}
+                            >
+                              <Users className="w-4 h-4" /> Todos
+                            </button>
                           )}
-                        </ul>
+                          {availableVendors.map((vendor) => (
+                            <button
+                              key={vendor}
+                              onClick={() => setSelectedVendor(vendor)}
+                              className={`px-3 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ${
+                                selectedVendor === vendor
+                                  ? 'bg-green-500 text-white border-green-500 shadow-md shadow-green-200 transform scale-105'
+                                  : 'bg-white text-gray-600 border-gray-200 hover:border-green-400 hover:text-green-600'
+                              }`}
+                            >
+                              {vendor}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Seleccion de un vendedor */}
-                <div>
-                  <label className="flex text-sm font-medium text-gray-700 mb-2 items-center gap-2">
-                    <UserCheck className="w-4 h-4" /> Selecciona un Vendedor
-                  </label>
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-2 mt-2 mb-2">
-                      {!showNoVisitados && (
-                        <button
-                          onClick={() => setSelectedVendor('__ALL__')}
-                          className={`w-full px-3 py-2 text-xs font-medium rounded border flex items-center cursor-pointer justify-center gap-2 transition-all ${
-                            selectedVendor === '__ALL__'
-                              ? 'bg-blue-500 text-white border-blue-500 shadow-md'
-                              : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-sky-100 hover:border-blue-400'
-                          }`}
-                        >
-                          <Users className="w-4 h-4" /> TODOS LOS VENDEDORES
-                        </button>
-                      )}
-                      {availableVendors.map((vendor) => (
-                        <button
-                          key={vendor}
-                          onClick={() => setSelectedVendor(vendor)}
-                          className={`px-4 py-1.5 text-xs font-semibold rounded-full border cursor-pointer transition-all duration-200 ease-in-out ${
-                            selectedVendor === vendor
-                              ? 'bg-green-500 text-white border-green-500 shadow-lg transform scale-105'
-                              : 'bg-gray-100 text-gray-700 border-gray-100 hover:bg-green-100 hover:border-green-400'
-                          }`}
-                        >
-                          {vendor}
-                        </button>
-                      ))}
                     </div>
-                  </div>
-                </div>
 
-                <div className="flex items-center justify-between mt-4">
-                  <label htmlFor="toggle-gps-mode" className="flex flex-col">
-                    <span className="flex text-sm font-medium text-gray-700 items-center gap-2">
-                      <Crosshair className="w-4 h-4" /> Tipo de GPS
-                    </span>
-                    <span className="text-xs text-gray-500">
-                      Modo:{' '}
-                      {gpsMode === 'envio' ? (
-                        <b className="text-blue-600">GPS Envío</b>
-                      ) : (
-                        <b className="text-purple-600">GPS Captura</b>
+                    {/* Switches de Configuración */}
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-2 shadow-sm">
+                      {/* Switch GPS */}
+                      <div className="flex items-center justify-between">
+                        <label
+                          htmlFor="toggle-gps-mode"
+                          className="flex flex-col cursor-pointer"
+                        >
+                          <span className="flex text-sm font-bold text-gray-700 items-center gap-2">
+                            <Crosshair className="w-4 h-4 text-purple-500" />{' '}
+                            Tipo GPS
+                          </span>
+                          <span className="text-[10px] uppercase font-bold tracking-wide mt-0.5">
+                            {gpsMode === 'envio' ? (
+                              <span className="text-blue-600">GPS Envio</span>
+                            ) : (
+                              <span className="text-purple-600">
+                                GPS Captura
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={gpsMode === 'captura'}
+                          id="toggle-gps-mode"
+                          onClick={() =>
+                            setGpsMode(
+                              gpsMode === 'envio' ? 'captura' : 'envio'
+                            )
+                          }
+                          className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 ${
+                            gpsMode === 'captura'
+                              ? 'bg-purple-600'
+                              : 'bg-blue-600'
+                          }`}
+                        >
+                          <span
+                            className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-300 shadow-sm ${
+                              gpsMode === 'captura'
+                                ? 'translate-x-6'
+                                : 'translate-x-1'
+                            }`}
+                          />
+                        </button>
+                      </div>
+
+                      {/* Switch No Visitados */}
+                      {selectedVendor !== '__ALL__' && (
+                        <>
+                          <div className="border-t border-gray-200"></div>
+                          <div className="flex items-center justify-between">
+                            <label
+                              htmlFor="toggle-no-visitados"
+                              className="flex flex-col cursor-pointer"
+                            >
+                              <span className="flex text-sm font-bold text-gray-700 items-center gap-2">
+                                <UserX className="w-4 h-4 text-orange-500" /> No
+                                Visitados
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-medium">
+                                {showNoVisitados
+                                  ? 'Mostrando en mapa'
+                                  : 'Ocultos'}
+                              </span>
+                            </label>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={showNoVisitados}
+                              id="toggle-no-visitados"
+                              onClick={() =>
+                                setShowNoVisitados(!showNoVisitados)
+                              }
+                              className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400 ${
+                                showNoVisitados
+                                  ? 'bg-orange-500'
+                                  : 'bg-gray-200'
+                              }`}
+                            >
+                              <span
+                                className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-300 shadow-sm ${
+                                  showNoVisitados
+                                    ? 'translate-x-6'
+                                    : 'translate-x-1'
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </>
                       )}
-                    </span>
-                  </label>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={gpsMode === 'captura'}
-                    id="toggle-gps-mode"
-                    onClick={() =>
-                      setGpsMode(gpsMode === 'envio' ? 'captura' : 'envio')
-                    }
-                    className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-200 ease-in-out ${
-                      gpsMode === 'captura' ? 'bg-purple-600' : 'bg-blue-600'
-                    } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500`}
-                  >
-                    <span
-                      className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-200 ease-in-out ${
-                        gpsMode === 'captura'
-                          ? 'translate-x-6'
-                          : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
+                    </div>
 
-                {selectedVendor != '__ALL__' && (
-                  <div className="flex items-center justify-between pt-2">
-                    <label
-                      htmlFor="toggle-no-visitados"
-                      className="flex flex-col"
-                    >
-                      <span className="flex text-sm font-medium text-gray-700 items-center gap-2">
-                        <UserX className="w-4 h-4" /> Clientes No Visitados
-                      </span>
-                      <span className="text-xs text-gray-500">
-                        {showNoVisitados ? 'Mostrando en el mapa' : 'Ocultos'}
-                      </span>
-                    </label>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={showNoVisitados}
-                      id="toggle-no-visitados"
-                      onClick={() => setShowNoVisitados(!showNoVisitados)}
-                      className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors duration-200 ease-in-out ${
-                        showNoVisitados ? 'bg-green-500' : 'bg-gray-300'
-                      } focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-400`}
-                    >
-                      <span
-                        className={`inline-block w-4 h-4 transform bg-white rounded-full transition-transform duration-200 ease-in-out ${
-                          showNoVisitados ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
+                    <div className="border-t border-gray-200"></div>
+
+                    {/* Slider de Radio */}
+                    <div className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                      <label className="flex justify-between text-xs font-semibold text-gray-600 mb-2">
+                        <span>Radio de Coincidencia</span>
+                        <span className="text-blue-600">
+                          {matchRadius} metros
+                        </span>
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMatchRadius((prev) => Math.max(10, prev - 10))
+                          }
+                          className="w-8 h-8 flex items-center justify-center bg-white rounded-full border border-gray-300 hover:border-blue-500 hover:text-blue-600 shadow-sm transition-all active:scale-95"
+                          disabled={matchRadius <= 10}
+                        >
+                          <Minus className="w-3 h-3" />
+                        </button>
+                        <input
+                          type="range"
+                          min={10}
+                          max={500}
+                          step={10}
+                          value={matchRadius}
+                          onChange={(e) =>
+                            setMatchRadius(Number(e.target.value))
+                          }
+                          className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMatchRadius((prev) => Math.min(1000, prev + 10))
+                          }
+                          className="w-8 h-8 flex items-center justify-center bg-white rounded-full border border-gray-300 hover:border-blue-500 hover:text-blue-600 shadow-sm transition-all active:scale-95"
+                          disabled={matchRadius >= 1000}
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
-
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Radio de detección de cliente
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label="Disminuir radio"
-                      onClick={() =>
-                        setMatchRadius((prev) => Math.max(10, prev - 10))
-                      }
-                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
-                      disabled={matchRadius <= 10}
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    <input
-                      type="range"
-                      min={10}
-                      max={500}
-                      step={10}
-                      value={matchRadius}
-                      onChange={(e) => setMatchRadius(Number(e.target.value))}
-                      className="flex-1 accent-blue-600"
-                      aria-label="Radio de detección de cliente"
-                    />
-                    <button
-                      type="button"
-                      aria-label="Aumentar radio"
-                      onClick={() =>
-                        setMatchRadius((prev) => Math.min(1000, prev + 10))
-                      }
-                      className="px-1 py-1 bg-gray-100 rounded border border-gray-300 hover:bg-gray-200 disabled:opacity-50"
-                      disabled={matchRadius >= 1000}
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
-                    <span className="text-sm font-semibold text-gray-700 w-16 text-right">
-                      {matchRadius} m
-                    </span>
-                  </div>
-                </div>
               </div>
             )}
-          </div>
+          </>
         )}
 
         {sidebarCollapsed && (
@@ -1850,13 +1750,17 @@ export default function PedidosTracker() {
           <h2 className="text-md font-semibold text-gray-800">
             {isLoading
               ? 'Cargando datos...'
-              : selectedDate
+              : selectedVendor
                 ? `Análisis de Pedidos: ${
                     selectedVendor === '__ALL__' ? 'TODOS' : selectedVendor
                   } - ${
-                    selectedDate === '__ALL_DATES__'
-                      ? 'Todas las Fechas'
-                      : selectedDate
+                    dateRange.start && dateRange.end
+                      ? `${dateRange.start} al ${dateRange.end}`
+                      : dateRange.start
+                        ? `Desde ${dateRange.start}`
+                        : dateRange.end
+                          ? `Hasta ${dateRange.end}`
+                          : 'Todas las Fechas'
                   }`
                 : 'Base de datos cargada. Selecciona filtros.'}
           </h2>
@@ -1901,8 +1805,9 @@ export default function PedidosTracker() {
               <p>Procesando datos...</p>
             </div>
           ) : selectedVendor === '__ALL__' &&
-            selectedDate === '__ALL_DATES__' ? (
-            /* CASO: TODOS LOS VENDEDORES */
+            !dateRange.start &&
+            !dateRange.end ? (
+            /* CASO: TODOS LOS VENDEDORES + TODAS LAS FECHAS = MAPA OFF */
             <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 p-8">
               <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 max-w-lg text-center">
                 <div className="bg-blue-100 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 px-2">
@@ -1927,15 +1832,15 @@ export default function PedidosTracker() {
                   </p>
                 </div>
                 <p className="text-xs text-gray-500 mt-6">
-                  Para ver el mapa, selecciona un vendedor específico.
+                  Para ver el mapa, selecciona un vendedor específico o un rango
+                  de fechas.
                 </p>
               </div>
             </div>
-          ) : selectedDate &&
-            selectedVendor !== undefined &&
+          ) : selectedVendor !== null &&
             (processedMapData.clientMarkers.length > 0 ||
               processedMapData.pedidoMarkers.length > 0) ? (
-            /* CASO: UN VENDEDOR */
+            /* CASO: MAPA ACTIVO (Hay Vendedor y Datos) */
             isLoaded ? (
               <GoogleMap
                 mapContainerStyle={mapContainerStyle}
@@ -2148,7 +2053,7 @@ export default function PedidosTracker() {
                 </p>
                 {selectedVendor && !isLoading && (
                   <p className="text-gray-400 text-sm mt-2">
-                    No hay pedidos para esta selección en esta fecha.
+                    No hay pedidos para esta selección en este rango de fechas.
                   </p>
                 )}
               </div>
@@ -2279,14 +2184,14 @@ export default function PedidosTracker() {
               </div>
             </div>
 
-            <div className="mt-8 flex flex-wrap lg:flex-nowrap justify-center gap-8">
-              <div className="bg-white p-4 rounded-lg border border-gray-300 w-full max-w-md">
+            <div className="mt-15 flex flex-wrap lg:flex-nowrap justify-center gap-10">
+              <div className="bg-white p-4 w-full max-w-md">
                 <Doughnut options={doughnutOptions} data={doughnutData} />
               </div>
               {selectedVendor === '__ALL__' &&
                 pedidosPorVendedor &&
                 pedidosPorVendedor.length > 0 && (
-                  <div className="bg-white p-4 rounded-lg border border-gray-300 w-full max-w-md">
+                  <div className="bg-white p-4 w-full max-w-md">
                     <Bar options={barOptions} data={barData} />
                   </div>
                 )}

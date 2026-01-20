@@ -9,10 +9,11 @@ import {
   Server,
   Database,
 } from 'lucide-react';
+import AdminDashboardView from './admin-views/AdminDashboardView';
 import AdminClientsUploadView from './admin-views/AdminClientsUploadView';
 import AdminOrdersUploadView from './admin-views/AdminOrdersUploadView';
 import ChangePasswordView from './admin-views/ChangePasswordView';
-import loaderAnimation from './../assets/Globe.json';
+import loaderAnimation from '../assets/Globe.json';
 import Lottie from 'lottie-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -39,11 +40,12 @@ function PageLoader() {
 }
 
 export default function AdminPanel() {
-  const [currentView, setCurrentView] = useState<AdminView>('clients');
+  const [currentView, setCurrentView] = useState<AdminView>('dashboard');
   const [apiStatus, setApiStatus] = useState<Status>('checking');
   const [dbStatus, setDbStatus] = useState<Status>('checking');
 
   const menuItems = [
+    { id: 'dashboard', label: 'Panel de Control', icon: ShieldCheck },
     { id: 'clients', label: 'Base de Datos Clientes', icon: Users },
     { id: 'orders', label: 'Base de Datos Pedidos', icon: ShoppingCart },
     { id: 'security', label: 'Seguridad y Contraseñas', icon: Key },
@@ -117,16 +119,16 @@ export default function AdminPanel() {
               <button
                 key={item.id}
                 onClick={() => setCurrentView(item.id as AdminView)}
-                className={`w-full flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-xl transition-all duration-200 cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 cursor-pointer ${
                   isActive
-                    ? 'bg-blue-50 text-[#0022B5] shadow-sm ring-1 ring-indigo-200'
+                    ? 'bg-[#0022B5] text-white shadow-sm'
                     : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
                 }`}
               >
                 <Icon
                   className={`w-5 h-5 transition-colors ${
                     isActive
-                      ? 'text-[#0022B5]'
+                      ? 'text-white'
                       : 'text-gray-400 group-hover:text-gray-600'
                   }`}
                 />
@@ -227,6 +229,7 @@ export default function AdminPanel() {
                 >
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 md:p-10 lg:p-12 flex-1 flex flex-col justify-center">
                     <div className="w-full max-w-3xl mx-auto">
+                      {currentView === 'dashboard' && <AdminDashboardView />}
                       {currentView === 'clients' && <AdminClientsUploadView />}
                       {currentView === 'orders' && <AdminOrdersUploadView />}
                       {currentView === 'security' && <ChangePasswordView />}

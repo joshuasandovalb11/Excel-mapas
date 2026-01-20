@@ -17,8 +17,6 @@ import {
   Minus,
   ChartNoAxesCombined,
   ChartBar,
-  Database,
-  RefreshCw,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { useClients } from '../context/ClientContext';
@@ -34,10 +32,9 @@ import {
   type TripEvent,
 } from '../utils/tripUtils';
 
-// --- INTEGRACIÓN DE GOOGLE MAPS API ---
 const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
-// --- FUNCIÓN DE GEOCODIFICACIÓN CON DIRECCIÓN COMPLETA ---
+// FUNCIÓN DE GEOCODIFICACIÓN CON DIRECCIÓN
 const getAddress = async (lat: number, lng: number): Promise<string> => {
   if (!googleMapsApiKey) {
     return 'API Key de Google Maps no configurada';
@@ -124,9 +121,10 @@ const getDayOfWeek = (dateString: string): string => {
 export default function ReportesView() {
   const {
     masterClients,
-    loading: isLoadingClients,
-    refreshClients,
+    // loading: isLoadingClients,
+    // refreshClients,
   } = useClients();
+
   const [vehicleFiles, setVehicleFiles] = useState<File[]>([]);
   const [reportData, setReportData] =
     usePersistentState<WeeklyReportData | null>('rv_reportData', null);
@@ -1192,31 +1190,6 @@ export default function ReportesView() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   2. Seleccionar Vendedor
                 </label>
-                {/* INDICADOR DE CARGA AUTOMATICA DE CLIENTES (DESDE SQL) */}
-                <div className="bg-green-50 p-2 rounded border border-green-200 mb-4 flex justify-between items-center">
-                  {masterClients && masterClients.length > 0 ? (
-                    <div className="flex items-center gap-2 text-green-700">
-                      <Database className="w-4 h-4" />
-                      <span className="text-xs font-semibold">
-                        {masterClients.length} clientes sincronizados (SQL)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-orange-600 flex items-center gap-2">
-                      {isLoadingClients ? 'Cargando...' : 'Sin conexión a BD'}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => refreshClients(true)}
-                    className="bg-green-100 rounded-full p-1 text-green-700 hover:text-green-900 hover:scale-120 transition-transform"
-                    title="Recargar clientes"
-                    disabled={isLoadingClients}
-                  >
-                    <RefreshCw
-                      className={`w-3.5 h-3.5 ${isLoadingClients ? 'animate-spin' : ''}`}
-                    />
-                  </button>
-                </div>
 
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -1612,7 +1585,7 @@ export default function ReportesView() {
         </div>
       </main>
 
-      {/* Error Toast (Opcional) */}
+      {/* Error Toast */}
       {error && (
         <div
           className={`

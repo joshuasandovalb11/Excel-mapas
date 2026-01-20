@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import {
   Key,
@@ -11,6 +11,7 @@ import {
   EyeOff,
   Mail,
   ArrowDownToLine,
+  Check,
 } from 'lucide-react';
 import { EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { auth } from '../../firebaseConfig';
@@ -27,8 +28,54 @@ export default function ChangePasswordView() {
   const [showNew, setShowNew] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
+  const [isToastVisible, setIsToastVisible] = useState(false);
+  const toastTimerRef = useRef<number | null>(null);
+
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Validaciones en tiempo real
+  const hasMinLength = newPassword.length >= 6;
+  const hasNoSpaces = !/\s/.test(newPassword) && newPassword.length > 0;
+  const passwordsMatch =
+    newPassword === confirmPassword && newPassword.length > 0;
+
+  // useEffect para manejar la visibilidad y el temporizador del toast
+  useEffect(() => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    if (error) {
+      setIsToastVisible(true);
+
+      toastTimerRef.current = window.setTimeout(() => {
+        setIsToastVisible(false);
+
+        setTimeout(() => {
+          setError(null);
+        }, 500);
+      }, 5000);
+    } else {
+      setIsToastVisible(false);
+    }
+
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, [error]);
+
+  const handleCloseToast = () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setIsToastVisible(false);
+    setTimeout(() => {
+      setError(null);
+    }, 500);
+  };
 
   const resetView = async () => {
     setError(null);
@@ -67,11 +114,6 @@ export default function ChangePasswordView() {
       return;
     }
 
-    if (currentPassword === newPassword) {
-      setError('La nueva contraseña no puede ser igual a la anterior.');
-      return;
-    }
-
     setLoading(true);
 
     try {
@@ -83,6 +125,11 @@ export default function ChangePasswordView() {
         await reauthenticateWithCredential(auth.currentUser, credential);
       } else {
         throw new Error('No hay sesión activa.');
+      }
+
+      if (currentPassword === newPassword) {
+        setError('La nueva contraseña no puede ser igual a la anterior.');
+        return;
       }
 
       await changePassword(newPassword);
@@ -154,24 +201,9 @@ export default function ChangePasswordView() {
           {/* FORMULARIO */}
           <div className="px-4">
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* ERROR */}
-              <AnimatePresence>
-                {error && (
-                  <motion.div
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 20 }}
-                    className="bg-red-50 border border-red-100 text-red-600 py-2 px-3 rounded-lg text-sm flex items-center gap-2"
-                  >
-                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                    <span>{error}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
               {/* Campo: Correo */}
               <div>
-                <label className="block text-sm font-medium text-slate-400 uppercase mb-1">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   Correo
                 </label>
                 <div className="relative">
@@ -198,7 +230,7 @@ export default function ChangePasswordView() {
                     value={currentPassword}
                     onChange={(e) => handleInputChange(e, setCurrentPassword)}
                     required
-                    className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0022B5] focus:border-[#0022B5] transition-colors"
+                    className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0022B5] transition-colors"
                     placeholder="Ingresa tu contraseña actual"
                   />
                   <button
@@ -232,8 +264,8 @@ export default function ChangePasswordView() {
                       value={newPassword}
                       onChange={(e) => handleInputChange(e, setNewPassword)}
                       required
-                      className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0022B5] focus:border-[#0022B5] transition-colors"
-                      placeholder="Mínimo 6 caracteres"
+                      className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0022B5] transition-colors"
+                      placeholder="Escribe la nueva contrseña"
                     />
                     <button
                       type="button"
@@ -263,7 +295,7 @@ export default function ChangePasswordView() {
                       value={confirmPassword}
                       onChange={(e) => handleInputChange(e, setConfirmPassword)}
                       required
-                      className={`block w-full pl-10 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0022B5] focus:border-[#0022B5] transition-colors ${
+                      className={`block w-full pl-10 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0022B5] transition-colors ${
                         confirmPassword && newPassword !== confirmPassword
                           ? 'border-red-300 bg-red-50 focus:ring-red-500'
                           : 'border-gray-300'
@@ -274,14 +306,38 @@ export default function ChangePasswordView() {
                 </div>
               </div>
 
+              {/* Validadores Visuales */}
+              <div className="mt-6 space-y-2">
+                <RequirementItem
+                  met={hasMinLength}
+                  label="Mínimo 6 caracteres"
+                />
+                <RequirementItem
+                  met={hasNoSpaces}
+                  label="Sin espacios en blanco"
+                />
+                <RequirementItem
+                  met={passwordsMatch}
+                  label="Las contraseñas coinciden"
+                />
+              </div>
+
               <div className="pt-4">
                 <button
                   type="submit"
-                  disabled={loading}
+                  disabled={
+                    loading || !hasMinLength || !hasNoSpaces || !passwordsMatch
+                  }
                   className={`w-full flex cursor-pointer justify-center items-center py-3 px-4 border border-transparent 
                     rounded-lg shadow-sm text-sm font-bold text-white bg-[#0022B5] hover:bg-[#00187D] 
-                    focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0022B5] transition-all ${
-                      loading ? 'opacity-70 cursor-not-allowed' : ''
+                    focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#0022B5] transition-all 
+                    ${
+                      loading ||
+                      !hasMinLength ||
+                      !hasNoSpaces ||
+                      !passwordsMatch
+                        ? 'opacity-70 cursor-not-allowed'
+                        : ''
                     }`}
                 >
                   {loading ? (
@@ -298,9 +354,61 @@ export default function ChangePasswordView() {
                 </button>
               </div>
             </form>
+
+            {/* ERROR */}
+            <AnimatePresence>
+              {error && (
+                <div
+                  className={`fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-1 max-w-md z-50 transition-all duration-500 ease-in-out ${
+                    isToastVisible
+                      ? 'opacity-100 translate-x-0'
+                      : 'opacity-0 translate-x-10'
+                  }`}
+                >
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <p className="text-sm">{error}</p>
+                  <button
+                    onClick={handleCloseToast}
+                    className="ml-6 hover:bg-red-600 p-1 rounded"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </AnimatePresence>
           </div>
         </>
       )}
     </div>
   );
 }
+
+// Subcomponente para los requisitos
+const RequirementItem = ({ met, label }: { met: boolean; label: string }) => (
+  <div
+    className={`flex items-center gap-2 text-sm transition-colors duration-300 ${
+      met ? 'text-green-600 font-medium' : 'text-slate-400'
+    }`}
+  >
+    <div
+      className={`w-4 h-4 rounded-full flex items-center justify-center border transition-all duration-300 ${
+        met
+          ? 'bg-green-500 border-green-500'
+          : 'border-slate-300 bg-transparent'
+      }`}
+    >
+      {met && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
+    </div>
+    <span>{label}</span>
+  </div>
+);

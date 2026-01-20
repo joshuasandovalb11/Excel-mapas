@@ -33,9 +33,9 @@ export default function RefreshSystem({
           >
             <motion.div
               className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6"
-              initial={{ scale: 0.9, opacity: 0, x: -400 }}
+              initial={{ scale: 1, opacity: 0, x: -400 }}
               animate={{ scale: 1, opacity: 1, x: 0 }}
-              exit={{ scale: 0.95, opacity: 0, x: 400 }}
+              exit={{ scale: 1, opacity: 0, x: 400 }}
               transition={{ type: 'spring', damping: 25, stiffness: 300 }}
               onClick={(e) => e.stopPropagation()}
             >

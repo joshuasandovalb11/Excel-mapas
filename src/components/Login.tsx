@@ -80,66 +80,66 @@ export default function Login({ onLoginTransition }: LoginProps) {
       } else if (err.code === 'auth/too-many-requests') {
         setError('Demasiados intentos fallidos. Intenta más tarde.');
       } else if (err.code === 'auth/user-not-found') {
-        setError(
-          'No existe un registro de usuario que corresponda al correo electrónico proporcionado.'
-        );
+        setError('No existe cuenta con este correo.');
       } else if (err.code === 'auth/network-request-failed') {
-        setError('Ocurrio un error de red. Verifica tu conexion a internet');
+        setError('Error de red. Verifica tu conexión.');
       } else if (err.code === 'auth/user-disabled') {
-        setError(
-          'La cuenta de este usuario fue desabilitada por un administrador. El usuario no puede acceder a menos que el administrador re-habilite la cuenta'
-        );
+        setError('Cuenta deshabilitada por el administrador.');
       } else {
-        setError('Error al iniciar sesión. Intenta nuevamente.');
+        setError('Error al iniciar sesión.');
       }
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-300 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col md:flex-row h-auto min-h-[600px]">
-        {/* FORMULARIO DE LOGIN */}
-        <div className="w-full md:w-1/2 p-8 md:p-10 flex flex-col justify-center">
-          <div className="text-center mb-2">
-            <div className="bg-blue-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
+    <div className="flex h-screen w-screen overflow-hidden bg-white">
+      {/* SECCIÓN DEL FORMULARIO */}
+      <div className="w-full md:w-[40%] h-full flex flex-col justify-center px-8 md:px-12 relative z-20 bg-white shadow-2xl">
+        <div className="w-full max-w-lg mx-auto">
+          {/* Header Compacto */}
+          <div className="text-center mb-6">
+            <div className="bg-blue-600 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-200">
               <LockKeyhole className="w-10 h-10 text-white animate-pulse" />
             </div>
-            <h2 className="text-3xl font-bold text-gray-900 mb-2">
+            <h2 className="text-3xl font-bold text-gray-900">
               Acceso al Sistema
             </h2>
-            <p className="text-gray-500">Ingresa las credenciales.</p>
+            <p className="text-md text-gray-500 mt-1">
+              Ingresa las credenciales para continuar.
+            </p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-5">
-            {/* Mensaje de Error Animado */}
-            <div className="h-14 relative">
+            {/* Mensaje de Error */}
+            <div className="h-10 relative">
               <AnimatePresence>
                 {error && (
                   <motion.div
                     initial={{ opacity: 0, x: -20 }}
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 20 }}
-                    className="absolute inset-0 bg-red-50 text-red-600 p-3 rounded-lg text-sm flex items-center gap-2 border border-red-100"
+                    className="absolute inset-0 bg-red-50 text-red-600 px-3 py-2 rounded-lg text-xs flex items-center gap-2 border border-red-100 shadow-sm"
                   >
                     <AlertCircle className="w-4 h-4 shrink-0" />
-                    {error}
+                    <span className="truncate font-medium">{error}</span>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>
 
+            {/* Input Correo */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-semibold text-gray-700 tracking-wide mb-1">
                 Correo Electrónico
               </label>
-              <div className="relative">
+              <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Mail className="h-5 w-5 text-gray-400" />
+                  <Mail className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                 </div>
                 <input
                   type="email"
                   required
-                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:opacity-50"
+                  className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white text-sm"
                   placeholder="usuario@empresa.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -148,25 +148,24 @@ export default function Login({ onLoginTransition }: LoginProps) {
               </div>
             </div>
 
+            {/* Input Contraseña */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-semibold text-gray-700 tracking-wide mb-1">
                 Contraseña
               </label>
-              <div className="relative">
+              <div className="relative group">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-gray-400" />
+                  <Lock className="h-5 w-5 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                 </div>
-
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
-                  className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:opacity-50"
+                  className="block w-full pl-10 pr-10 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white text-sm"
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading || buttonSuccess}
                 />
-
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -181,11 +180,11 @@ export default function Login({ onLoginTransition }: LoginProps) {
                 </button>
               </div>
 
-              <div className="flex justify-end mt-2">
+              <div className="flex justify-end mt-1">
                 <button
                   type="button"
                   onClick={() => setIsForgotModalOpen(true)}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors hover:underline focus:outline-none disabled:opacity-50"
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium transition-colors hover:underline focus:outline-none"
                   disabled={loading || buttonSuccess}
                 >
                   ¿Olvidaste tu contraseña?
@@ -193,16 +192,17 @@ export default function Login({ onLoginTransition }: LoginProps) {
               </div>
             </div>
 
+            {/* Botón Login */}
             <button
               type="submit"
               disabled={loading || buttonSuccess}
-              className={`w-full flex justify-center items-center cursor-pointer py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-bold text-white transition-all duration-200 
+              className={`w-full flex justify-center items-center cursor-pointer mt-8 py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white transition-all duration-300 transform active:scale-95
                 ${
                   buttonSuccess
-                    ? 'bg-green-500 hover:bg-green-600'
-                    : 'bg-blue-600 hover:bg-blue-700'
+                    ? 'bg-green-500 hover:bg-green-600 shadow-green-500/30'
+                    : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/30'
                 }
-                disabled:opacity-70 disabled:cursor-not-allowed
+                disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none
               `}
             >
               <AnimatePresence mode="wait" initial={false}>
@@ -240,33 +240,45 @@ export default function Login({ onLoginTransition }: LoginProps) {
               </AnimatePresence>
             </button>
           </form>
-        </div>
 
-        {/* IMAGEN Y DESCRIPCIÓN */}
-        <div className="hidden md:block md:w-1/2 relative bg-blue-900">
-          <img
-            src={mapsBg}
-            // src="./src/assets/image.png"
-            alt="Mapa y Logística"
-            className="absolute inset-0 w-full h-full object-cover opacity-95 mix-blend-overlay"
-          />
-
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-900/60 to-blue-800/40"></div>
-
-          <div className="relative z-10 h-full flex flex-col justify-center p-12 text-white">
-            <h3 className="text-3xl font-bold mb-4">
-              Visualizador de Rutas y Pedidos
-            </h3>
-            <p className="text-blue-100 text-lg leading-relaxed">
-              Gestión y visualización del seguimiento de vehículos y pedidos.
+          {/* Footer discreto */}
+          <div className="mt-8 text-center">
+            <p className="text-[12px] text-gray-400">
+              © {new Date().getFullYear()} Sistema de Rastreo v1.0
             </p>
-
-            <div className="mt-8 flex gap-3 opacity-80">
-              <div className="w-12 h-1 bg-white/30 rounded-full"></div>
-              <div className="w-8 h-1 bg-white/30 rounded-full"></div>
-              <div className="w-4 h-1 bg-white/30 rounded-full"></div>
-            </div>
           </div>
+        </div>
+      </div>
+
+      {/* SECCIÓN DE LA IMAGEN */}
+      <div className="hidden md:block md:w-[65%] h-full relative bg-gray-900">
+        <img
+          src={mapsBg}
+          alt="Fondo Logístico"
+          className="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-overlay"
+        />
+
+        <div className="absolute inset-0 bg-gradient-to-r from-white via-transparent to-transparent opacity-20"></div>
+        {/* <div className="absolute inset-0 bg-gradient-to-t from-blue-900/90 to-transparent"></div> */}
+        <div className="absolute inset-0 bg-gradient-to-bl from-blue-900/90 to-transparent"></div>
+
+        <div className="relative z-10 h-full flex flex-col justify-center p-16 pb-20 text-white max-w-4xl">
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3, duration: 0.8 }}
+          >
+            <h1 className="text-5xl lg:text-6xl font-extrabold mb-4 leading-tight tracking-tight">
+              Control Total de <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-200 to-white">
+                Operaciones Logísticas
+              </span>
+            </h1>
+            <p className="text-blue-100 text-lg lg:text-xl font-light max-w-2xl border-l-4 border-blue-400 pl-6">
+              Plataforma para la gestión y visualización del seguimiento de
+              vehículos y pedidos.
+            </p>
+          </motion.div>
         </div>
       </div>
 
