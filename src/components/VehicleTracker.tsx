@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Database,
   ChevronDown,
+  Trash2,
 } from 'lucide-react';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { useIndexedDBState } from '../hooks/useIndexedDBState';
@@ -1941,9 +1942,10 @@ export default function VehicleTracker() {
                                   setActiveDate(null);
                                 }
                               }}
-                              className="text-xs p-0.5 text-red-500 hover:text-red-700 font-medium"
+                              className="flex items-center gap-1 text-xs font-semibold text-red-600 cursor-pointer"
                               title="Limpiar todas las rutas"
                             >
+                              <Trash2 className="w-3 h-3" />
                               Limpiar
                             </button>
                           )}
@@ -2060,7 +2062,7 @@ export default function VehicleTracker() {
                               <label className="flex justify-between text-xs font-semibold text-gray-600 mb-2">
                                 <span>Duracion minima de paradas</span>
                                 <span className="text-blue-600">
-                                  {minStopDuration} metros
+                                  {minStopDuration} minutos
                                 </span>
                               </label>
                               <div className="flex items-center gap-3">

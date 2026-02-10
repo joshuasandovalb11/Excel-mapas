@@ -284,7 +284,7 @@ export default function App() {
                         : 'bg-white border-gray-300 text-gray-700 hover:bg-slate-100'
                     }`}
                   >
-                    <div className="w-6 h-6 bg-blue-100 ring-1 ring-blue-700 rounded-full flex items-center justify-center text-blue-700 shadow-sm">
+                    <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 shadow-sm">
                       <User className="w-4 h-4" />
                     </div>
                     <p className="font-semibold">Cuenta</p>
