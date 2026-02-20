@@ -20,7 +20,9 @@ import {
   Database,
   ChevronDown,
   Trash2,
+  ClockFading,
 } from 'lucide-react';
+import { RiRoadMapLine } from 'react-icons/ri';
 import { usePersistentState } from '../hooks/usePersistentState';
 import { useIndexedDBState } from '../hooks/useIndexedDBState';
 import { useClients } from '../context/ClientContext';
@@ -102,6 +104,10 @@ export default function VehicleTracker() {
     'config'
   );
   const [isSelectOpen, setIsSelectOpen] = useState(false);
+
+  const [timezoneSource, setTimezoneSource] = usePersistentState<
+    'TIJ' | 'CDMX'
+  >('vt_timezoneSource', 'TIJ');
 
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY;
 
@@ -243,7 +249,8 @@ export default function VehicleTracker() {
           rawTripData,
           viewMode,
           vehicleInfo?.fecha || '',
-          clientData // Pasamos los datos completos
+          clientData,
+          timezoneSource
         );
         setTripData(processed);
       } catch (err) {
@@ -255,7 +262,14 @@ export default function VehicleTracker() {
         );
       }
     }
-  }, [viewMode, rawTripData, vehicleInfo, clientData, setTripData]);
+  }, [
+    viewMode,
+    rawTripData,
+    vehicleInfo,
+    clientData,
+    timezoneSource,
+    setTripData,
+  ]);
 
   // Efecto para actualizar los datos activos cuando cambia la fecha seleccionada
   useEffect(() => {
@@ -1926,9 +1940,13 @@ export default function VehicleTracker() {
                       {/* Upload de Ruta */}
                       <div>
                         <div className="flex justify-between items-center mb-2">
-                          <label className="block text-sm font-medium text-gray-700">
-                            1. Cargar Archivo(s) de Ruta
-                          </label>
+                          <div className="flex gap-2 items-center">
+                            <RiRoadMapLine className="w-4 h-4 text-blue-600" />
+                            <label className="block text-sm font-medium text-gray-700">
+                              Cargar Archivo(s) de Ruta
+                            </label>
+                          </div>
+
                           {/* Boton de borrar */}
                           {Object.keys(allTripsData).length > 0 && (
                             <button
@@ -2020,9 +2038,45 @@ export default function VehicleTracker() {
                             </div>
                           </div>
 
+                          {/* Control de Origen de Horario */}
+                          <div>
+                            <label className="flex text-sm font-medium items-center text-gray-700 mb-2 gap-2">
+                              <ClockFading className="w-4 h-4 text-purple-600" />
+                              Tipo de Horario (Archivo)
+                            </label>
+                            <div className="flex rounded-lg border border-purple-300 overflow-hidden">
+                              <button
+                                onClick={() => setTimezoneSource('TIJ')}
+                                className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                                  timezoneSource === 'TIJ'
+                                    ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                    : 'bg-white text-purple-600 hover:bg-purple-50'
+                                }`}
+                                title="El archivo ya viene en hora de Tijuana (Archivos nuevos)"
+                              >
+                                Tijuana (Original)
+                              </button>
+                              <button
+                                onClick={() => setTimezoneSource('CDMX')}
+                                className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+                                  timezoneSource === 'CDMX'
+                                    ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                    : 'bg-white text-purple-600 hover:bg-purple-50'
+                                }`}
+                                title="El archivo viene en hora CDMX y requiere conversión (Archivos viejos)"
+                              >
+                                CDMX (Convertir)
+                              </button>
+                            </div>
+                            <p className="text-[10px] text-gray-400 mt-1 pl-1">
+                              * Usa "Tijuana" para archivos nuevos y "CDMX" para
+                              los anteriores al cambio.
+                            </p>
+                          </div>
+
                           {/* Modo de Vista */}
                           <div>
-                            <label className="flex text-sm font-medium text-gray-700 mb-2 gap-2">
+                            <label className="flex text-sm font-medium items-center text-gray-700 mb-2 gap-2">
                               <CarFront className="w-4 h-4 text-blue-600" />
                               Modo de Traslado
                             </label>

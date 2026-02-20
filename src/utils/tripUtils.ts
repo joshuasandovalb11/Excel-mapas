@@ -731,7 +731,8 @@ export const processTripData = (
   rawData: any[],
   processingMode: 'current' | 'new',
   tripDate: string,
-  clientData: Client[] | null
+  clientData: Client[] | null,
+  timezoneSource: 'TIJ' | 'CDMX' = 'TIJ'
 ): ProcessedTrip => {
   const findTimeColumn = (row: any): string | null => {
     if (!row) return null;
@@ -801,14 +802,19 @@ export const processTripData = (
         return null;
       }
 
-      const convertedTime = convertToTijuanaTime(originalTime, tripDate);
-      if (!convertedTime) {
-        return null;
+      let finalTime = originalTime;
+
+      if (timezoneSource === 'CDMX') {
+        const converted = convertToTijuanaTime(originalTime, tripDate);
+        if (!converted) {
+          return null;
+        }
+        finalTime = converted;
       }
 
       return {
         id: index + 1,
-        time: convertedTime,
+        time: finalTime,
         description: row[descColumn] || 'Sin descripción',
         speed: parseFlexibleNumber(row[speedColumn]),
         lat: Number(row[latColumn]),
