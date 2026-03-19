@@ -13,7 +13,7 @@ import {
   Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import ForgotPassword from './ForgotPasswordModal';
+import ForgotPassword from '../components/ForgotPasswordModal';
 import mapsBg from '../assets/maps.jpg';
 
 interface LoginProps {

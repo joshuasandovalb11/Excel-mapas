@@ -9,10 +9,10 @@ import {
   Server,
   Database,
 } from 'lucide-react';
-import AdminDashboardView from './admin-views/AdminDashboardView';
-import AdminClientsUploadView from './admin-views/AdminClientsUploadView';
-import AdminOrdersUploadView from './admin-views/AdminOrdersUploadView';
-import ChangePasswordView from './admin-views/ChangePasswordView';
+import AdminDashboardView from '../components/admin-views/AdminDashboardView';
+import AdminClientsUploadView from '../components/admin-views/AdminClientsUploadView';
+import AdminOrdersUploadView from '../components/admin-views/AdminOrdersUploadView';
+import ChangePasswordView from '../components/admin-views/ChangePasswordView';
 import loaderAnimation from '../assets/Globe.json';
 import Lottie from 'lottie-react';
 import { AnimatePresence, motion } from 'framer-motion';

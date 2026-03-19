@@ -1,4 +1,10 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  useMemo,
+} from 'react';
 import {
   GoogleMap,
   useJsApiLoader,
@@ -184,10 +190,17 @@ export default function InteractiveMap({
   const [isSummaryCardCollapsed, setIsSummaryCardCollapsed] = useState(false);
   const [isStreetViewVisible, setIsStreetViewVisible] = useState(false);
   const lastNavigationTime = useRef(0);
-
   const animationFrameRef = useRef<number | null>(null);
   const currentPathIndexRef = useRef(0);
   const segmentDistancesRef = useRef<number[]>([]);
+  const polylineOptions = useMemo(
+    () => ({
+      strokeColor: '#3b82f6',
+      strokeOpacity: 0.8,
+      strokeWeight: 5,
+    }),
+    []
+  );
 
   // Función auxiliar para alternar (toggle) un marcador manualmente
   const toggleMarkerSelection = (index: number) => {
@@ -1080,14 +1093,7 @@ export default function InteractiveMap({
         options={mapOptions}
       >
         {/* Polyline animada */}
-        <Polyline
-          path={animatedPath}
-          options={{
-            strokeColor: '#3b82f6',
-            strokeOpacity: 0.8,
-            strokeWeight: 5,
-          }}
-        />
+        <Polyline path={animatedPath} options={polylineOptions} />
 
         {/* Marcadores de paradas */}
         {filteredFlags.map((flag, index) => (

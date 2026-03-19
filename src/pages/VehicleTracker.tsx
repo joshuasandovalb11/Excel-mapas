@@ -41,7 +41,7 @@ import {
   type VehicleInfo,
   type Client,
 } from '../utils/tripUtils';
-import InteractiveMap from './InteractiveMap';
+import InteractiveMap from '../components/InteractiveMap';
 
 interface TripStorage {
   rawData: any[];
@@ -324,7 +324,7 @@ export default function VehicleTracker() {
                 header: 1,
                 defval: '',
               });
-              // ... lógica de detección de headers ...
+
               const expectedHeaders = [
                 'latitud',
                 'longitud',
@@ -2068,10 +2068,6 @@ export default function VehicleTracker() {
                                 CDMX (Convertir)
                               </button>
                             </div>
-                            <p className="text-[10px] text-gray-400 mt-1 pl-1">
-                              * Usa "Tijuana" para archivos nuevos y "CDMX" para
-                              los anteriores al cambio.
-                            </p>
                           </div>
 
                           {/* Modo de Vista */}
@@ -2553,6 +2549,7 @@ export default function VehicleTracker() {
         <div className="flex-1 overflow-hidden bg-gray-50">
           {tripData ? (
             <InteractiveMap
+              key={`${fileName}-${activeDate}`}
               tripData={tripData}
               vehicleInfo={vehicleInfo}
               clientData={selection.mode === 'driver' ? [] : clientData}

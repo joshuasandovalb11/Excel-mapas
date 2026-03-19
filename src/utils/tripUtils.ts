@@ -945,5 +945,31 @@ export const processTripData = (
     workEndTime: workEndTime,
   };
 
+  const LIMITE_PUNTOS = 3000;
+
+  if (
+    finalTripData.routes &&
+    finalTripData.routes[0] &&
+    finalTripData.routes[0].path.length > LIMITE_PUNTOS
+  ) {
+    const originalPath = finalTripData.routes[0].path;
+
+    const step = Math.ceil(originalPath.length / LIMITE_PUNTOS);
+    const simplifiedPath = [];
+
+    for (let i = 0; i < originalPath.length; i += step) {
+      simplifiedPath.push(originalPath[i]);
+    }
+
+    if (
+      simplifiedPath[simplifiedPath.length - 1] !==
+      originalPath[originalPath.length - 1]
+    ) {
+      simplifiedPath.push(originalPath[originalPath.length - 1]);
+    }
+
+    finalTripData.routes[0].path = simplifiedPath;
+  }
+
   return finalTripData;
 };

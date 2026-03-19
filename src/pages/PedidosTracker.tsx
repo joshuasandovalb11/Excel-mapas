@@ -55,7 +55,7 @@ import {
 import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 import { useClients } from '../context/ClientContext';
 import { useOrders } from '../context/OrderContext';
-import DateRangePicker from './DateRangePicker';
+import DateRangePicker from '../components/DateRangePicker';
 
 // Mantenemos la interfaz interna que usa tu lógica actual
 interface IPedido {

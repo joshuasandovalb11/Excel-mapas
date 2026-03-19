@@ -2,6 +2,7 @@ import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import {
   Map,
   // FileText,
+  Waypoints,
   RefreshCcw,
   MapPinHouse,
   HandCoins,
@@ -13,7 +14,7 @@ import {
   ShieldCheck, // Icono para el Panel Admin
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
-import Login from './components/Login';
+import Login from './pages/Login';
 import RefreshSystem from './components/RefreshSystemModal';
 import ChangePassword from './components/ChangePasswordModal';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,14 +22,23 @@ import Lottie from 'lottie-react';
 import loaderAnimation from './assets/Globe.json';
 import { ClientProvider } from './context/ClientContext';
 import { OrderProvider } from './context/OrderContext';
-import AdminPanel from './components/AdminPanel';
+import AdminPanel from './pages/AdminPanel';
 
-const VehicleTracker = lazy(() => import('./components/VehicleTracker'));
+const VehicleTracker = lazy(() => import('./pages/VehicleTracker'));
+const MultipleVehicleTracker = lazy(
+  () => import('./pages/MultipleVehicleTracker')
+);
 // const ReportesView = lazy(() => import('./components/ReportesView'));
-const Routes = lazy(() => import('./components/Routes'));
-const PedidosTracker = lazy(() => import('./components/PedidosTracker'));
+const Routes = lazy(() => import('./pages/Routes'));
+const PedidosTracker = lazy(() => import('./pages/PedidosTracker'));
 
-type ViewType = 'tracker' | 'routes' | 'pedidos' | 'reports' | 'admin';
+type ViewType =
+  | 'tracker'
+  | 'multiple'
+  | 'routes'
+  | 'pedidos'
+  | 'reports'
+  | 'admin';
 
 function PageLoader() {
   return (
@@ -63,6 +73,7 @@ export default function App() {
 
   const tabs = [
     { id: 'tracker', label: 'Visualizador de Rutas', icon: Map },
+    { id: 'multiple', label: 'Visualizador Multiple', icon: Waypoints },
     { id: 'routes', label: 'Mapas de Vendedores', icon: MapPinHouse },
     { id: 'pedidos', label: 'Pedidos de Vendedores', icon: HandCoins },
     // { id: 'reports', label: 'Generador de Reportes', icon: FileText },
@@ -90,6 +101,8 @@ export default function App() {
     switch (activeView) {
       case 'tracker':
         return <VehicleTracker />;
+      case 'multiple':
+        return <MultipleVehicleTracker />;
       case 'routes':
         return <Routes />;
       case 'pedidos':
