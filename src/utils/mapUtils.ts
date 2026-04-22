@@ -69,7 +69,7 @@ export const generateMapHTML = (
   const infoBoxHTML = vehicleInfo
     ? `
         <div id="info-box" class="info-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5px;">
             <h4 style="margin: 0;">Información del Vehiculo</h4>
             <button class="toggle-btn toggle-info-btn" aria-label="Minimizar/Maximizar">
               <i class="fa-solid fa-chevron-up"></i>
@@ -87,6 +87,9 @@ export const generateMapHTML = (
 
               <p><strong>Fecha:</strong></p>
               <p style="text-align: left;">${vehicleInfo.fecha}</p>
+
+              <p><strong>Distancia total:</strong></p>
+              <p style="text-align: left;"><strong>${((summaryStats.distanceWithinHours + summaryStats.distanceAfterHours) / 1000).toFixed(2)} km</strong></p>
           </div>
         </div>
     `
@@ -148,7 +151,7 @@ export const generateMapHTML = (
 
   const summaryCardHTML = `
       <div id="summary-box" class="info-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5px;">
           <h4 style="margin: 0;">Resumen del dia</h4>
           <button class="toggle-btn toggle-summary-btn" aria-label="Minimizar/Maximizar">
             <i class="fa-solid fa-chevron-up"></i>
@@ -189,7 +192,7 @@ export const generateMapHTML = (
           <p style="text-align: left;"><strong>${summaryStats.percentageTravel.toFixed(1)}%</strong></p>
           
           
-          <p><strong>Distancia total:</strong></p>
+          <p><strong>Distancia recorrida:</strong></p>
           <p style="text-align: left; grid-column: span 2;"><strong>${(summaryStats.distanceWithinHours / 1000).toFixed(2)} km</strong></p>
           
           <p><strong>Fin de labores:</strong></p>

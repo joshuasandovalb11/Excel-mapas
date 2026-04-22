@@ -135,7 +135,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
 }) => {
   return (
     <div className="bg-white/95 rounded-md" style={{ width: '260px' }}>
-      <div className="flex justify-between items-center px-3 py-1.5">
+      <div className="flex justify-between items-center px-3 py-1">
         <h4 className="text-sm font-bold text-[#00004F] m-0">{title}</h4>
         <button
           onClick={onToggle}
@@ -1178,6 +1178,17 @@ export default function InteractiveMap({
                           <strong>Fecha:</strong>
                         </p>
                         <p className="text-left">{vehicleInfo.fecha}</p>
+                        <p>
+                          <strong>Distancia total:</strong>
+                        </p>
+                        <p className="text-left">
+                          {(
+                            (summaryStats.distanceWithinHours +
+                              summaryStats.distanceAfterHours) /
+                            1000
+                          ).toFixed(2)}{' '}
+                          km
+                        </p>
                       </div>
                     </div>
                   )}
@@ -1253,7 +1264,7 @@ export default function InteractiveMap({
                         </strong>
                       </p>
                       <p>
-                        <strong>Distancia total:</strong>
+                        <strong>Distancia recorrida:</strong>
                       </p>
                       <p className="text-left col-span-2">
                         <strong>
@@ -1333,6 +1344,17 @@ export default function InteractiveMap({
                     <strong>Fecha:</strong>
                   </p>
                   <p className="text-left">{vehicleInfo.fecha}</p>
+                  <p>
+                    <strong>Distancia total:</strong>
+                  </p>
+                  <p className="text-left">
+                    {(
+                      (summaryStats.distanceWithinHours +
+                        summaryStats.distanceAfterHours) /
+                      1000
+                    ).toFixed(2)}{' '}
+                    km
+                  </p>
                 </div>
               </InfoCard>
             )}
@@ -1402,7 +1424,7 @@ export default function InteractiveMap({
                   <strong>{summaryStats.percentageTravel.toFixed(1)}%</strong>
                 </p>
                 <p>
-                  <strong>Distancia total:</strong>
+                  <strong>Distancia recorrida:</strong>
                 </p>
                 <p className="text-left col-span-2">
                   <strong>
