@@ -276,7 +276,7 @@ export default function Login({ onLoginTransition }: LoginProps) {
             </h1>
             <p className="text-blue-100 text-lg lg:text-xl font-light max-w-2xl border-l-4 border-blue-400 pl-6">
               Plataforma para la gestión y visualización del seguimiento de
-              vehículos y pedidos.
+              vehículos y rutas.
             </p>
           </motion.div>
         </div>
