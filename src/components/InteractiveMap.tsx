@@ -8,16 +8,16 @@ import React, {
 import {
   GoogleMap,
   useJsApiLoader,
-  Marker,
   Polyline,
   InfoWindow,
 } from '@react-google-maps/api';
+import type { ProcessedTripV1, RouteSummaryStats } from '../types/route.types';
+import { type Client, type VehicleInfo } from '../utils/tripUtils';
 import {
-  type Client,
-  type ProcessedTrip,
-  type VehicleInfo,
+  calculateDistance,
+  useCopyToClipboard,
+  formatName,
 } from '../utils/tripUtils';
-import { calculateDistance, useCopyToClipboard } from '../utils/tripUtils';
 import {
   ChevronUp,
   ChevronDown,
@@ -38,32 +38,12 @@ import {
 import { GOOGLE_MAPS_LIBRARIES } from '../utils/mapConfig';
 
 interface InteractiveMapProps {
-  tripData: ProcessedTrip;
+  tripData: ProcessedTripV1;
   vehicleInfo: VehicleInfo | null;
   clientData: Client[] | null;
   minStopDuration: number;
   selection: string | null;
-  viewMode: 'current' | 'new';
-  summaryStats: {
-    timeWithClients: number;
-    timeWithNonClients: number;
-    travelTime: number;
-    percentageClients: number;
-    percentageNonClients: number;
-    percentageTravel: number;
-    timeWithClientsAfterHours: number;
-    timeWithNonClientsAfterHours: number;
-    travelTimeAfterHours: number;
-    totalAfterHoursTime: number;
-    totalTimeWithNonClientsAfterHours: number;
-    distanceWithinHours: number;
-    distanceAfterHours: number;
-    timeAtHome: number;
-    percentageAtHome: number;
-    timeAtTools: number;
-    percentageAtTools: number;
-    uniqueClientsVisited: number;
-  };
+  summaryStats: RouteSummaryStats;
   googleMapsApiKey: string;
 }
 
@@ -89,7 +69,6 @@ interface StopInfo {
   type: string;
 }
 
-// Función auxiliar para formatear duración
 const formatDuration = (minutes: number): string => {
   const hours = Math.floor(minutes / 60);
   const mins = Math.round(minutes % 60);
@@ -99,7 +78,6 @@ const formatDuration = (minutes: number): string => {
   return `${mins} min`;
 };
 
-// Función auxiliar para verificar horario laboral
 const isWorkingHours = (
   time: string,
   tripDate: string | undefined
@@ -119,7 +97,6 @@ const isWorkingHours = (
   return totalMinutes >= WORK_START_MINUTES && totalMinutes < WORK_END_MINUTES;
 };
 
-// Componente de tarjeta de información
 interface InfoCardProps {
   title: string;
   children: React.ReactNode;
@@ -134,14 +111,20 @@ const InfoCard: React.FC<InfoCardProps> = ({
   onToggle,
 }) => {
   return (
-    <div className="bg-white/95 rounded-md" style={{ width: '260px' }}>
-      <div className="flex justify-between items-center px-3 py-1">
-        <h4 className="text-sm font-bold text-[#00004F] m-0">{title}</h4>
+    <div className="bg-white/95 rounded-md shadow-sm w-[230px] 2xl:w-[260px] transition-all duration-300">
+      <div className="flex justify-between items-center px-2 py-1 2xl:px-3">
+        <h4 className="text-[13px] 2xl:text-[14px] font-bold text-[#00004F] m-0">
+          {title}
+        </h4>
         <button
           onClick={onToggle}
-          className="hidden lg:flex p-1 text-[#00004F] hover:text-blue-600 transition-colors"
+          className="hidden lg:flex p-0.5 2xl:p-1 text-[#00004F] hover:text-blue-600 transition-colors"
         >
-          {collapsed ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+          {collapsed ? (
+            <ChevronDown className="w-4 h-4 2xl:w-[18px] 2xl:h-[18px]" />
+          ) : (
+            <ChevronUp className="w-4 h-4 2xl:w-[18px] 2xl:h-[18px]" />
+          )}
         </button>
       </div>
       <div
@@ -160,8 +143,6 @@ export default function InteractiveMap({
   vehicleInfo,
   clientData,
   minStopDuration,
-  selection,
-  viewMode,
   summaryStats,
   googleMapsApiKey,
 }: InteractiveMapProps) {
@@ -178,9 +159,11 @@ export default function InteractiveMap({
   );
 
   const [currentStopIndex, setCurrentStopIndex] = useState(0);
-  const [animatedPath, setAnimatedPath] = useState<google.maps.LatLngLiteral[]>(
-    []
-  );
+  const polylineRef = useRef<google.maps.Polyline | null>(null);
+  const pathRef = useRef<google.maps.MVCArray<google.maps.LatLng> | null>(null);
+  const flagMarkersRef = useRef<google.maps.Marker[]>([]);
+  const clientMarkersRef = useRef<google.maps.Marker[]>([]);
+
   const [isAnimating, setIsAnimating] = useState(false);
   const [visitedClients, setVisitedClients] = useState<Set<string>>(new Set());
   const [, setCumulativeDistance] = useState(0);
@@ -193,6 +176,7 @@ export default function InteractiveMap({
   const animationFrameRef = useRef<number | null>(null);
   const currentPathIndexRef = useRef(0);
   const segmentDistancesRef = useRef<number[]>([]);
+
   const polylineOptions = useMemo(
     () => ({
       strokeColor: '#3b82f6',
@@ -202,8 +186,7 @@ export default function InteractiveMap({
     []
   );
 
-  // Función auxiliar para alternar (toggle) un marcador manualmente
-  const toggleMarkerSelection = (index: number) => {
+  const toggleMarkerSelection = useCallback((index: number) => {
     setSelectedMarkers((prev) => {
       const newSet = new Set(prev);
       if (newSet.has(index)) {
@@ -213,17 +196,16 @@ export default function InteractiveMap({
       }
       return newSet;
     });
-  };
+  }, []);
 
   const filteredFlags = React.useMemo(() => {
     return tripData.flags.filter(
       (flag) =>
         flag.type !== 'stop' ||
-        (flag.duration && flag.duration >= minStopDuration)
+        (flag.durationMin && flag.durationMin >= minStopDuration)
     );
   }, [tripData.flags, minStopDuration]);
 
-  // Nuevo useMemo para estabilizar el centro inicial del mapa
   const initialCenter = React.useMemo(() => {
     if (filteredFlags.length > 0) {
       return { lat: filteredFlags[0].lat, lng: filteredFlags[0].lng };
@@ -231,89 +213,50 @@ export default function InteractiveMap({
     return { lat: 25.0, lng: -100.0 };
   }, [filteredFlags]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const routePath = tripData.routes[0]?.path || [];
+  const routePath = useMemo(() => {
+    return tripData.path || [];
+  }, [tripData.path]);
 
-  // Filtrar clientes para mostrar (lógica de Tools de Mexico)
-  const clientsToRender = React.useMemo(() => {
-    if (selection === 'chofer' || !clientData) return clientData || [];
-
-    const specialClientKeys = ['3689', '6395'];
-    const regularClients = clientData.filter(
-      (c) => !specialClientKeys.includes(c.key) && !c.isVendorHome
-    );
-    const specialClients = clientData.filter((c) =>
-      specialClientKeys.includes(c.key)
-    );
-    const vendorHome = clientData.find((c) => c.isVendorHome);
-
-    let closestSpecialClient: Client | null = null;
-
-    if (specialClients.length > 0 && regularClients.length > 0) {
-      const avgLat =
-        regularClients.reduce((sum, c) => sum + c.lat, 0) /
-        regularClients.length;
-      const avgLng =
-        regularClients.reduce((sum, c) => sum + c.lng, 0) /
-        regularClients.length;
-
-      let closestDist = Infinity;
-      specialClients.forEach((client) => {
-        const dist = calculateDistance(avgLat, avgLng, client.lat, client.lng);
-        if (dist < closestDist) {
-          closestDist = dist;
-          closestSpecialClient = client;
-        }
-      });
-    } else if (specialClients.length > 0) {
-      closestSpecialClient = specialClients[0];
-    }
-
-    const result = [...regularClients];
-    if (closestSpecialClient) result.push(closestSpecialClient);
-    if (vendorHome) result.push(vendorHome);
-
-    return result;
-  }, [clientData, selection]);
-
-  // Calcular información de paradas para navegación
   const stopInfo = React.useMemo(() => {
     const stops: StopInfo[] = [];
+    let lastPathIndex = 0;
 
     filteredFlags.forEach((flag, index) => {
-      if (
-        flag.type === 'start' ||
-        flag.type === 'stop' ||
-        flag.type === 'end'
-      ) {
-        let closestPathIndex = 0;
+      let closestPathIndex = lastPathIndex;
+
+      if (flag.type === 'trip_start') {
+        closestPathIndex = 0;
+      } else if (flag.type === 'trip_end') {
+        closestPathIndex = Math.max(0, routePath.length - 1);
+      } else {
         let minDistance = Infinity;
 
-        routePath.forEach((pathPoint, i) => {
+        for (let i = lastPathIndex; i < routePath.length; i++) {
           const distance = calculateDistance(
             flag.lat,
             flag.lng,
-            pathPoint.lat,
-            pathPoint.lng
+            routePath[i].lat,
+            routePath[i].lng
           );
           if (distance < minDistance) {
             minDistance = distance;
             closestPathIndex = i;
           }
-        });
-
-        stops.push({
-          markerIndex: index,
-          pathIndex: closestPathIndex,
-          type: flag.type,
-        });
+        }
       }
+
+      lastPathIndex = closestPathIndex;
+
+      stops.push({
+        markerIndex: index,
+        pathIndex: closestPathIndex,
+        type: flag.type,
+      });
     });
 
     return stops;
   }, [filteredFlags, routePath]);
 
-  // Calcular distancias de segmentos cuando el mapa se carga
   useEffect(() => {
     if (isLoaded && window.google && stopInfo.length > 1) {
       const segments: number[] = [];
@@ -321,9 +264,13 @@ export default function InteractiveMap({
 
       for (let i = 1; i < stopInfo.length; i++) {
         const stop = stopInfo[i];
+        const safeStartIndex = Math.min(lastPathIndex, stop.pathIndex);
+        const safeEndIndex = Math.max(lastPathIndex, stop.pathIndex);
+
         const segmentPath = routePath
-          .slice(lastPathIndex, stop.pathIndex + 1)
+          .slice(safeStartIndex, safeEndIndex + 1)
           .map((p) => new google.maps.LatLng(p.lat, p.lng));
+
         const segmentLength =
           google.maps.geometry.spherical.computeLength(segmentPath);
         segments.push(segmentLength);
@@ -334,24 +281,19 @@ export default function InteractiveMap({
     }
   }, [isLoaded, stopInfo, routePath]);
 
-  // Este efecto se encarga de encuadrar el mapa SOLO cuando cambian los datos importantes
   useEffect(() => {
     if (map && filteredFlags.length > 0) {
       const bounds = new window.google.maps.LatLngBounds();
-
       filteredFlags.forEach((flag) => {
         bounds.extend({ lat: flag.lat, lng: flag.lng });
       });
-
-      clientsToRender.forEach((client) => {
+      (clientData || []).forEach((client) => {
         bounds.extend({ lat: client.lat, lng: client.lng });
       });
-
       map.fitBounds(bounds);
     }
-  }, [map, filteredFlags, clientsToRender]);
+  }, [map, filteredFlags, clientData]);
 
-  // Efecto para detectar cambios en Street View
   useEffect(() => {
     if (map) {
       const panorama = map.getStreetView();
@@ -368,7 +310,6 @@ export default function InteractiveMap({
     }
   }, [map]);
 
-  // Callback cuando el mapa se carga
   const onLoad = useCallback((map: google.maps.Map) => {
     setMap(map);
     setSelectedMarkers(new Set([0]));
@@ -378,26 +319,35 @@ export default function InteractiveMap({
     setMap(null);
   }, []);
 
-  // Función para obtener el ícono del marcador de parada
-  const getMarkerIcon = (flag: (typeof filteredFlags)[0]) => {
+  const getMarkerIcon = useCallback((flag: (typeof filteredFlags)[0]) => {
     const colors: Record<string, string> = {
-      start: '#22c55e',
+      trip_start: '#22c55e',
       stop: '#4F4E4E',
-      end: '#ef4444',
+      trip_end: '#ef4444',
     };
+    const color = colors[flag.type] || '#4F4E4E';
+    const path =
+      'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z';
+    const size = 36;
+
+    let anchorX = size / 2;
+    if (flag.type === 'trip_start') anchorX = size / 2 + 4;
+    if (flag.type === 'trip_end') anchorX = size / 2 - 4;
+
+    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="${path}" fill="${color}" /></svg>`;
 
     return {
-      path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
-      fillColor: colors[flag.type] || '#4F4E4E',
-      fillOpacity: 1,
-      strokeWeight: 0,
-      scale: 1.5,
-      anchor: new google.maps.Point(12, 24),
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgStr)}`,
+      scaledSize: window.google
+        ? new window.google.maps.Size(size, size)
+        : null,
+      anchor: window.google
+        ? new window.google.maps.Point(anchorX, size)
+        : null,
     };
-  };
+  }, []);
 
-  // Función para obtener el ícono del cliente
-  const getClientIcon = (client: Client) => {
+  const getClientIcon = useCallback((client: Client) => {
     const specialBlueIds = ['3689', '6395'];
     const isSpecial = specialBlueIds.includes(String(client.key));
 
@@ -408,17 +358,81 @@ export default function InteractiveMap({
       markerColor = '#005EFF';
     }
 
-    return {
-      path: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
-      fillColor: markerColor,
-      fillOpacity: 1,
-      strokeWeight: 0,
-      scale: 1.3,
-      anchor: new google.maps.Point(12, 24),
-    };
-  };
+    const path = 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z';
+    const size = 31;
 
-  // Animación de la ruta
+    const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}"><path d="${path}" fill="${markerColor}" /></svg>`;
+
+    return {
+      url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svgStr)}`,
+      scaledSize: window.google
+        ? new window.google.maps.Size(size, size)
+        : null,
+      anchor: window.google
+        ? new window.google.maps.Point(size / 2, size)
+        : null,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!map || !window.google) return;
+
+    flagMarkersRef.current.forEach((marker) => marker.setMap(null));
+    flagMarkersRef.current = [];
+
+    filteredFlags.forEach((flag, index) => {
+      let zIndex = 10;
+      if (flag.type === 'trip_start') zIndex = 100;
+      if (flag.type === 'trip_end') zIndex = 101;
+
+      const marker = new window.google.maps.Marker({
+        position: { lat: flag.lat, lng: flag.lng },
+        map: map,
+        icon: getMarkerIcon(flag) as google.maps.Icon,
+        optimized: true,
+        zIndex,
+      });
+
+      marker.addListener('click', () => {
+        toggleMarkerSelection(index);
+      });
+
+      flagMarkersRef.current.push(marker);
+    });
+
+    clientMarkersRef.current.forEach((marker) => marker.setMap(null));
+    clientMarkersRef.current = [];
+
+    (clientData || []).forEach((client, index) => {
+      const markerKey = -index - 1;
+      const marker = new window.google.maps.Marker({
+        position: { lat: client.lat, lng: client.lng },
+        map: map,
+        icon: getClientIcon(client) as google.maps.Icon,
+        optimized: true,
+        zIndex: 50,
+      });
+
+      marker.addListener('click', () => {
+        toggleMarkerSelection(markerKey);
+      });
+
+      clientMarkersRef.current.push(marker);
+    });
+
+    return () => {
+      flagMarkersRef.current.forEach((marker) => marker.setMap(null));
+      clientMarkersRef.current.forEach((marker) => marker.setMap(null));
+    };
+  }, [
+    map,
+    filteredFlags,
+    getMarkerIcon,
+    getClientIcon,
+    toggleMarkerSelection,
+    clientData,
+  ]);
+
   const animateToStop = useCallback(
     (targetStopIndex: number, onComplete?: () => void) => {
       if (isAnimating || targetStopIndex >= stopInfo.length) return;
@@ -427,7 +441,7 @@ export default function InteractiveMap({
       const targetStop = stopInfo[targetStopIndex];
       const targetPathIndex = targetStop.pathIndex;
       const animationStep =
-        tripData.processingMethod === 'speed-based' ? 35 : 1;
+        tripData.summary.processingMethod === 'speed-based' ? 35 : 1;
 
       const animate = () => {
         const end = Math.min(
@@ -440,10 +454,14 @@ export default function InteractiveMap({
             currentPathIndexRef.current,
             end + 1
           );
-          setAnimatedPath((prev) => [
-            ...prev,
-            ...newSegment.map((p) => ({ lat: p.lat, lng: p.lng })),
-          ]);
+
+          if (pathRef.current && window.google) {
+            newSegment.forEach((p) => {
+              pathRef.current!.push(
+                new window.google.maps.LatLng(p.lat, p.lng)
+              );
+            });
+          }
         }
 
         currentPathIndexRef.current = end;
@@ -489,12 +507,11 @@ export default function InteractiveMap({
       stopInfo,
       routePath,
       filteredFlags,
-      tripData.processingMethod,
+      tripData.summary.processingMethod,
       map,
     ]
   );
 
-  // Controles de navegación
   const handleReset = () => {
     if (Date.now() - lastNavigationTime.current < NAVIGATION_COOLDOWN) return;
     lastNavigationTime.current = Date.now();
@@ -503,7 +520,10 @@ export default function InteractiveMap({
       cancelAnimationFrame(animationFrameRef.current);
     }
 
-    setAnimatedPath([]);
+    if (pathRef.current) {
+      pathRef.current.clear();
+    }
+
     setCurrentStopIndex(0);
     currentPathIndexRef.current = 0;
     setIsAnimating(false);
@@ -527,7 +547,6 @@ export default function InteractiveMap({
       return;
     }
     lastNavigationTime.current = Date.now();
-
     animateToStop(currentStopIndex + 1);
   };
 
@@ -543,11 +562,14 @@ export default function InteractiveMap({
     const prevStopIndex = currentStopIndex - 1;
     const prevStop = stopInfo[prevStopIndex];
 
-    const newPath = routePath
-      .slice(0, prevStop.pathIndex + 1)
-      .map((p) => ({ lat: p.lat, lng: p.lng }));
+    if (pathRef.current && window.google) {
+      pathRef.current.clear();
+      const newPath = routePath.slice(0, prevStop.pathIndex + 1);
+      newPath.forEach((p) => {
+        pathRef.current!.push(new window.google.maps.LatLng(p.lat, p.lng));
+      });
+    }
 
-    setAnimatedPath(newPath);
     currentPathIndexRef.current = prevStop.pathIndex;
     setCurrentStopIndex(prevStopIndex);
     setSelectedMarkers(new Set([prevStop.markerIndex]));
@@ -582,7 +604,6 @@ export default function InteractiveMap({
     setVisitedClients(newVisited);
   };
 
-  // Renderizado de InfoWindow para paradas
   const renderStopInfoWindow = (
     flag: (typeof filteredFlags)[0],
     index: number
@@ -597,14 +618,24 @@ export default function InteractiveMap({
     const textColor = inWorkingHours ? 'black' : '#FF0000';
     const titleColor = inWorkingHours ? '#000' : '#C40000';
     const squareColor = inWorkingHours ? '#4F4E4E' : '#C40000';
-    const clientMatchColor = inWorkingHours ? '#059669' : '#10b981';
+
+    const isTools =
+      flag.clientKey && ['3689', '6395'].includes(String(flag.clientKey));
+    const clientMatchColor = flag.isVendorHome
+      ? '#5D00FF'
+      : isTools
+        ? '#005EFF'
+        : inWorkingHours
+          ? '#059669'
+          : '#10b981';
     const clientNoMatchColor = inWorkingHours ? '#FC2121' : '#C40000';
     const branchColor = inWorkingHours ? '#2563eb' : '#60a5fa';
 
     let content: React.ReactNode = null;
     const coords = `${flag.lat.toFixed(6)}, ${flag.lng.toFixed(6)}`;
+    const googleMapsUrl = `https://maps.google.com/?q=${flag.lat},${flag.lng}`;
 
-    if (flag.type === 'start') {
+    if (flag.type === 'trip_start') {
       content = (
         <div
           style={{
@@ -629,7 +660,7 @@ export default function InteractiveMap({
             >
               <FontAwesomeIcon icon={faRoad} />
             </span>
-            {flag.description}
+            Inicio de Viaje
           </h3>
           <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
             <strong>Hora:</strong> {flag.time}
@@ -649,22 +680,15 @@ export default function InteractiveMap({
             title="Haga clic para copiar coordenadas"
           >
             {copiedText === true ? (
-              <span
-                style={{
-                  fontWeight: 'bold',
-                  color: '#059669',
-                }}
-              >
+              <span style={{ fontWeight: 'bold', color: '#059669' }}>
                 ¡Coordenadas Copiadas! ✅
               </span>
             ) : (
-              <>
-                <span>{coords}</span>
-              </>
+              <span>{coords}</span>
             )}
           </div>
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${flag.lat},${flag.lng}`}
+            href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="no-underline hover:underline"
@@ -676,11 +700,11 @@ export default function InteractiveMap({
               margin: 0,
             }}
           >
-            <strong>View on Google Maps</strong>
+            <strong>Ver en Google Maps</strong>
           </a>
         </div>
       );
-    } else if (flag.type === 'end') {
+    } else if (flag.type === 'trip_end') {
       content = (
         <div
           style={{
@@ -705,7 +729,7 @@ export default function InteractiveMap({
             >
               <FontAwesomeIcon icon={faRoad} />
             </span>
-            {flag.description}
+            Fin de Viaje
           </h3>
           <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
             <strong>Hora:</strong> {flag.time}
@@ -725,22 +749,15 @@ export default function InteractiveMap({
             title="Haga clic para copiar coordenadas"
           >
             {copiedText === true ? (
-              <span
-                style={{
-                  fontWeight: 'bold',
-                  color: '#059669',
-                }}
-              >
+              <span style={{ fontWeight: 'bold', color: '#059669' }}>
                 ¡Coordenadas Copiadas! ✅
               </span>
             ) : (
-              <>
-                <span>{coords}</span>
-              </>
+              <span>{coords}</span>
             )}
           </div>
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${flag.lat},${flag.lng}`}
+            href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="no-underline hover:underline"
@@ -752,7 +769,7 @@ export default function InteractiveMap({
               margin: 0,
             }}
           >
-            <strong>View on Google Maps</strong>
+            <strong>Ver en Google Maps</strong>
           </a>
         </div>
       );
@@ -760,11 +777,15 @@ export default function InteractiveMap({
       let clientInfo: React.ReactNode = null;
 
       if (flag.clientName && flag.clientName !== 'Sin coincidencia') {
-        const branchInfo = flag.clientBranchNumber
-          ? flag.clientBranchName
-            ? `Suc. ${flag.clientBranchName}`
-            : `Suc. ${flag.clientBranchNumber}`
-          : null;
+        const formattedClientName = formatName(flag.clientName || '');
+        const formattedBranchName = formatName(flag.clientBranchName || '');
+
+        const branchInfo =
+          flag.clientBranchNumber && String(flag.clientBranchNumber) !== '0'
+            ? formattedBranchName
+              ? `Suc. ${formattedBranchName}`
+              : `Suc. ${flag.clientBranchNumber}`
+            : null;
 
         clientInfo = (
           <div
@@ -774,19 +795,13 @@ export default function InteractiveMap({
               fontWeight: 600,
             }}
           >
-            <p
-              style={{
-                margin: 0,
-                fontWeight: 600,
-                fontSize: '12px',
-              }}
-            >
+            <p style={{ margin: 0, fontWeight: 600, fontSize: '12px' }}>
               <strong>#{flag.clientKey}</strong>
             </p>
             <p
               style={{ margin: '2px 0 0 0', fontWeight: 600, fontSize: '12px' }}
             >
-              <strong>{flag.clientName}</strong>
+              <strong>{formattedClientName}</strong>
             </p>
             {branchInfo && (
               <p
@@ -851,10 +866,10 @@ export default function InteractiveMap({
             >
               {stopIcon}
             </span>
-            Parada {flag.stopNumber}
+            Parada {flag.stopNumber || index}
           </h3>
           <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
-            <strong>Duración:</strong> {formatDuration(flag.duration || 0)}
+            <strong>Duración:</strong> {formatDuration(flag.durationMin || 0)}
           </p>
           <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
             <strong>Hora:</strong> {flag.time}
@@ -875,22 +890,15 @@ export default function InteractiveMap({
             title="Haga clic para copiar coordenadas"
           >
             {copiedText === true ? (
-              <span
-                style={{
-                  fontWeight: 'bold',
-                  color: '#059669',
-                }}
-              >
+              <span style={{ fontWeight: 'bold', color: '#059669' }}>
                 ¡Coordenadas Copiadas! ✅
               </span>
             ) : (
-              <>
-                <span>{coords}</span>
-              </>
+              <span>{coords}</span>
             )}
           </div>
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${flag.lat},${flag.lng}`}
+            href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="no-underline hover:underline"
@@ -902,7 +910,7 @@ export default function InteractiveMap({
               margin: 0,
             }}
           >
-            <strong>View on Google Maps</strong>
+            <strong>Ver en Google Maps</strong>
           </a>
         </div>
       );
@@ -917,27 +925,36 @@ export default function InteractiveMap({
           disableAutoPan: false,
         }}
       >
-        <div style={{ maxWidth: '280px', overflow: 'hidden' }}>{content}</div>
+        <div style={{ maxWidth: '200px', overflow: 'hidden' }}>{content}</div>
       </InfoWindow>
     );
   };
 
-  // Renderizado de InfoWindow para clientes
   const renderClientInfoWindow = (client: Client, clientIndex: number) => {
     const markerKey = -clientIndex - 1;
     if (!selectedMarkers.has(markerKey)) return null;
 
     const isHome = client.isVendorHome;
-    const titleText = isHome ? 'Casa Vendedor' : 'Cliente';
-    const nameColor = isHome ? '#5D00FF' : '#059669';
+    const isSpecial = ['3689', '6395'].includes(String(client.key));
+    const titleText = isHome
+      ? 'Casa Vendedor'
+      : isSpecial
+        ? 'Tools de Mexico'
+        : 'Cliente';
+    const nameColor = isHome ? '#5D00FF' : isSpecial ? '#005EFF' : '#059669';
 
-    const branchInfo = client.branchNumber
-      ? client.branchName
-        ? `Suc. ${client.branchName}`
-        : `Suc. ${client.branchNumber}`
-      : '';
+    const formattedClientName = formatName(client.name || '');
+    const formattedBranchName = formatName(client.branchName || '');
+
+    const branchInfo =
+      client.branchNumber && String(client.branchNumber) !== '0'
+        ? formattedBranchName
+          ? `Suc. ${formattedBranchName}`
+          : `Suc. ${client.branchNumber}`
+        : '';
 
     const coords = `${client.lat.toFixed(6)}, ${client.lng.toFixed(6)}`;
+    const googleMapsUrl = `https://maps.google.com/?q=${client.lat},${client.lng}`;
 
     return (
       <InfoWindow
@@ -950,6 +967,7 @@ export default function InteractiveMap({
       >
         <div
           style={{
+            maxWidth: '200px',
             paddingBottom: '6px',
             paddingRight: '10px',
             overflow: 'hidden',
@@ -993,7 +1011,7 @@ export default function InteractiveMap({
               fontWeight: 600,
             }}
           >
-            <strong>{client.displayName}</strong>
+            <strong>{formattedClientName}</strong>
           </p>
           {branchInfo && (
             <p
@@ -1022,22 +1040,15 @@ export default function InteractiveMap({
             title="Haga clic para copiar coordenadas"
           >
             {copiedText === true ? (
-              <span
-                style={{
-                  fontWeight: 'bold',
-                  color: '#059669',
-                }}
-              >
+              <span style={{ fontWeight: 'bold', color: '#059669' }}>
                 ¡Coordenadas Copiadas! ✅
               </span>
             ) : (
-              <>
-                <span>{coords}</span>
-              </>
+              <span>{coords}</span>
             )}
           </div>
           <a
-            href={`https://www.google.com/maps/search/?api=1&query=${client.lat},${client.lng}`}
+            href={googleMapsUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="no-underline hover:underline"
@@ -1049,7 +1060,7 @@ export default function InteractiveMap({
               margin: 0,
             }}
           >
-            <strong>View on Google Maps</strong>
+            <strong>Ver en Google Maps</strong>
           </a>
         </div>
       </InfoWindow>
@@ -1083,7 +1094,6 @@ export default function InteractiveMap({
         }
       `}</style>
 
-      {/* Mapa de Google */}
       <GoogleMap
         mapContainerStyle={containerStyle}
         center={initialCenter}
@@ -1092,38 +1102,42 @@ export default function InteractiveMap({
         onUnmount={onUnmount}
         options={mapOptions}
       >
-        {/* Polyline animada */}
-        <Polyline path={animatedPath} options={polylineOptions} />
+        <Polyline
+          options={polylineOptions}
+          onLoad={(polyline) => {
+            polylineRef.current = polyline;
+            pathRef.current = polyline.getPath();
+          }}
+          onUnmount={() => {
+            polylineRef.current = null;
+            pathRef.current = null;
+          }}
+        />
 
-        {/* Marcadores de paradas */}
-        {filteredFlags.map((flag, index) => (
-          <React.Fragment key={`flag-${index}`}>
-            <Marker
-              position={{ lat: flag.lat, lng: flag.lng }}
-              icon={getMarkerIcon(flag)}
-              onClick={() => toggleMarkerSelection(index)}
-            />
-            {renderStopInfoWindow(flag, index)}
-          </React.Fragment>
-        ))}
-
-        {/* Marcadores de clientes */}
-        {clientsToRender.map((client, index) => (
-          <React.Fragment key={`client-${index}`}>
-            <Marker
-              position={{ lat: client.lat, lng: client.lng }}
-              icon={getClientIcon(client)}
-              onClick={() => toggleMarkerSelection(-index - 1)}
-            />
-            {renderClientInfoWindow(client, index)}
-          </React.Fragment>
-        ))}
+        {Array.from(selectedMarkers).map((markerKey) => {
+          if (markerKey >= 0) {
+            const flag = filteredFlags[markerKey];
+            if (!flag) return null;
+            return (
+              <React.Fragment key={`info-flag-${markerKey}`}>
+                {renderStopInfoWindow(flag, markerKey)}
+              </React.Fragment>
+            );
+          } else {
+            const clientIndex = Math.abs(markerKey) - 1;
+            const client = (clientData || [])[clientIndex];
+            if (!client) return null;
+            return (
+              <React.Fragment key={`info-client-${clientIndex}`}>
+                {renderClientInfoWindow(client, clientIndex)}
+              </React.Fragment>
+            );
+          }
+        })}
       </GoogleMap>
 
-      {/* Solo mostrar controles si NO estamos en Street View */}
       {!isStreetViewVisible && (
         <>
-          {/* Botón de información para móviles */}
           <button
             onClick={() => setIsInfoModalOpen(true)}
             className="min-[1350px]:hidden absolute top-2.5 left-2.5 z-[15] bg-white border-2 border-blue-600 rounded-full w-10 h-10 flex items-center justify-center shadow-lg active:scale-95 transition-transform"
@@ -1131,7 +1145,6 @@ export default function InteractiveMap({
             <Info size={24} className="text-blue-600" />
           </button>
 
-          {/* Modal de información para móviles */}
           {isInfoModalOpen && (
             <div
               className="min-[1350px]:hidden absolute inset-0 z-50 flex items-center justify-center p-5"
@@ -1155,7 +1168,6 @@ export default function InteractiveMap({
                   </button>
                 </div>
                 <div className="overflow-y-auto flex-1">
-                  {/* Info Card */}
                   {vehicleInfo && (
                     <div className="mb-3 bg-white border border-gray-300 rounded-lg p-3">
                       <h4 className="text-sm font-bold text-[#00004F] mb-2">
@@ -1193,7 +1205,6 @@ export default function InteractiveMap({
                     </div>
                   )}
 
-                  {/* Summary Card */}
                   <div className="bg-white border border-gray-300 rounded-lg p-3">
                     <h4 className="text-sm font-bold text-[#00004F] mb-2">
                       Resumen del día
@@ -1206,7 +1217,9 @@ export default function InteractiveMap({
                         <strong>Inicio de labores:</strong>
                       </p>
                       <p className="text-left col-span-2">
-                        <strong>{tripData.workStartTime || 'N/A'}</strong>
+                        <strong>
+                          {tripData.summary.workStartTime || 'N/A'}
+                        </strong>
                       </p>
                       <p>
                         <strong>Clientes Visitados:</strong>
@@ -1276,13 +1289,9 @@ export default function InteractiveMap({
                         <strong>Fin de labores:</strong>
                       </p>
                       <p className="text-left col-span-2">
-                        <strong>
-                          {viewMode === 'new' && tripData.isTripOngoing
-                            ? 'En movimiento...'
-                            : tripData.workEndTime || 'N/A'}
-                        </strong>
+                        <strong>{tripData.summary.workEndTime || 'N/A'}</strong>
                       </p>
-                      <p className="col-span-3 text-[11px] font-bold text-blue-700 bg-blue-50 py-1 rounded mt-2">
+                      <p className="col-span-3 text-[11px] font-bold text-blue-700 bg-blue-50 py-0.5 rounded mt-2">
                         Fuera de horario
                       </p>
                       <p className="col-span-3 text-[#00004F]">
@@ -1318,16 +1327,14 @@ export default function InteractiveMap({
             </div>
           )}
 
-          {/* Contenedor de información para desktop */}
           <div className="hidden min-[1350px]:flex absolute top-2.5 right-2.5 z-10 flex-col gap-1.5">
-            {/* Info Card */}
             {vehicleInfo && (
               <InfoCard
                 title="Información del Vehículo"
                 collapsed={isInfoCardCollapsed}
                 onToggle={() => setIsInfoCardCollapsed(!isInfoCardCollapsed)}
               >
-                <div className="grid grid-cols-[1.5fr_1.4fr] gap-1 text-[12px] text-[#00004F] px-3 pb-2">
+                <div className="grid grid-cols-[1.5fr_1.4fr] gap-0.5 2xl:gap-1 text-[11px] 2xl:text-[12px] text-[#00004F] px-2 pb-1.5 2xl:px-3 2xl:pb-2">
                   <p>
                     <strong>Descripción:</strong>
                   </p>
@@ -1359,7 +1366,6 @@ export default function InteractiveMap({
               </InfoCard>
             )}
 
-            {/* Summary Card */}
             <InfoCard
               title="Resumen del día"
               collapsed={isSummaryCardCollapsed}
@@ -1367,15 +1373,15 @@ export default function InteractiveMap({
                 setIsSummaryCardCollapsed(!isSummaryCardCollapsed)
               }
             >
-              <div className="grid grid-cols-[1.5fr_0.9fr_0.2fr] gap-1 text-[12px] text-[#00004F] px-3 pb-2">
-                <p className="col-span-3 text-[13px] font-bold text-blue-700 bg-blue-50 py-0.5 rounded">
+              <div className="grid grid-cols-[1.5fr_0.9fr_0.2fr] gap-0.5 2xl:gap-1 text-[11px] 2xl:text-[12px] text-[#00004F] px-2 pb-1.5 2xl:px-3 2xl:pb-2">
+                <p className="col-span-3 text-[12px] 2xl:text-[13px] font-bold text-blue-700 bg-blue-50 py-0.5 px-1 rounded">
                   Dentro de horario (8:30 - 19:00)
                 </p>
                 <p>
                   <strong>Inicio de labores:</strong>
                 </p>
                 <p className="text-left col-span-2">
-                  <strong>{tripData.workStartTime || 'N/A'}</strong>
+                  <strong>{tripData.summary.workStartTime || 'N/A'}</strong>
                 </p>
                 <p>
                   <strong>Clientes Visitados:</strong>
@@ -1435,13 +1441,9 @@ export default function InteractiveMap({
                   <strong>Fin de labores:</strong>
                 </p>
                 <p className="text-left col-span-2">
-                  <strong>
-                    {viewMode === 'new' && tripData.isTripOngoing
-                      ? 'En movimiento...'
-                      : tripData.workEndTime || 'N/A'}
-                  </strong>
+                  <strong>{tripData.summary.workEndTime || 'N/A'}</strong>
                 </p>
-                <p className="col-span-3 text-[13px] font-bold text-blue-700 bg-blue-50 py-0.5 rounded">
+                <p className="col-span-3 text-[10px] 2xl:text-[13px] font-bold text-blue-700 bg-blue-50 py-0.5 px-1 rounded mt-1 2xl:mt-0">
                   Fuera de horario
                 </p>
                 <p className="col-span-3 text-[#00004F]">
@@ -1473,7 +1475,6 @@ export default function InteractiveMap({
             </InfoCard>
           </div>
 
-          {/* Controles de navegación */}
           <div className="absolute bottom-5 min-[1350px]:top-2.5 min-[1350px]:bottom-auto left-1/2 transform -translate-x-1/2 z-10 bg-white bg-opacity-95 rounded-lg shadow-lg p-2 flex gap-2.5">
             <button
               onClick={handleReset}
