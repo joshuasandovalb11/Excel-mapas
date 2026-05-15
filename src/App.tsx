@@ -1,7 +1,7 @@
 import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import {
   Map,
-  Waypoints,
+  // Waypoints,
   RefreshCcw,
   MapPinHouse,
   TriangleAlert,
@@ -15,32 +15,26 @@ import Login from './pages/Login';
 import RefreshSystem from './components/RefreshSystemModal';
 import ChangePassword from './components/ChangePasswordModal';
 import { motion, AnimatePresence } from 'framer-motion';
-import Lottie from 'lottie-react';
-import loaderAnimation from './assets/Globe.json';
 import { ClientProvider } from './context/ClientContext';
+import LoadingLayer from './components/LoadingLayer';
 
-const VehicleTracker = lazy(() => import('./pages/VehicleTracker'));
-const MultipleVehicleTracker = lazy(
-  () => import('./pages/MultipleVehicleTracker')
+const VehicleTracker = lazy(
+  () => import('./pages/VehicleTracker/VehicleTracker')
 );
+// const MultipleVehicleTracker = lazy(
+//   () => import('./pages/MultipleVehicleTracker')
+// );
 const Routes = lazy(() => import('./pages/Routes'));
 
 type ViewType = 'tracker' | 'multiple' | 'routes';
 
 function PageLoader() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-slate-50">
-      <div className="w-64 h-64">
-        <Lottie
-          animationData={loaderAnimation}
-          loop={true}
-          className="w-full h-full"
-        />
-      </div>
-      <p className="text-sm font-medium text-gray-500 tracking-wide animate-pulse">
-        Cargando página...
-      </p>
-    </div>
+    <LoadingLayer
+      variant="fixed"
+      spinnerSizeClass="w-16 h-16"
+      spinnerClassName="text-blue-600"
+    />
   );
 }
 
@@ -60,7 +54,7 @@ export default function App() {
 
   const tabs = [
     { id: 'tracker', label: 'Visualizador de Rutas', icon: Map },
-    { id: 'multiple', label: 'Visualizador Multiple', icon: Waypoints },
+    // { id: 'multiple', label: 'Visualizador Multiple', icon: Waypoints },
     { id: 'routes', label: 'Mapas de Vendedores', icon: MapPinHouse },
   ] as const;
 
@@ -86,8 +80,8 @@ export default function App() {
     switch (activeView) {
       case 'tracker':
         return <VehicleTracker />;
-      case 'multiple':
-        return <MultipleVehicleTracker />;
+      // case 'multiple':
+      //   return <MultipleVehicleTracker />;
       case 'routes':
         return <Routes />;
       default:

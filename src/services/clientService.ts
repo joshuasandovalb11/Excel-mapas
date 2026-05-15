@@ -1,21 +1,24 @@
 import type { Client } from '../utils/tripUtils';
+import { fetchWithTimeout } from './httpClient';
 
 const API_BASE_URL = import.meta.env.DEV ? 'http://localhost:3000/api' : '/api';
 
 /**
  * OBTENER CLIENTES (GET)
  */
-export const fetchClientsFromSQL = async (): Promise<Client[]> => {
+export const fetchClientsFromSQL = async (
+  signal?: AbortSignal
+): Promise<Client[]> => {
   try {
     console.log('🌐 Conectando con el Servidor SQL a través del puente...');
 
-    const response = await fetch(`${API_BASE_URL}/clientes`);
-
-    if (!response.ok) {
-      throw new Error(
-        `Error al obtener clientes: ${response.status} ${response.statusText}`
-      );
-    }
+    const response = await fetchWithTimeout(`${API_BASE_URL}/clientes`, {
+      method: 'GET',
+      signal,
+      timeoutMs: 20000,
+      retries: 2,
+      backoffMs: 200,
+    });
 
     const clients: Client[] = await response.json();
     console.log(`✅ Datos recibidos: ${clients.length} clientes activos.`);
@@ -38,11 +41,14 @@ export const syncClientsToSQL = async (
 
     console.log(`📤 Enviando datos a: ${API_BASE_URL}/clientes/sync`);
 
-    const response = await fetch(`${API_BASE_URL}/clientes/sync`, {
+    const response = (await fetchWithTimeout(`${API_BASE_URL}/clientes/sync`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(clients),
-    });
+      timeoutMs: 60000,
+      retries: 1,
+      backoffMs: 400,
+    })) as Response;
 
     if (onProgress) onProgress(80);
 
