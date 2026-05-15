@@ -19,21 +19,41 @@ interface ClientContextType {
   refreshClients: (force?: boolean) => Promise<void>;
 }
 
+type CachedClients = {
+  data: Client[];
+  fetchedAt: number;
+} | null;
+
+type CachedClientsValue = CachedClients | Client[];
+
+const CLIENTS_CACHE_KEY = 'vt_sql_clients_v1';
+const CLIENTS_TTL_MS = 12 * 60 * 60 * 1000;
+
 const ClientContext = createContext<ClientContextType | undefined>(undefined);
 
 export const ClientProvider = ({ children }: { children: ReactNode }) => {
-  const [masterClients, setMasterClients] = useIndexedDBState<Client[] | null>(
-    'vt_sql_clients_v1',
-    null
-  );
+  const [cachedClients, setCachedClients, cacheLoaded] =
+    useIndexedDBState<CachedClientsValue>(CLIENTS_CACHE_KEY, null);
+  const [masterClients, setMasterClients] = useState<Client[] | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  const isCacheValid = useCallback((cache: CachedClients): boolean => {
+    if (!cache) return false;
+    if (!Array.isArray(cache.data) || cache.data.length === 0) return false;
+    return Date.now() - cache.fetchedAt < CLIENTS_TTL_MS;
+  }, []);
+
   const refreshClients = useCallback(
     async (force = false) => {
-      if (!force && masterClients && masterClients.length > 0) {
+      if (
+        !force &&
+        cachedClients &&
+        !Array.isArray(cachedClients) &&
+        isCacheValid(cachedClients)
+      ) {
         return;
       }
 
@@ -43,6 +63,8 @@ export const ClientProvider = ({ children }: { children: ReactNode }) => {
         console.log('📡 Contexto: Solicitando clientes al servidor...');
         const data = await fetchClientsFromSQL();
         if (data.length > 0) {
+          const payload = { data, fetchedAt: Date.now() };
+          setCachedClients(payload);
           setMasterClients(data);
         }
       } catch (err: any) {
@@ -52,18 +74,36 @@ export const ClientProvider = ({ children }: { children: ReactNode }) => {
         setLoading(false);
       }
     },
-    [masterClients, setMasterClients]
+    [cachedClients, isCacheValid, setCachedClients]
   );
 
   useEffect(() => {
-    if (!isInitialized) {
+    if (!cacheLoaded) return;
+
+    if (cachedClients && !Array.isArray(cachedClients)) {
+      if (isCacheValid(cachedClients)) {
+        setMasterClients(cachedClients.data);
+        return;
+      }
+    } else if (Array.isArray(cachedClients)) {
+      setMasterClients(cachedClients);
+      setCachedClients({ data: cachedClients, fetchedAt: 0 });
+      return;
+    } else if (cachedClients) {
+      setCachedClients(null);
+    }
+    setMasterClients(null);
+  }, [cacheLoaded, cachedClients, isCacheValid, setCachedClients]);
+
+  useEffect(() => {
+    if (!isInitialized && cacheLoaded) {
       const timer = setTimeout(() => {
         refreshClients();
         setIsInitialized(true);
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isInitialized, refreshClients]);
+  }, [cacheLoaded, isInitialized, refreshClients]);
 
   return (
     <ClientContext.Provider
