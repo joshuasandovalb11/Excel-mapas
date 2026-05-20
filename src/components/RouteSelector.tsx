@@ -87,7 +87,7 @@ export default function RouteSelector({
 
       <div className="relative mb-2 2xl:mb-3">
         <div className="absolute inset-y-0 left-0 pl-2 2xl:pl-2.5 flex items-center pointer-events-none">
-          <Search className="w-3 h-3 2xl:w-3.5 2xl:h-3.5 text-gray-400" />
+          <Search className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 text-gray-400" />
         </div>
         <input
           type="text"
@@ -95,7 +95,7 @@ export default function RouteSelector({
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           disabled={isLoading}
-          className="w-full pl-7 2xl:pl-8 pr-2 2xl:pr-3 py-1 2xl:py-1.5 text-[10px] 2xl:text-[11px] bg-white border border-gray-200 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-gray-50"
+          className="w-full pl-7 2xl:pl-8 pr-2 2xl:pr-3 py-1.5 2xl:py-2 text-[10px] 2xl:text-[11px] bg-white border border-gray-200 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-colors disabled:bg-gray-50"
         />
       </div>
 
@@ -144,17 +144,19 @@ export default function RouteSelector({
                   </span>
                 </div>
 
-                <div className="flex items-center pl-1 2xl:pl-1.5 w-full">
+                <div className="flex gap-1 items-center pl-1 2xl:pl-1.5 w-full">
                   <span
-                    className={`text-[10px] 2xl:text-[12px] font-semibold truncate ${
+                    className={`text-[11px] 2xl:text-[12px] font-bold truncate  whitespace-nowrap ${
+                      isSelected ? 'text-blue-700' : 'text-blue-600'
+                    }`}
+                  >
+                    ({r.vendedor})
+                  </span>
+                  <span
+                    className={`text-[11px] 2xl:text-[12px] font-semibold truncate ${
                       isSelected ? 'text-gray-900' : 'text-gray-700'
                     }`}
                   >
-                    <strong
-                      className={isSelected ? 'text-blue-600' : 'text-gray-600'}
-                    >
-                      ({r.vendedor})
-                    </strong>{' '}
                     {vendorName}
                   </span>
                 </div>

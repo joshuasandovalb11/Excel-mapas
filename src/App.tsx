@@ -2,13 +2,14 @@ import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import {
   Map,
   // Waypoints,
+  // MapPinHouse,
   RefreshCcw,
-  MapPinHouse,
   TriangleAlert,
   User,
   ChevronDown,
   KeyRound,
   LogOut,
+  LineChart,
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -24,9 +25,12 @@ const VehicleTracker = lazy(
 // const MultipleVehicleTracker = lazy(
 //   () => import('./pages/MultipleVehicleTracker')
 // );
-const Routes = lazy(() => import('./pages/Routes'));
+// const Routes = lazy(() => import('./pages/Routes'));
+const BehaviorAnalytics = lazy(
+  () => import('./pages/BehaviorAnalytics/BehaviorAnalytics')
+);
 
-type ViewType = 'tracker' | 'multiple' | 'routes';
+type ViewType = 'tracker' | 'multiple' | 'routes' | 'analytics';
 
 function PageLoader() {
   return (
@@ -55,7 +59,8 @@ export default function App() {
   const tabs = [
     { id: 'tracker', label: 'Visualizador de Rutas', icon: Map },
     // { id: 'multiple', label: 'Visualizador Multiple', icon: Waypoints },
-    { id: 'routes', label: 'Mapas de Vendedores', icon: MapPinHouse },
+    // { id: 'routes', label: 'Mapas de Vendedores', icon: MapPinHouse },
+    { id: 'analytics', label: 'Patrón de Conducta', icon: LineChart },
   ] as const;
 
   useEffect(() => {
@@ -82,8 +87,10 @@ export default function App() {
         return <VehicleTracker />;
       // case 'multiple':
       //   return <MultipleVehicleTracker />;
-      case 'routes':
-        return <Routes />;
+      // case 'routes':
+      //   return <Routes />;
+      case 'analytics':
+        return <BehaviorAnalytics />;
       default:
         return <VehicleTracker />;
     }
