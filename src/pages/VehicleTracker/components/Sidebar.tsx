@@ -8,7 +8,7 @@ import {
   Database,
   Map as MapIcon,
 } from 'lucide-react';
-import RouteDatePicker from '../../../components/RouteDatePicker';
+import RouteDatePicker from '../../../components/DatePicker';
 import RouteSelector from '../../../components/RouteSelector';
 import type { FechaDisponible, RutaResumen } from '../../../types/route.types';
 import LoadingLayer from '../../../components/LoadingLayer';
@@ -210,16 +210,24 @@ export default function VehicleTrackerSidebar({
                             </div>
                           </div>
                         ) : (
-                          <RouteDatePicker
-                            availableDates={availableDates}
-                            selectedDate={selectedDate}
-                            disabled={loadingDates || loadingRoutesSummary}
-                            onSelectDate={(date) => {
-                              if (loadingDates || loadingRoutesSummary) return;
-                              setSelectedDate(date);
-                              loadRoutesSummary(date);
-                            }}
-                          />
+                          <>
+                            <div className="flex items-center gap-1.5 mb-2 2xl:mb-2.5">
+                              <h4 className="text-[10px] 2xl:text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                                Fechas Disponibles
+                              </h4>
+                            </div>
+                            <RouteDatePicker
+                              availableDates={availableDates}
+                              selectedDate={selectedDate}
+                              disabled={loadingDates || loadingRoutesSummary}
+                              onSelectDate={(date) => {
+                                if (loadingDates || loadingRoutesSummary)
+                                  return;
+                                setSelectedDate(date);
+                                loadRoutesSummary(date);
+                              }}
+                            />
+                          </>
                         )}
                         {loadingDates && (
                           <LoadingLayer

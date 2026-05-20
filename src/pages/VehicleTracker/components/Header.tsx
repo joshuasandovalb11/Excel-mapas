@@ -40,10 +40,10 @@ export default function VehicleTrackerHeader({
   return (
     <div className="h-12 2xl:h-14 bg-white border-b border-gray-200 px-4 2xl:px-6 flex items-center justify-between z-10 shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all duration-300">
       <div className="flex flex-col justify-center overflow-hidden">
-        <h2 className="text-[12px] 2xl:text-[13px] font-bold text-gray-900 truncate tracking-tight">
+        <h2 className="text-[13px] 2xl:text-[14px] font-bold text-gray-900 truncate tracking-tight">
           {sellerInfo} — {dateInfo}
         </h2>
-        <span className="text-[10px] 2xl:text-[11px] text-gray-500 font-medium truncate">
+        <span className="text-[11px] 2xl:text-[12px] text-gray-500 font-medium truncate">
           Vehículo: {vehicleInfo}
         </span>
       </div>
