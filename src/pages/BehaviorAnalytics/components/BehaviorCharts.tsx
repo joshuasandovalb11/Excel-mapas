@@ -32,7 +32,12 @@ export default function BehaviorCharts({ data }: BehaviorChartsProps) {
       <div className="bg-white border border-gray-200 rounded-xl p-4 2xl:p-6 shadow-sm flex flex-col h-[300px] 2xl:h-[380px]">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4 2xl:mb-6">
           <h3 className="text-[11px] 2xl:text-[13px] font-bold text-gray-700 uppercase tracking-wider">
-            Distribución del Tiempo (Minutos)
+            Distribución del Tiempo (Minutos){' '}
+            <span className="text-[10px] 2xl:text-[11px] text-blue-600">
+              {viewMode === 'laboral'
+                ? '(8:30 am - 5:30 pm)'
+                : '(Fuera de Horario)'}
+            </span>
           </h3>
 
           {/* Toggle Switch minimalista estilo Vercel */}

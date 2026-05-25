@@ -105,6 +105,7 @@ export default function BehaviorAnalytics() {
           }
           startDate={analyticsData?.rango?.start || '--'}
           endDate={analyticsData?.rango?.end || '--'}
+          workSchedule="08:30 am - 05:30 pm"
         />
 
         <div className="flex-1 overflow-y-auto p-4 2xl:p-6 bg-[#FAFAFA]">

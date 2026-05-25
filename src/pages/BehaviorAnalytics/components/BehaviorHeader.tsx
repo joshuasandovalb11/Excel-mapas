@@ -1,9 +1,11 @@
 import React from 'react';
+import { Clock } from 'lucide-react';
 
 interface BehaviorHeaderProps {
   vendedorName: string;
   startDate: string;
   endDate: string;
+  workSchedule?: string;
   children?: React.ReactNode;
 }
 
@@ -11,6 +13,7 @@ export default function BehaviorHeader({
   vendedorName,
   startDate,
   endDate,
+  workSchedule,
   children,
 }: BehaviorHeaderProps) {
   if (!vendedorName || !startDate || !endDate) {
@@ -30,8 +33,17 @@ export default function BehaviorHeader({
         <h2 className="text-[13px] 2xl:text-[14px] font-bold text-gray-900">
           Análisis de: <span className="text-blue-600">{vendedorName}</span>
         </h2>
-        <div className="inline-flex items-center gap-1.5 text-[11px] 2xl:text-[12px] font-medium text-gray-700">
-          Periodo: <strong>{startDate}</strong> al <strong>{endDate}</strong>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex items-center gap-1.5 text-[11px] 2xl:text-[12px] font-medium text-gray-700">
+            Periodo: <strong>{startDate}</strong> al <strong>{endDate}</strong>
+          </div>
+
+          {workSchedule && (
+            <div className="inline-flex items-center gap-1.5 text-[11px] 2xl:text-[12px] font-medium text-blue-600 w-fit">
+              <Clock className="w-3.5 h-3.5 text-blue-500" />
+              Horario: <strong>{workSchedule}</strong>
+            </div>
+          )}
         </div>
       </div>
 
