@@ -32,6 +32,7 @@ interface KPICardProps {
   icon: React.ElementType;
   iconColorClass: string;
   bgClass?: string;
+  bgBorder?: string;
 }
 
 const KPICard = ({
@@ -41,9 +42,10 @@ const KPICard = ({
   icon: Icon,
   iconColorClass,
   bgClass = 'bg-white',
+  bgBorder = 'border-gray-200'
 }: KPICardProps) => (
   <div
-    className={`${bgClass} border border-gray-200 rounded-xl p-3 2xl:p-4 shadow-sm flex flex-col justify-between transition-all hover:shadow-md`}
+    className={`${bgClass} border ${bgBorder} rounded-xl p-3 2xl:p-4 flex flex-col justify-between transition-all hover:shadow-md`}
   >
     <div className="flex items-center justify-between mb-2">
       <span className="text-[10px] 2xl:text-[11px] font-bold text-gray-500 uppercase tracking-wider">
@@ -102,6 +104,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           icon={CheckCircle2}
           iconColorClass="text-green-600"
           bgClass="bg-green-50"
+          bgBorder="border-green-200"
         />
         <KPICard
           title="Tiempo sin Clientes"
@@ -110,6 +113,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           icon={AlertTriangle}
           iconColorClass="text-red-600"
           bgClass="bg-red-50"
+          bgBorder="border-red-200"
         />
         <KPICard
           title="Tiempo en Traslados"
@@ -118,6 +122,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           icon={Navigation}
           iconColorClass="text-orange-500"
           bgClass="bg-orange-50"
+          bgBorder="border-orange-200"
         />
         <KPICard
           title="Tiempo en Casa"
@@ -126,6 +131,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           icon={Home}
           iconColorClass="text-purple-600"
           bgClass="bg-purple-50"
+          bgBorder="border-purple-200"
         />
         <KPICard
           title="Tiempo Tools México"
@@ -134,6 +140,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           icon={Wrench}
           iconColorClass="text-blue-600"
           bgClass="bg-blue-50"
+          bgBorder="border-blue-200"
         />
       </div>
     </div>

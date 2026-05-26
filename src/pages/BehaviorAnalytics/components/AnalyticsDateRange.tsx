@@ -1,4 +1,4 @@
-import PopoverDatePicker from './PopoverDatePicker';
+import PopoverDateRangePicker from './PopoverDateRangePicker';
 
 interface AnalyticsDateRangeProps {
   startDate: string;
@@ -18,32 +18,20 @@ export default function AnalyticsDateRange({
   isLoadingDates,
 }: AnalyticsDateRangeProps) {
   return (
-    <div className="space-y-3">
-      <div className="relative">
-        <label className="text-[10px] 2xl:text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
-          Fecha Desde
-        </label>
-        <PopoverDatePicker
-          selectedDate={startDate}
-          onSelectDate={setStartDate}
-          availableDates={availableDates}
-          disabled={isLoadingDates}
-          label="Desde"
-        />
-      </div>
-
-      <div className="relative">
-        <label className="text-[10px] 2xl:text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
-          Fecha Hasta
-        </label>
-        <PopoverDatePicker
-          selectedDate={endDate}
-          onSelectDate={setEndDate}
-          availableDates={availableDates}
-          disabled={isLoadingDates}
-          label="Hasta"
-        />
-      </div>
+    <div className="relative">
+      <label className="text-[10px] 2xl:text-[11px] font-bold text-gray-500 uppercase tracking-wider block mb-1.5">
+        Rango de Fechas
+      </label>
+      <PopoverDateRangePicker
+        startDate={startDate}
+        endDate={endDate}
+        onSelectRange={(start, end) => {
+          setStartDate(start);
+          setEndDate(end);
+        }}
+        availableDates={availableDates}
+        disabled={isLoadingDates}
+      />
     </div>
   );
 }
