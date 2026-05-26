@@ -307,9 +307,8 @@ export default function MultipleVehicleTracker() {
     <div className="flex h-screen overflow-hidden bg-gray-100">
       {/* SIDEBAR IZQUIERDO */}
       <aside
-        className={`${
-          sidebarCollapsed ? 'w-16' : 'w-80'
-        } bg-white shadow-lg transition-all duration-300 flex flex-col relative z-20`}
+        className={`${sidebarCollapsed ? 'w-16' : 'w-80'
+          } bg-white shadow-lg transition-all duration-300 flex flex-col relative z-20`}
       >
         {/* HEADER DEL SIDEBAR */}
         <div className="pt-4 pl-4 pr-4 pb-2 border-b border-gray-200 flex items-center justify-between">
@@ -345,7 +344,7 @@ export default function MultipleVehicleTracker() {
           <>
             {/* VISTA DE ERROR / BASE DE DATOS VACÍA */}
             {!isLoadingClients &&
-            (!masterClients || masterClients.length === 0) ? (
+              (!masterClients || masterClients.length === 0) ? (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center space-y-4">
                 <div className="bg-red-50 p-4 rounded-full">
                   <Database className="w-10 h-10 text-red-500" />
@@ -649,10 +648,9 @@ export default function MultipleVehicleTracker() {
         <div
           className={`fixed bottom-4 right-4 bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50             
             transition-all duration-500 ease-in-out
-            ${
-              isToastVisible
-                ? 'opacity-100 translate-x-0'
-                : 'opacity-0 translate-x-10'
+            ${isToastVisible
+              ? 'opacity-100 translate-x-0'
+              : 'opacity-0 translate-x-10'
             }`}
         >
           <AlertCircle className="w-5 h-5" />

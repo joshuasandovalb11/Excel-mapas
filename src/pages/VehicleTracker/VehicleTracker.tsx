@@ -7,7 +7,7 @@ import { downloadExcelReport } from '../../utils/reportUtils';
 import VehicleTrackerHeader from './components/Header';
 import VehicleTrackerSidebar from './components/Sidebar';
 import VehicleTrackerEmptyState from './components/EmptyState';
-import VehicleTrackerErrorState from './components/ErrorState';
+import VehicleTrackerErrorState from '../../components/ErrorState';
 import { useVehicleClients } from './hooks/useVehicleClients';
 import { useVehicleStats } from './hooks/useVehicleStats';
 import { useMapExport } from './hooks/useMapExport';

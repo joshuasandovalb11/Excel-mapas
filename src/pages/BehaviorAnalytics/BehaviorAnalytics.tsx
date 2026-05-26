@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   Loader2,
   BarChart3,
-  AlertCircle,
   LayoutGrid,
   Table as TableIcon,
 } from 'lucide-react';
@@ -14,11 +13,14 @@ import BehaviorCharts from './components/BehaviorCharts';
 import DateCarousel from './components/DateCarousel';
 import DailyParadasTable from './components/DailyParadasTable';
 import TimeBlockCalendar from './components/TimeBlockCalendar';
+import ErrorState from '../../components/ErrorState';
 import { useVendorsCatalog } from './hooks/useVendorsCatalog';
 import { useBehaviorData } from './hooks/useBehaviorData';
 import { fetchAvailableDates } from '../../services/apiRutas';
 import type { FetchBehaviorParams } from '../../services/apiBehavior';
 import { formatName } from '../../utils/tripUtils';
+import { useGlobalUI } from '../../context/globalUIStore';
+import { toAppErrorSync, type AppError } from '../../utils/appError';
 
 export default function BehaviorAnalytics() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -32,10 +34,19 @@ export default function BehaviorAnalytics() {
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
 
-  const { data: vendors = [], isLoading: isLoadingVendors } =
-    useVendorsCatalog();
+  const { showError } = useGlobalUI();
 
-  const { data: availableDates = [], isLoading: isLoadingDates } = useQuery({
+  const {
+    data: vendors = [],
+    isLoading: isLoadingVendors,
+    error: vendorsError,
+  } = useVendorsCatalog();
+
+  const {
+    data: availableDates = [],
+    isLoading: isLoadingDates,
+    error: datesError,
+  } = useQuery({
     queryKey: ['availableDates'],
     queryFn: ({ signal }) => fetchAvailableDates(signal),
     staleTime: 1000 * 60 * 5,
@@ -46,7 +57,31 @@ export default function BehaviorAnalytics() {
     isLoading: isAnalyzing,
     isFetching,
     error,
+    refetch,
   } = useBehaviorData(queryParams);
+
+  // Mostrar Toasts ante errores en catálogos y fechas de forma segura
+  useEffect(() => {
+    if (vendorsError) {
+      showError(
+        toAppErrorSync(vendorsError, {
+          title: 'Error de catálogo',
+          message: 'No fue posible obtener el catálogo de vendedores.',
+        })
+      );
+    }
+  }, [vendorsError, showError]);
+
+  useEffect(() => {
+    if (datesError) {
+      showError(
+        toAppErrorSync(datesError, {
+          title: 'Error de fechas',
+          message: 'No fue posible obtener las fechas disponibles.',
+        })
+      );
+    }
+  }, [datesError, showError]);
 
   useEffect(() => {
     if (analyticsData?.dailyBreakdown?.[0]?.fecha) {
@@ -128,21 +163,14 @@ export default function BehaviorAnalytics() {
               </div>
             </div>
           ) : error ? (
-            // Estado de Error
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                <div className="p-3 bg-red-100 rounded-full mb-4">
-                  <AlertCircle className="w-8 h-8 text-red-600" />
-                </div>
-                <h3 className="text-lg font-bold text-gray-900 mb-2">
-                  Error en el análisis
-                </h3>
-                <p className="text-sm text-gray-500 max-w-md">
-                  Hubo un problema al procesar los datos del vendedor. Por
-                  favor, verifica los filtros e intenta de nuevo.
-                </p>
-              </div>
-            </div>
+            <ErrorState
+              error={toAppErrorSync(error, {
+                title: 'Error en el análisis',
+                message: 'No fue posible procesar los datos del análisis.',
+              })}
+              onRetry={refetch}
+              isRetrying={isFetching}
+            />
           ) : analyticsData && analyticsData.globalSummary === null ? (
             // Estado Vacío (Sin actividad)
             <div className="w-full h-full flex items-center justify-center">

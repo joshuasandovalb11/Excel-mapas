@@ -1293,10 +1293,9 @@ export default function MultiInteractiveMap({
             disabled={isPlaying}
             title={`Retroceder ${skipMinutes} min`}
             className={`flex flex-col items-center justify-center w-[52px] h-[52px] rounded-full shadow-lg border bg-white transition-all
-              ${
-                isPlaying
-                  ? 'opacity-30 cursor-not-allowed border-gray-200 text-gray-300'
-                  : 'cursor-pointer border-gray-200 hover:bg-gray-100 text-gray-700 hover:text-gray-900 active:scale-95'
+              ${isPlaying
+                ? 'opacity-30 cursor-not-allowed border-gray-200 text-gray-300'
+                : 'cursor-pointer border-gray-200 hover:bg-gray-100 text-gray-700 hover:text-gray-900 active:scale-95'
               }`}
           >
             <SkipBack size={16} />
@@ -1320,12 +1319,11 @@ export default function MultiInteractiveMap({
             <button
               onClick={togglePlayPause}
               className={`px-4 py-2.5 rounded-full text-xs font-bold flex items-center gap-2 transition-colors shadow-sm cursor-pointer 
-                ${
-                  isPlaying
-                    ? 'bg-orange-100 text-orange-700'
-                    : isFinished
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-green-600 text-white hover:bg-green-700'
+                ${isPlaying
+                  ? 'bg-orange-100 text-orange-700'
+                  : isFinished
+                    ? 'bg-green-100 text-green-700'
+                    : 'bg-green-600 text-white hover:bg-green-700'
                 }`}
             >
               {isPlaying ? (
@@ -1375,10 +1373,9 @@ export default function MultiInteractiveMap({
             disabled={isPlaying}
             title={`Adelantar ${skipMinutes} min`}
             className={`flex flex-col items-center justify-center w-[52px] h-[52px] rounded-full shadow-lg border bg-white transition-all
-              ${
-                isPlaying
-                  ? 'opacity-30 cursor-not-allowed border-gray-200 text-gray-300'
-                  : 'cursor-pointer border-gray-200 hover:bg-gray-100 text-gray-800 hover:text-gray-900 active:scale-95'
+              ${isPlaying
+                ? 'opacity-30 cursor-not-allowed border-gray-200 text-gray-300'
+                : 'cursor-pointer border-gray-200 hover:bg-gray-100 text-gray-800 hover:text-gray-900 active:scale-95'
               }`}
           >
             <SkipForward size={16} />
@@ -1406,10 +1403,9 @@ export default function MultiInteractiveMap({
                   key={opt}
                   onClick={() => setSkipMinutes(opt)}
                   className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold transition-all cursor-pointer
-                    ${
-                      skipMinutes === opt
-                        ? 'bg-green-600 text-white shadow-sm'
-                        : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    ${skipMinutes === opt
+                      ? 'bg-green-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                     }`}
                 >
                   {opt} min
