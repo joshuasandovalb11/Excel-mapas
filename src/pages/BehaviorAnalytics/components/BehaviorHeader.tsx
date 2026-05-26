@@ -16,6 +16,8 @@ export default function BehaviorHeader({
   workSchedule,
   children,
 }: BehaviorHeaderProps) {
+  const formatDisplayDate = (d: string) => d ? d.split('-').reverse().join('-') : d;
+
   if (!vendedorName || !startDate || !endDate) {
     return (
       <div className="h-12 2xl:h-14 bg-white border-b border-gray-200 px-4 2xl:px-6 flex items-center shadow-[0_1px_2px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -35,7 +37,7 @@ export default function BehaviorHeader({
         </h2>
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex items-center gap-1.5 text-[11px] 2xl:text-[12px] font-medium text-gray-700">
-            Periodo: <strong>{startDate}</strong> al <strong>{endDate}</strong>
+            Periodo: <strong>{formatDisplayDate(startDate)}</strong> al <strong>{formatDisplayDate(endDate)}</strong>
           </div>
 
           {workSchedule && (

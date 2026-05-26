@@ -24,6 +24,8 @@ export default function PopoverDatePicker({
 
   useOnClickOutside(containerRef, () => setIsOpen(false));
 
+  const displayDate = selectedDate ? selectedDate.split('-').reverse().join('-') : '';
+
   const handleSelect = (date: string) => {
     onSelectDate(date);
     setIsOpen(false);
@@ -46,7 +48,7 @@ export default function PopoverDatePicker({
               selectedDate ? 'text-gray-900 font-medium' : 'text-gray-400'
             }
           >
-            {selectedDate || `Seleccionar ${label.toLowerCase()}`}
+            {displayDate || `Seleccionar ${label.toLowerCase()}`}
           </span>
         </div>
         <ChevronDown
