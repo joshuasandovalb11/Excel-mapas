@@ -1,5 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Loader2, BarChart3, AlertCircle } from 'lucide-react';
+import {
+  Loader2,
+  BarChart3,
+  AlertCircle,
+  LayoutGrid,
+  Table as TableIcon,
+} from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import BehaviorHeader from './components/BehaviorHeader';
 import AnalyticsSidebar from './components/AnalyticsSidebar';
@@ -7,6 +13,7 @@ import KPIGrid from './components/KPIGrid';
 import BehaviorCharts from './components/BehaviorCharts';
 import DateCarousel from './components/DateCarousel';
 import DailyParadasTable from './components/DailyParadasTable';
+import TimeBlockCalendar from './components/TimeBlockCalendar';
 import { useVendorsCatalog } from './hooks/useVendorsCatalog';
 import { useBehaviorData } from './hooks/useBehaviorData';
 import { fetchAvailableDates } from '../../services/apiRutas';
@@ -23,6 +30,7 @@ export default function BehaviorAnalytics() {
     null
   );
   const [selectedDate, setSelectedDate] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
 
   const { data: vendors = [], isLoading: isLoadingVendors } =
     useVendorsCatalog();
@@ -96,11 +104,11 @@ export default function BehaviorAnalytics() {
       />
 
       {/* Área de Contenido Principal */}
-      <main className="flex-1 relative flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 relative flex flex-col overflow-hidden">
         <BehaviorHeader
           vendedorName={
-            analyticsData
-              ? `[${selectedVendor}] ${formatName(analyticsData.vendedor)}`
+            analyticsData && queryParams
+              ? `[${queryParams.vendedor}] ${formatName(analyticsData.vendedor)}`
               : ''
           }
           startDate={analyticsData?.rango?.start || '--'}
@@ -108,7 +116,7 @@ export default function BehaviorAnalytics() {
           workSchedule="08:30 am - 05:30 pm"
         />
 
-        <div className="flex-1 overflow-y-auto p-4 2xl:p-6 bg-[#FAFAFA]">
+        <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 2xl:p-6 bg-[#FAFAFA]">
           {isDataLoading ? (
             // Estado de Carga
             <div className="w-full h-full flex items-center justify-center">
@@ -172,23 +180,55 @@ export default function BehaviorAnalytics() {
 
               {/* Desglose Diario Detallado */}
               <div className="mt-6 border-t border-gray-200 pt-6">
-                <div className="flex items-center justify-center">
-                  <h3 className="text-[11px] 2xl:text-[13px] font-bold text-gray-700 mb-4 uppercase tracking-wider">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+                  <h3 className="text-[11px] 2xl:text-[13px] font-bold text-gray-700 uppercase tracking-wider">
                     Desglose Diario Detallado
                   </h3>
+
+                  {/* Selector de Vista (Tabs) */}
+                  <div className="flex items-center bg-gray-100 p-0.5 rounded-xl border border-gray-200 shadow-sm">
+                    <button
+                      onClick={() => setViewMode('calendar')}
+                      className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${
+                        viewMode === 'calendar'
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      Mapa de Tiempo
+                    </button>
+                    <button
+                      onClick={() => setViewMode('table')}
+                      className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${
+                        viewMode === 'table'
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      <TableIcon className="w-3.5 h-3.5" />
+                      Tabla de Paradas
+                    </button>
+                  </div>
                 </div>
 
-                <DateCarousel
-                  data={analyticsData.dailyBreakdown}
-                  selectedDate={selectedDate}
-                  onSelectDate={setSelectedDate}
-                />
+                {viewMode === 'calendar' ? (
+                  <TimeBlockCalendar daysData={analyticsData.dailyBreakdown} />
+                ) : (
+                  <>
+                    <DateCarousel
+                      data={analyticsData.dailyBreakdown}
+                      selectedDate={selectedDate}
+                      onSelectDate={setSelectedDate}
+                    />
 
-                <div className="mt-2">
-                  <DailyParadasTable
-                    paradas={selectedDayData?.paradasDetalladas || []}
-                  />
-                </div>
+                    <div className="mt-2">
+                      <DailyParadasTable
+                        paradas={selectedDayData?.paradasDetalladas || []}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </>
           ) : (
