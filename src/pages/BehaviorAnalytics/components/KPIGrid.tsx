@@ -101,7 +101,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           extraValue={summary.tiempos.productivo.extra}
           icon={CheckCircle2}
           iconColorClass="text-green-600"
-          bgClass="bg-green-50/30"
+          bgClass="bg-green-50"
         />
         <KPICard
           title="Tiempo sin Clientes"
@@ -109,7 +109,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           extraValue={summary.tiempos.noProductivo.extra}
           icon={AlertTriangle}
           iconColorClass="text-red-600"
-          bgClass="bg-red-50/30"
+          bgClass="bg-red-50"
         />
         <KPICard
           title="Tiempo en Traslados"
@@ -117,7 +117,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           extraValue={summary.tiempos.traslados.extra}
           icon={Navigation}
           iconColorClass="text-orange-500"
-          bgClass="bg-orange-50/30"
+          bgClass="bg-orange-50"
         />
         <KPICard
           title="Tiempo en Casa"
@@ -125,7 +125,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           extraValue={summary.tiempos.casa.extra}
           icon={Home}
           iconColorClass="text-purple-600"
-          bgClass="bg-purple-50/30"
+          bgClass="bg-purple-50"
         />
         <KPICard
           title="Tiempo Tools México"
@@ -133,7 +133,7 @@ export default function KPIGrid({ summary }: KPIGridProps) {
           extraValue={summary.tiempos.tools.extra}
           icon={Wrench}
           iconColorClass="text-blue-600"
-          bgClass="bg-blue-50/30"
+          bgClass="bg-blue-50"
         />
       </div>
     </div>

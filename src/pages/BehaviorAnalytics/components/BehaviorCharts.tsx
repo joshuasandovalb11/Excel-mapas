@@ -117,7 +117,7 @@ export default function BehaviorCharts({ data }: BehaviorChartsProps) {
               dataKey={`tiempos.${viewMode}.traslados`}
               name="Traslados"
               stackId="a"
-              fill="#f97316"
+              fill="#62748E"
             />
             <Bar
               dataKey={`tiempos.${viewMode}.tools`}
