@@ -114,17 +114,17 @@ export default function PopoverDateRangePicker({
 
       let rangeClass = '';
       if (isStart && isEnd) {
-        rangeClass = 'bg-blue-600 text-white rounded-md font-semibold';
+        rangeClass = 'bg-blue-600 text-white border-blue-600 rounded-md font-semibold';
       } else if (isStart) {
-        rangeClass = 'bg-blue-600 text-white rounded-l-md rounded-r-none font-semibold';
+        rangeClass = 'bg-blue-600 text-white border-blue-600 rounded-l-md rounded-r-none font-semibold';
       } else if (isEnd) {
-        rangeClass = 'bg-blue-600 text-white rounded-r-md rounded-l-none font-semibold';
+        rangeClass = 'bg-blue-600 text-white border-blue-600 rounded-r-md rounded-l-none font-semibold';
       } else if (isInRange) {
-        rangeClass = 'bg-blue-50 text-blue-800 rounded-none font-medium hover:bg-blue-100';
+        rangeClass = 'bg-blue-50 text-blue-800 border-blue-50 rounded-none font-medium hover:bg-blue-100 hover:border-blue-100';
       } else if (isAvailable) {
-        rangeClass = 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-100 rounded-md';
+        rangeClass = 'bg-white text-gray-700 border-gray-100 hover:bg-gray-100 rounded-md';
       } else {
-        rangeClass = 'text-gray-300 cursor-not-allowed opacity-40';
+        rangeClass = 'text-gray-300 border-transparent cursor-not-allowed opacity-40';
       }
 
       days.push(
@@ -135,7 +135,7 @@ export default function PopoverDateRangePicker({
           onClick={() => !disabled && isAvailable && handleDateClick(dateStr)}
           onMouseEnter={() => isAvailable && setHoveredDate(dateStr)}
           onMouseLeave={() => setHoveredDate(null)}
-          className={`relative flex items-center justify-center w-7 h-7 2xl:w-8 2xl:h-8 text-[11px] 2xl:text-[12px] transition-all duration-150 ${rangeClass}`}
+          className={`relative flex items-center justify-center w-7 h-7 2xl:w-8 2xl:h-8 text-[11px] 2xl:text-[12px] border transition-all duration-150 ${rangeClass}`}
         >
           {day}
           {isAvailable && !isStart && !isEnd && !isInRange && (

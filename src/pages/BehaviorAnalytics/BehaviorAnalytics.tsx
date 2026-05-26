@@ -20,7 +20,7 @@ import { fetchAvailableDates } from '../../services/apiRutas';
 import type { FetchBehaviorParams } from '../../services/apiBehavior';
 import { formatName } from '../../utils/tripUtils';
 import { useGlobalUI } from '../../context/globalUIStore';
-import { toAppErrorSync, type AppError } from '../../utils/appError';
+import { toAppErrorSync } from '../../utils/appError';
 
 export default function BehaviorAnalytics() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -217,22 +217,20 @@ export default function BehaviorAnalytics() {
                   <div className="flex items-center bg-gray-100 p-0.5 rounded-xl border border-gray-200 shadow-sm">
                     <button
                       onClick={() => setViewMode('calendar')}
-                      className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${
-                        viewMode === 'calendar'
+                      className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${viewMode === 'calendar'
                           ? 'bg-white text-gray-900 shadow-sm'
                           : 'text-gray-500 hover:text-gray-700'
-                      }`}
+                        }`}
                     >
                       <LayoutGrid className="w-3.5 h-3.5" />
                       Mapa de Tiempo
                     </button>
                     <button
                       onClick={() => setViewMode('table')}
-                      className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${
-                        viewMode === 'table'
+                      className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${viewMode === 'table'
                           ? 'bg-white text-gray-900 shadow-sm'
                           : 'text-gray-500 hover:text-gray-700'
-                      }`}
+                        }`}
                     >
                       <TableIcon className="w-3.5 h-3.5" />
                       Tabla de Paradas
