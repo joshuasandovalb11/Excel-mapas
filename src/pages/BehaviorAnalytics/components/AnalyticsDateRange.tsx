@@ -2,18 +2,16 @@ import PopoverDateRangePicker from './PopoverDateRangePicker';
 
 interface AnalyticsDateRangeProps {
   startDate: string;
-  setStartDate: (v: string) => void;
   endDate: string;
-  setEndDate: (v: string) => void;
+  onChange: (start: string, end: string) => void;
   availableDates: { fecha: string; totalRutas: number }[];
   isLoadingDates: boolean;
 }
 
 export default function AnalyticsDateRange({
   startDate,
-  setStartDate,
   endDate,
-  setEndDate,
+  onChange,
   availableDates,
   isLoadingDates,
 }: AnalyticsDateRangeProps) {
@@ -25,10 +23,7 @@ export default function AnalyticsDateRange({
       <PopoverDateRangePicker
         startDate={startDate}
         endDate={endDate}
-        onSelectRange={(start, end) => {
-          setStartDate(start);
-          setEndDate(end);
-        }}
+        onSelectRange={onChange}
         availableDates={availableDates}
         disabled={isLoadingDates}
       />

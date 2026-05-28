@@ -184,7 +184,7 @@ export default function PopoverDateRangePicker({
           <div className="flex items-center justify-between mb-2 2xl:mb-3 px-1">
             <div className="flex items-center gap-1.5 text-gray-900">
               <CalendarIcon className="w-3 h-3 2xl:w-3.5 2xl:h-3.5 text-gray-400" />
-              <span className="text-[12px] 2xl:text-[13px] font-bold">
+              <span className="text-[12px] 2xl:text-[13px] font-semibold">
                 {monthNames[month]} {year}
               </span>
             </div>

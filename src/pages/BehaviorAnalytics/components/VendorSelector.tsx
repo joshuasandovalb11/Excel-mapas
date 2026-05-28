@@ -7,14 +7,14 @@ import type { Vendor } from '../../../types/behavior.types';
 interface VendorSelectorProps {
   vendors: Vendor[];
   selectedVendor: string;
-  setSelectedVendor: (id: string) => void;
+  onChange: (id: string) => void;
   isLoading: boolean;
 }
 
 export default function VendorSelector({
   vendors,
   selectedVendor,
-  setSelectedVendor,
+  onChange,
   isLoading,
 }: VendorSelectorProps) {
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,7 +69,7 @@ export default function VendorSelector({
                 return (
                   <button
                     key={vendorId}
-                    onClick={() => setSelectedVendor(vendorId)}
+                    onClick={() => onChange(vendorId)}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left transition-all duration-200 group
                       ${
                         isSelected

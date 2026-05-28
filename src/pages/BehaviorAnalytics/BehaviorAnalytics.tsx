@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   Loader2,
   BarChart3,
@@ -21,20 +21,36 @@ import type { FetchBehaviorParams } from '../../services/apiBehavior';
 import { formatName } from '../../utils/tripUtils';
 import { useGlobalUI } from '../../context/globalUIStore';
 import { toAppErrorSync } from '../../utils/appError';
+import { useViewQueryParams } from '../../hooks/useViewQueryParams';
+
+const DEFAULT_MIN_STOP = "5";
 
 export default function BehaviorAnalytics() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [selectedVendor, setSelectedVendor] = useState('');
-  const [minStopDuration, setMinStopDuration] = useState(5);
-  const [queryParams, setQueryParams] = useState<FetchBehaviorParams | null>(
-    null
-  );
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [viewMode, setViewMode] = useState<'calendar' | 'table'>('calendar');
 
   const { showError } = useGlobalUI();
+
+  // 1. Live Filtering y Sparse URLs
+  const { params, updateParams } = useViewQueryParams({
+    vendedor: "",
+    startDate: "",
+    endDate: "",
+    minStopDuration: DEFAULT_MIN_STOP
+  });
+
+  // 2. Parseo estricto para TanStack Query
+  const queryParams = useMemo<FetchBehaviorParams | null>(() => {
+    if (!params.vendedor || !params.startDate || !params.endDate) return null;
+
+    return {
+      vendedor: params.vendedor,
+      startDate: params.startDate,
+      endDate: params.endDate,
+      minStopDuration: parseInt(params.minStopDuration, 10) || 5
+    };
+  }, [params]);
 
   const {
     data: vendors = [],
@@ -60,7 +76,6 @@ export default function BehaviorAnalytics() {
     refetch,
   } = useBehaviorData(queryParams);
 
-  // Mostrar Toasts ante errores en catálogos y fechas de forma segura
   useEffect(() => {
     if (vendorsError) {
       showError(
@@ -89,23 +104,14 @@ export default function BehaviorAnalytics() {
     }
   }, [analyticsData]);
 
-  const handleAnalyze = () => {
-    if (!startDate || !endDate || !selectedVendor) return;
-
-    setQueryParams({
-      vendedor: selectedVendor,
-      startDate,
-      endDate,
-      minStopDuration,
-    });
-  };
-
+  // Delegado al Sidebar
   const handleReset = () => {
-    setQueryParams(null);
-    setStartDate('');
-    setEndDate('');
-    setSelectedVendor('');
-    setMinStopDuration(5);
+    updateParams({
+      vendedor: "",
+      startDate: "",
+      endDate: "",
+      minStopDuration: DEFAULT_MIN_STOP
+    });
     setSelectedDate('');
   };
 
@@ -117,25 +123,17 @@ export default function BehaviorAnalytics() {
 
   return (
     <div className="flex h-screen bg-gray-50 overflow-hidden font-sans">
-      {/* Sidebar de Filtros */}
+      {/* Sidebar de Filtros (Nuevas Props) */}
       <AnalyticsSidebar
         sidebarCollapsed={sidebarCollapsed}
         setSidebarCollapsed={setSidebarCollapsed}
-        startDate={startDate}
-        setStartDate={setStartDate}
-        endDate={endDate}
-        setEndDate={setEndDate}
-        selectedVendor={selectedVendor}
-        setSelectedVendor={setSelectedVendor}
-        minStopDuration={minStopDuration}
-        setMinStopDuration={setMinStopDuration}
-        onAnalyze={handleAnalyze}
+        params={params}
+        updateParams={updateParams}
         onReset={handleReset}
         vendors={vendors}
         isLoadingVendors={isLoadingVendors}
         availableDates={availableDates}
         isLoadingDates={isLoadingDates}
-        isAnalyzing={isDataLoading}
       />
 
       {/* Área de Contenido Principal */}
@@ -153,7 +151,6 @@ export default function BehaviorAnalytics() {
 
         <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-4 2xl:p-6 bg-[#FAFAFA]">
           {isDataLoading ? (
-            // Estado de Carga
             <div className="w-full h-full flex items-center justify-center">
               <div className="flex-1 flex flex-col items-center justify-center py-20">
                 <Loader2 className="w-10 h-10 text-blue-600 animate-spin mb-4" />
@@ -172,7 +169,6 @@ export default function BehaviorAnalytics() {
               isRetrying={isFetching}
             />
           ) : analyticsData && analyticsData.globalSummary === null ? (
-            // Estado Vacío (Sin actividad)
             <div className="w-full h-full flex items-center justify-center">
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
                 <div className="text-gray-400 mb-4 bg-gray-100 p-4 rounded-full">
@@ -200,26 +196,21 @@ export default function BehaviorAnalytics() {
               </div>
             </div>
           ) : analyticsData ? (
-            // Vista de Datos (Dashboard)
             <>
               <KPIGrid summary={analyticsData.globalSummary} />
-
               <BehaviorCharts data={analyticsData.dailyBreakdown} />
 
-              {/* Desglose Diario Detallado */}
               <div className="mt-6 border-t border-gray-200 pt-6">
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
                   <h3 className="text-[11px] 2xl:text-[13px] font-bold text-gray-700 uppercase tracking-wider">
                     Desglose Diario Detallado
                   </h3>
-
-                  {/* Selector de Vista (Tabs) */}
                   <div className="flex items-center bg-gray-100 p-0.5 rounded-xl border border-gray-200 shadow-sm">
                     <button
                       onClick={() => setViewMode('calendar')}
                       className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${viewMode === 'calendar'
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
                         }`}
                     >
                       <LayoutGrid className="w-3.5 h-3.5" />
@@ -228,8 +219,8 @@ export default function BehaviorAnalytics() {
                     <button
                       onClick={() => setViewMode('table')}
                       className={`flex items-center gap-2 px-4 py-1.5 text-[11px] 2xl:text-[12px] font-bold rounded-lg transition-all ${viewMode === 'table'
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
                         }`}
                     >
                       <TableIcon className="w-3.5 h-3.5" />
@@ -247,7 +238,6 @@ export default function BehaviorAnalytics() {
                       selectedDate={selectedDate}
                       onSelectDate={setSelectedDate}
                     />
-
                     <div className="mt-2">
                       <DailyParadasTable
                         paradas={selectedDayData?.paradasDetalladas || []}
@@ -258,7 +248,6 @@ export default function BehaviorAnalytics() {
               </div>
             </>
           ) : (
-            // Empty State (Vista inicial)
             <div className="w-full h-full flex items-center justify-center">
               <div className="flex flex-col items-center justify-center text-center">
                 <div className="w-16 h-16 bg-white border-2 border-gray-200 rounded-2xl flex items-center justify-center mb-6 shadow-sm transform">
@@ -269,8 +258,7 @@ export default function BehaviorAnalytics() {
                 </h2>
                 <p className="text-[13px] 2xl:text-base text-gray-500 max-w-md">
                   Seleccione un vendedor y un rango de fechas en el panel
-                  lateral, luego haga clic en "Analizar" para visualizar el
-                  patrón de conducta.
+                  lateral para visualizar el patrón de conducta.
                 </p>
               </div>
             </div>

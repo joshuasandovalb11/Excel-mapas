@@ -1,4 +1,4 @@
-import { BarChart3, Search, Minus, Plus, RotateCcw } from 'lucide-react';
+import { BarChart3, Minus, Plus, RotateCcw } from 'lucide-react';
 import type { Vendor } from '../../../types/behavior.types';
 import VendorSelector from './VendorSelector';
 import AnalyticsDateRange from './AnalyticsDateRange';
@@ -6,50 +6,32 @@ import AnalyticsDateRange from './AnalyticsDateRange';
 interface AnalyticsSidebarProps {
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (val: boolean) => void;
-  startDate: string;
-  setStartDate: (val: string) => void;
-  endDate: string;
-  setEndDate: (val: string) => void;
-  selectedVendor: string;
-  setSelectedVendor: (val: string) => void;
-  minStopDuration: number;
-  setMinStopDuration: (val: number | ((prev: number) => number)) => void;
-  onAnalyze: () => void;
-  onReset?: () => void;
+  params: Record<string, string>;
+  updateParams: (newValues: Record<string, string>) => void;
+  onReset: () => void;
   vendors: Vendor[];
   isLoadingVendors: boolean;
   availableDates: { fecha: string; totalRutas: number }[];
   isLoadingDates: boolean;
-  isAnalyzing: boolean;
 }
 
 export default function AnalyticsSidebar({
   sidebarCollapsed,
   setSidebarCollapsed,
-  startDate,
-  setStartDate,
-  endDate,
-  setEndDate,
-  selectedVendor,
-  setSelectedVendor,
-  minStopDuration,
-  setMinStopDuration,
-  onAnalyze,
+  params,
+  updateParams,
   onReset,
   vendors,
   isLoadingVendors,
   availableDates,
   isLoadingDates,
-  isAnalyzing,
 }: AnalyticsSidebarProps) {
-  const canAnalyze =
-    !!selectedVendor && !!startDate && !!endDate && !isAnalyzing;
+  const minStopDuration = Number(params.minStopDuration) || 5;
 
   return (
     <aside
-      className={`${
-        sidebarCollapsed ? 'w-[60px] 2xl:w-16' : 'w-[280px] 2xl:w-80'
-      } bg-white border-r border-gray-200 shadow-sm transition-all duration-300 flex flex-col relative z-20 h-full`}
+      className={`${sidebarCollapsed ? 'w-[60px] 2xl:w-16' : 'w-[280px] 2xl:w-80'
+        } bg-white border-r border-gray-200 shadow-sm transition-all duration-300 flex flex-col relative z-20 h-full`}
     >
       {/* Header */}
       <div className="h-12 2xl:h-14 flex items-center justify-between px-3 2xl:px-4 border-b border-gray-200 bg-white">
@@ -63,50 +45,44 @@ export default function AnalyticsSidebar({
             </h1>
           </div>
         )}
-        <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="p-1 2xl:p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
-        >
-          <svg
-            className={`w-4 h-4 2xl:w-5 2xl:h-5 transition-transform ${
-              sidebarCollapsed ? 'rotate-180' : ''
-            }`}
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+            className="p-1 2xl:p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-        </button>
+            <svg
+              className={`w-4 h-4 2xl:w-5 2xl:h-5 transition-transform ${sidebarCollapsed ? 'rotate-180' : ''
+                }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M15 19l-7-7 7-7"
+              />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {!sidebarCollapsed ? (
-        <>
-          {/* Footer del Sidebar */}
-          <div className="flex items-center gap-2 w-full mt-auto p-3 2xl:p-4 border-b border-gray-200 bg-white">
-            <button
-              onClick={onAnalyze}
-              disabled={!canAnalyze}
-              className={`w-7/8 flex items-center justify-center gap-2 py-2 2xl:py-2.5 rounded-md text-[11px] 2xl:text-[13px] font-semibold transition-all shadow-sm ${
-                canAnalyze
-                  ? 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
-                  : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              }`}
-            >
-              <Search className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
-              {isAnalyzing ? 'Analizando...' : 'Analizar'}
-            </button>
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Subheader de Filtros */}
+          <div className="flex items-center justify-between px-3 2xl:px-4 py-2 2xl:py-2.5 border-b border-gray-200 bg-white shrink-0">
+            <span className="text-[10px] 2xl:text-[11px] font-bold text-gray-900 uppercase tracking-wider">
+              Filtros
+            </span>
             <button
               onClick={onReset}
-              title="Reiniciar Filtros"
-              className="w-1/8 flex items-center justify-center bg-gray-50 hover:bg-gray-100 text-gray-500 py-2 2xl:py-2.5 rounded-md transition-all border border-gray-200 shadow-sm"
+              className="flex items-center gap-1.5 text-[10px] 2xl:text-[11px] font-semibold text-gray-500 hover:text-red-600 transition-colors"
+              title="Restablecer todos los filtros"
             >
-              <RotateCcw className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
+              <RotateCcw className="w-3 h-3 2xl:w-3.5 2xl:h-3.5" />
+              Restablecer
             </button>
           </div>
 
@@ -116,10 +92,9 @@ export default function AnalyticsSidebar({
               {/* Sección Fechas */}
               <div className="space-y-3">
                 <AnalyticsDateRange
-                  startDate={startDate}
-                  setStartDate={setStartDate}
-                  endDate={endDate}
-                  setEndDate={setEndDate}
+                  startDate={params.startDate || ''}
+                  endDate={params.endDate || ''}
+                  onChange={(start, end) => updateParams({ startDate: start, endDate: end })}
                   availableDates={availableDates}
                   isLoadingDates={isLoadingDates}
                 />
@@ -132,8 +107,8 @@ export default function AnalyticsSidebar({
                 </h3>
                 <VendorSelector
                   vendors={vendors}
-                  selectedVendor={selectedVendor}
-                  setSelectedVendor={setSelectedVendor}
+                  selectedVendor={params.vendedor || ''}
+                  onChange={(val) => updateParams({ vendedor: val })}
                   isLoading={isLoadingVendors}
                 />
               </div>
@@ -141,7 +116,7 @@ export default function AnalyticsSidebar({
               {/* Sección Algoritmo */}
               <div className="pt-4 2xl:pt-5 border-t border-gray-200 space-y-4 2xl:space-y-5">
                 <h3 className="text-[10px] 2xl:text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                  Configuración
+                  Algoritmo de Detección
                 </h3>
                 <div>
                   <div className="flex justify-between items-center mb-1.5 2xl:mb-2">
@@ -155,7 +130,7 @@ export default function AnalyticsSidebar({
                   <div className="flex items-center gap-2 2xl:gap-3">
                     <button
                       onClick={() =>
-                        setMinStopDuration((p) => Math.max(1, p - 1))
+                        updateParams({ minStopDuration: String(Math.max(1, minStopDuration - 1)) })
                       }
                       className="p-1 bg-white border border-gray-200 rounded shadow-sm text-gray-500 hover:text-black hover:border-gray-300 transition-all"
                     >
@@ -167,13 +142,13 @@ export default function AnalyticsSidebar({
                       max={60}
                       value={minStopDuration}
                       onChange={(e) =>
-                        setMinStopDuration(Number(e.target.value))
+                        updateParams({ minStopDuration: e.target.value })
                       }
                       className="flex-1 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                     />
                     <button
                       onClick={() =>
-                        setMinStopDuration((p) => Math.min(60, p + 1))
+                        updateParams({ minStopDuration: String(Math.min(60, minStopDuration + 1)) })
                       }
                       className="p-1 bg-white border border-gray-200 rounded shadow-sm text-gray-500 hover:text-black hover:border-gray-300 transition-all"
                     >
@@ -184,7 +159,7 @@ export default function AnalyticsSidebar({
               </div>
             </div>
           </div>
-        </>
+        </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center py-6 2xl:py-8">
           <button
