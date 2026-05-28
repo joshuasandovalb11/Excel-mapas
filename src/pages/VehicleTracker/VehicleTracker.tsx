@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { usePersistentState } from '../../hooks/usePersistentState';
 import { useClients } from '../../context/ClientContext';
 import InteractiveMap from '../../components/InteractiveMap';
 import { useRouteTracker } from '../../hooks/useRouteTracker';
@@ -13,28 +12,43 @@ import { useVehicleStats } from './hooks/useVehicleStats';
 import { useMapExport } from './hooks/useMapExport';
 import { useGlobalUI } from '../../context/globalUIStore';
 import LoadingLayer from '../../components/LoadingLayer';
+import { useViewQueryParams } from '../../hooks/useViewQueryParams';
 
 export default function VehicleTracker() {
+  const { params, updateParams } = useViewQueryParams({
+    mode: 'database',
+    fecha: '',
+    vendedor: '',
+    idRuta: '',
+    minStopDuration: '5',
+    clientRadius: '50',
+    selectionMode: 'vendor',
+    selectionValue: '',
+  });
+
+  const mode = params.mode as 'database' | 'excel';
+  const idRuta = params.idRuta ? Number(params.idRuta) : null;
+  const minStopDuration = Number(params.minStopDuration) || 5;
+  const clientRadius = Number(params.clientRadius) || 50;
+  const fecha = params.fecha;
+  const vendedor = params.vendedor;
+
   const {
-    mode,
-    setMode,
     loading,
     errors,
     availableDates,
-    selectedDate,
-    setSelectedDate,
     routesSummary,
-    loadRoutesSummary,
-    selectedRouteId,
-    loadRouteDetail,
-    processExcel,
     tripData,
+    processExcel,
     clearData,
-    loadAvailableDates,
-    lastSummaryRequest,
-    lastDetailRequest,
-    clearError,
-  } = useRouteTracker();
+    retryDetail,
+  } = useRouteTracker({
+    mode,
+    fecha,
+    vendedor,
+    idRuta,
+    minStopDuration,
+  });
 
   const {
     masterClients,
@@ -43,18 +57,8 @@ export default function VehicleTracker() {
   } = useClients();
 
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
-  const [minStopDuration, setMinStopDuration] = usePersistentState<number>(
-    'vt_minStopDuration',
-    5
-  );
-  const [clientRadius, setClientRadius] = usePersistentState<number>(
-    'vt_clientRadius',
-    50
-  );
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
-
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const googleMapsApiKey = import.meta.env.VITE_Maps_API_KEY || '';
@@ -63,7 +67,6 @@ export default function VehicleTracker() {
   const {
     availableVendors,
     selection,
-    handleSelection,
     clientData,
     databaseClientsAsClients,
     mapClients,
@@ -75,6 +78,8 @@ export default function VehicleTracker() {
     masterClients,
     clientRadius,
     minStopDuration,
+    selectionMode: (params.selectionMode as 'vendor' | 'driver') || 'vendor',
+    selectionValue: params.selectionValue || null,
   });
 
   useEffect(() => {
@@ -103,6 +108,7 @@ export default function VehicleTracker() {
 
     try {
       await processExcel(file, minStopDuration);
+      updateParams({ mode: 'excel', fecha: '', idRuta: '' });
     } catch (err: unknown) {
       console.error('Error al subir Excel:', err);
     } finally {
@@ -146,6 +152,7 @@ export default function VehicleTracker() {
   const handleClearAll = () => {
     clearData();
     setUploadedFileName(null);
+    updateParams({ mode: 'database', fecha: '', idRuta: '' });
   };
 
   return (
@@ -156,35 +163,22 @@ export default function VehicleTracker() {
         isLoadingClients={isLoadingClients}
         hasClients={Boolean(masterClients && masterClients.length > 0)}
         onRefreshClients={() => refreshClients(true)}
-        mode={mode}
-        setMode={setMode}
-        clearData={handleClearAll}
+        onClearAll={handleClearAll}
         uploadedFileName={uploadedFileName}
         availableDates={availableDates}
-        selectedDate={selectedDate}
-        setSelectedDate={setSelectedDate}
         loadingDates={loading.dates}
         loadingRoutesSummary={loading.routesSummary}
         loadingRouteDetail={loading.routeDetail}
         loadingExcel={loading.excel}
         errors={errors}
-        loadAvailableDates={loadAvailableDates}
-        lastSummaryRequest={lastSummaryRequest}
-        clearError={clearError}
-        loadRoutesSummary={loadRoutesSummary}
         routesSummary={routesSummary}
-        selectedRouteId={selectedRouteId}
-        loadRouteDetail={loadRouteDetail}
         fileInputRef={fileInputRef}
         onFileUpload={handleFileUpload}
         availableVendors={availableVendors}
-        onSelection={handleSelection}
         selection={selection}
-        minStopDuration={minStopDuration}
-        setMinStopDuration={setMinStopDuration}
-        clientRadius={clientRadius}
-        setClientRadius={setClientRadius}
         hasTripData={Boolean(enrichedTripData)}
+        params={params}
+        updateParams={updateParams}
       />
 
       <main className="flex-1 flex flex-col overflow-hidden">
@@ -200,13 +194,7 @@ export default function VehicleTracker() {
           {errors.routeDetail && !loading.routeDetail ? (
             <VehicleTrackerErrorState
               error={errors.routeDetail}
-              onRetry={() =>
-                lastDetailRequest &&
-                loadRouteDetail(
-                  lastDetailRequest.idRuta,
-                  lastDetailRequest.minStopDuration
-                )
-              }
+              onRetry={retryDetail}
               isRetrying={loading.routeDetail}
             />
           ) : enrichedTripData ? (

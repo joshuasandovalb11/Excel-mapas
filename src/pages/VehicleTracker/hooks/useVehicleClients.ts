@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { usePersistentState } from '../../../hooks/usePersistentState';
 import {
   type Client,
   calculateDistance,
@@ -15,12 +14,13 @@ type UseVehicleClientsParams = {
   masterClients: Client[] | null;
   clientRadius: number;
   minStopDuration: number;
+  selectionMode: 'vendor' | 'driver';
+  selectionValue: string | null;
 };
 
 type UseVehicleClientsResult = {
   availableVendors: string[];
   selection: Selection;
-  handleSelection: (selected: string) => void;
   clientData: Client[] | null;
   databaseClientsAsClients: Client[];
   mapClients: Client[];
@@ -34,24 +34,23 @@ export function useVehicleClients({
   masterClients,
   clientRadius,
   minStopDuration,
+  selectionMode,
+  selectionValue,
 }: UseVehicleClientsParams): UseVehicleClientsResult {
   const [clientData, setClientData] = useState<Client[] | null>(null);
-  const [selection, setSelection] = usePersistentState<Selection>(
-    'vt_selection',
-    { mode: 'vendor', value: null }
+
+  const selection: Selection = useMemo(
+    () => ({
+      mode: selectionMode,
+      value: selectionValue,
+    }),
+    [selectionMode, selectionValue]
   );
 
   const availableVendors = useMemo(() => {
     if (!masterClients || masterClients.length === 0) return [];
     return Array.from(new Set(masterClients.map((c) => c.vendor))).sort();
   }, [masterClients]);
-
-  useEffect(() => {
-    if (!selection.value || selection.mode !== 'vendor') return;
-    if (!availableVendors.includes(selection.value)) {
-      setSelection({ mode: 'vendor', value: null });
-    }
-  }, [availableVendors, selection.mode, selection.value, setSelection]);
 
   useEffect(() => {
     if (masterClients && masterClients.length > 0 && selection.value) {
@@ -118,11 +117,6 @@ export function useVehicleClients({
       }
     }
   }, [masterClients, selection.value, selection.mode, tripData, setClientData]);
-
-  const handleSelection = (selected: string) => {
-    const newMode = availableVendors.includes(selected) ? 'vendor' : 'driver';
-    setSelection({ mode: newMode, value: selected });
-  };
 
   const databaseClientsAsClients: Client[] = useMemo(() => {
     if (mode !== 'database' || !tripData || !tripData.clients) return [];
@@ -264,7 +258,6 @@ export function useVehicleClients({
   return {
     availableVendors,
     selection,
-    handleSelection,
     clientData,
     databaseClientsAsClients,
     mapClients,
