@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
@@ -33,13 +34,15 @@ createRoot(document.getElementById('root')!).render(
         maxAge: 30 * 60 * 1000,
       }}
     >
-      <GlobalUIProvider>
-        <AuthProvider>
-          {' '}
-          {/* <--- Envuelve la app */}
-          <App />
-        </AuthProvider>
-      </GlobalUIProvider>
+      <BrowserRouter>
+        <GlobalUIProvider>
+          <AuthProvider>
+            {' '}
+            {/* <--- Envuelve la app */}
+            <App />
+          </AuthProvider>
+        </GlobalUIProvider>
+      </BrowserRouter>
     </PersistQueryClientProvider>
   </StrictMode>
 );

@@ -1,8 +1,6 @@
 import { useState, lazy, Suspense, useRef, useEffect } from 'react';
 import {
   Map,
-  // Waypoints,
-  // MapPinHouse,
   RefreshCcw,
   TriangleAlert,
   User,
@@ -18,19 +16,14 @@ import ChangePassword from './components/ChangePasswordModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ClientProvider } from './context/ClientContext';
 import LoadingLayer from './components/LoadingLayer';
+import { Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 
 const VehicleTracker = lazy(
   () => import('./pages/VehicleTracker/VehicleTracker')
 );
-// const MultipleVehicleTracker = lazy(
-//   () => import('./pages/MultipleVehicleTracker')
-// );
-// const Routes = lazy(() => import('./pages/Routes'));
 const BehaviorAnalytics = lazy(
   () => import('./pages/BehaviorAnalytics/BehaviorAnalytics')
 );
-
-type ViewType = 'tracker' | 'multiple' | 'routes' | 'analytics';
 
 function PageLoader() {
   return (
@@ -51,16 +44,13 @@ export default function App() {
     useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  const [activeView, setActiveView] = useState<ViewType>('tracker');
+  const location = useLocation();
 
   const isAdmin = userRole === 'admin';
 
   const tabs = [
-    { id: 'tracker', label: 'Visualizador de Rutas', icon: Map },
-    // { id: 'multiple', label: 'Visualizador Multiple', icon: Waypoints },
-    // { id: 'routes', label: 'Mapas de Vendedores', icon: MapPinHouse },
-    { id: 'analytics', label: 'Patrón de Conducta', icon: LineChart },
+    { id: 'tracker', label: 'Visualizador de Rutas', icon: Map, path: '/tracker' },
+    { id: 'analytics', label: 'Patrón de Conducta', icon: LineChart, path: '/analytics' },
   ] as const;
 
   useEffect(() => {
@@ -81,21 +71,6 @@ export default function App() {
     return <Login onLoginTransition={setIsLoginTransition} />;
   }
 
-  const renderActiveView = () => {
-    switch (activeView) {
-      case 'tracker':
-        return <VehicleTracker />;
-      // case 'multiple':
-      //   return <MultipleVehicleTracker />;
-      // case 'routes':
-      //   return <Routes />;
-      case 'analytics':
-        return <BehaviorAnalytics />;
-      default:
-        return <VehicleTracker />;
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-sm flex flex-col">
       <ClientProvider>
@@ -106,83 +81,88 @@ export default function App() {
             <div className="relative flex gap-1 bg-gray-200 p-1 rounded-xl">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
-                const isActive = activeView === tab.id;
                 return (
-                  <button
+                  <NavLink
                     key={tab.id}
-                    onClick={() => setActiveView(tab.id as ViewType)}
-                    className="relative px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-2"
+                    to={tab.path}
+                    className="relative px-3 py-1.5 rounded-lg flex items-center gap-2"
                   >
-                    {isActive && (
-                      <motion.div
-                        layoutId="activeTab"
-                        className="absolute inset-0 bg-white rounded-lg shadow-sm border border-gray-100"
-                        transition={{
-                          type: 'spring',
-                          stiffness: 400,
-                          damping: 30,
-                        }}
-                      />
-                    )}
-
-                    {/* ESTILO DE BORDE */}
-                    <AnimatePresence>
-                      {isActive && (
-                        <motion.svg
-                          key="border-sweep"
-                          className="absolute inset-0 w-full h-full pointer-events-none"
-                          viewBox="0 0 100 40"
-                          preserveAspectRatio="none"
-                        >
-                          <defs>
-                            <linearGradient
-                              id="gemini-gradient"
-                              gradientUnits="userSpaceOnUse"
-                              x1="0"
-                              y1="0"
-                              x2="100"
-                              y2="0"
-                            >
-                              <stop offset="0%" stopColor="#3b82f6" />
-                              <stop offset="100%" stopColor="#22d3ee" />
-                            </linearGradient>
-                          </defs>
-
-                          <motion.rect
-                            x="0"
-                            y="0.5"
-                            width="100"
-                            height="39"
-                            rx="5"
-                            ry="5"
-                            fill="none"
-                            stroke="url(#gemini-gradient)"
-                            strokeWidth="2"
-                            strokeDasharray="50 410"
-                            initial={{
-                              strokeDashoffset: 500,
-                              opacity: 1,
-                            }}
-                            animate={{
-                              strokeDashoffset: 0,
-                              opacity: 0,
-                            }}
+                    {({ isActive }) => (
+                      <>
+                        {isActive && (
+                          <motion.div
+                            layoutId="activeTab"
+                            className="absolute inset-0 bg-white rounded-lg shadow-sm border border-gray-100"
                             transition={{
-                              duration: 2.5,
-                              ease: 'easeInOut',
+                              type: 'spring',
+                              stiffness: 400,
+                              damping: 30,
                             }}
                           />
-                        </motion.svg>
-                      )}
-                    </AnimatePresence>
+                        )}
 
-                    <span
-                      className={`relative z-10 flex items-center gap-2 font-medium ${isActive ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'}`}
-                    >
-                      <Icon className="w-4 h-4" />
-                      <span className="hidden sm:inline">{tab.label}</span>
-                    </span>
-                  </button>
+                        {/* ESTILO DE BORDE */}
+                        <AnimatePresence>
+                          {isActive && (
+                            <motion.svg
+                              key="border-sweep"
+                              className="absolute inset-0 w-full h-full pointer-events-none"
+                              viewBox="0 0 100 40"
+                              preserveAspectRatio="none"
+                            >
+                              <defs>
+                                <linearGradient
+                                  id="gemini-gradient"
+                                  gradientUnits="userSpaceOnUse"
+                                  x1="0"
+                                  y1="0"
+                                  x2="100"
+                                  y2="0"
+                                >
+                                  <stop offset="0%" stopColor="#3b82f6" />
+                                  <stop offset="100%" stopColor="#22d3ee" />
+                                </linearGradient>
+                              </defs>
+
+                              <motion.rect
+                                x="0"
+                                y="0.5"
+                                width="100"
+                                height="39"
+                                rx="5"
+                                ry="5"
+                                fill="none"
+                                stroke="url(#gemini-gradient)"
+                                strokeWidth="2"
+                                strokeDasharray="50 410"
+                                initial={{
+                                  strokeDashoffset: 500,
+                                  opacity: 1,
+                                }}
+                                animate={{
+                                  strokeDashoffset: 0,
+                                  opacity: 0,
+                                }}
+                                transition={{
+                                  duration: 2.5,
+                                  ease: 'easeInOut',
+                                }}
+                              />
+                            </motion.svg>
+                          )}
+                        </AnimatePresence>
+
+                        <span
+                          className={`relative z-10 flex items-center gap-2 font-medium transition-colors ${
+                            isActive ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span className="hidden sm:inline">{tab.label}</span>
+                        </span>
+                      </>
+                    )}
+                  </NavLink>
                 );
               })}
             </div>
@@ -285,14 +265,19 @@ export default function App() {
           <Suspense fallback={<PageLoader />}>
             <AnimatePresence mode="wait">
               <motion.div
-                key={activeView}
+                key={location.pathname}
                 className="w-full h-full p-1"
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ duration: 0.2, ease: 'easeInOut' }}
               >
-                {renderActiveView()}
+                <Routes location={location} key={location.pathname}>
+                  <Route path="/" element={<Navigate to="/tracker" replace />} />
+                  <Route path="/tracker" element={<VehicleTracker />} />
+                  <Route path="/analytics" element={<BehaviorAnalytics />} />
+                  <Route path="*" element={<Navigate to="/tracker" replace />} />
+                </Routes>
               </motion.div>
             </AnimatePresence>
           </Suspense>
@@ -350,7 +335,6 @@ export default function App() {
           )}
         </AnimatePresence>
 
-        {/* Modales para usuarios no admin */}
         <RefreshSystem
           isOpen={isRefreshSystemModalOpen}
           onClose={() => setIsRefreshSystemModalOpen(false)}
