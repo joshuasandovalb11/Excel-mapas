@@ -1,4 +1,4 @@
-import { type MultiVehicleData } from '../pages/MultipleVehicleTracker';
+import { type MultiVehicleData } from '../pages/MultipleVehicleTracker/MultipleVehicleTracker';
 
 export const generateMultiMapHTML = (
   vehicles: MultiVehicleData[],
@@ -154,6 +154,35 @@ export const generateMultiMapHTML = (
     .gm-style-iw-d { overflow: hidden !important; }
     .coords-hover { transition: color 0.2s ease; cursor: pointer; font-size: 12px; margin: 4px 0; color: #374151; }
     .coords-hover:hover { color: #000000 !important; }
+
+    @media (max-width: 1536px) {
+      #clock-container { width: 130px; padding: 0.5rem 0.375rem; }
+      .clock-title { font-size: 10px; }
+      .clock-time { font-size: 0.875rem; }
+      
+      #legend-container { top: 90px; width: 130px; }
+      .legend-header { padding: 0.5rem 0.375rem; }
+      .legend-header h4 { font-size: 10px; }
+      .legend-list { padding: 0.5rem; gap: 0.375rem; }
+      .vehicle-item { font-size: 10px; }
+      
+      #animation-controls { bottom: 0.5rem; }
+      .skip-btn { width: 44px; height: 44px; }
+      .skip-btn span { font-size: 8px; }
+      #play-pause-btn { padding: 0.375rem 0.75rem; font-size: 10px; }
+      .speed-btn { padding: 0.375rem 0.5rem; font-size: 10px; }
+      
+      #scrubber-container { bottom: 1rem; }
+      .scrubber-card { width: 280px; padding: 0.375rem 0.75rem 0.5rem 0.75rem; }
+      .jump-title { font-size: 9px; }
+      .jump-opt-btn { font-size: 9px; padding: 0.125rem 0.375rem; }
+      .slider-labels { font-size: 11px; }
+
+      .notif-card { padding: 0.5rem 1.5rem 0.5rem 0.5rem; width: 224px; }
+      .notif-title { font-size: 10px; }
+      .notif-time { font-size: 9px; }
+      .notif-msg { font-size: 10px; }
+    }
 
     @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   `;
@@ -331,11 +360,11 @@ export const generateMultiMapHTML = (
           if (eventSeconds[eventSeconds.length - 1] > globalEndTime) globalEndTime = eventSeconds[eventSeconds.length - 1];
         }
         vehicleState[v.id] = {
-          data: v, fullPath: v.tripData.routes[0]?.path || [],
+          data: v, fullPath: v.tripData.path || [],
           eventSeconds, polyline: null, marker: null, isVisible: true
         };
 
-        const flags = (v.tripData.flags || []).filter(f => f.type !== 'stop' || (f.duration && f.duration >= MIN_STOP_DURATION));
+        const flags = (v.tripData.flags || []).filter(f => f.type !== 'stop' || (f.durationMin && f.durationMin >= MIN_STOP_DURATION));
         flags.forEach((f, idx) => {
           globalStops.push({
             vehicleId: v.id,
@@ -344,7 +373,7 @@ export const generateMultiMapHTML = (
             markerIndex: idx,
             timeSeconds: timeToSeconds(f.time),
             type: f.type,
-            duration: f.duration || 0,
+            durationMin: f.durationMin || 0,
           });
         });
       });
@@ -362,9 +391,9 @@ export const generateMultiMapHTML = (
     function initMap() {
       initData();
       let startLat = 25.0, startLng = -100.0;
-      if (rawVehicles.length > 0 && rawVehicles[0].tripData.routes[0]?.path.length > 0) {
-        startLat = rawVehicles[0].tripData.routes[0].path[0].lat;
-        startLng = rawVehicles[0].tripData.routes[0].path[0].lng;
+      if (rawVehicles.length > 0 && rawVehicles[0].tripData.path?.length > 0) {
+        startLat = rawVehicles[0].tripData.path[0].lat;
+        startLng = rawVehicles[0].tripData.path[0].lng;
       }
       map = new google.maps.Map(document.getElementById('map'), {
         center: { lat: startLat, lng: startLng }, zoom: 12,
@@ -386,9 +415,11 @@ export const generateMultiMapHTML = (
         });
         state.fullPath.forEach(p => bounds.extend(p));
 
-        const flags = (v.tripData.flags || []).filter(f => f.type !== 'stop' || (f.duration && f.duration >= MIN_STOP_DURATION));
+        const flags = (v.tripData.flags || []).filter(f => f.type !== 'stop' || (f.durationMin && f.durationMin >= MIN_STOP_DURATION));
         flags.forEach((f, idx) => {
-          const mColor = f.type === 'start' ? '#22c55e' : f.type === 'end' ? '#ef4444' : v.color;
+          const isStart = f.type === 'start' || f.type === 'trip_start';
+          const isEnd = f.type === 'end' || f.type === 'trip_end';
+          const mColor = isStart ? '#22c55e' : isEnd ? '#ef4444' : v.color;
           const marker = new google.maps.Marker({
             position: {lat: f.lat, lng: f.lng}, map: null,
             icon: {
@@ -403,10 +434,11 @@ export const generateMultiMapHTML = (
             ? '<div style="color:#059669; margin:4px 0; font-weight:600;"><p style="margin:0;font-size:12px;"><strong>#' + f.clientKey + '</strong></p><p style="margin:2px 0 0 0;font-size:12px;">' + f.clientName + '</p></div>'
             : '';
 
+          const durationValue = f.durationMin || 0;
           const contentString = '<div style="max-width:280px; padding:0 10px 6px 0;">' +
             '<div style="background:' + v.color + '; color:white; padding:4px 8px; border-radius:4px; margin-bottom:8px; font-size:11px; font-weight:bold;">' + (v.vehicleInfo.descripcion || v.fileName) + '</div>' +
-            '<h3 style="font-size:15px; font-weight:500; margin:0 0 8px 0; color:#000;">' + (f.type === 'start' ? 'Inicio' : f.type === 'end' ? 'Fin' : 'Parada ' + f.stopNumber) + '</h3>' +
-            (f.type === 'stop' ? '<p style="margin:0 0 4px 0; font-size:12px;"><strong>Duración:</strong> ' + formatDuration(f.duration) + '</p>' : '') +
+            '<h3 style="font-size:15px; font-weight:500; margin:0 0 8px 0; color:#000;">' + (isStart ? 'Inicio' : isEnd ? 'Fin' : 'Parada ' + f.stopNumber) + '</h3>' +
+            (f.type === 'stop' ? '<p style="margin:0 0 4px 0; font-size:12px;"><strong>Duración:</strong> ' + formatDuration(durationValue) + '</p>' : '') +
             '<p style="margin:0 0 4px 0; font-size:12px;"><strong>Hora:</strong> ' + f.time + '</p>' +
             clientHTML +
             '<div class="coords-hover" onclick="copyCoords(\\'' + coords + '\\')">' + coords + '</div>' +
@@ -510,9 +542,9 @@ export const generateMultiMapHTML = (
               if (!notifiedStops.has(stopKey)) {
                 notifiedStops.add(stopKey);
                 let message = '';
-                if (stop.type === 'start') message = 'Inició recorrido';
-                else if (stop.type === 'end') message = 'Finalizó recorrido';
-                else message = 'Hizo una parada de ' + formatDuration(stop.duration);
+                if (stop.type === 'start' || stop.type === 'trip_start') message = 'Inició recorrido';
+                else if (stop.type === 'end' || stop.type === 'trip_end') message = 'Finalizó recorrido';
+                else message = 'Hizo una parada de ' + formatDuration(stop.durationMin || 0);
                 addNotification({
                   id: 'stop-' + stopKey + '-' + Date.now(),
                   vehicleId: stop.vehicleId,

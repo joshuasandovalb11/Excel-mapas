@@ -19,7 +19,8 @@ import {
   useCopyToClipboard,
   isWorkingHours,
 } from '../utils/tripUtils';
-import { type MultiVehicleData } from '../pages/MultipleVehicleTracker';
+import type { ProcessedTripV1 } from '../types/route.types';
+import { type MultiVehicleData } from '../pages/MultipleVehicleTracker/MultipleVehicleTracker';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faFlag,
@@ -190,7 +191,7 @@ export default function MultiInteractiveMap({
 
       vehicles.forEach((vehicle) => {
         const events = vehicle.tripData.events;
-        const routePath = vehicle.tripData.routes[0]?.path || [];
+        const routePath = vehicle.tripData.path || [];
         const vehicleFlags = vehicle.tripData.flags;
 
         if (events.length === 0 || routePath.length === 0) return;
@@ -205,13 +206,15 @@ export default function MultiInteractiveMap({
 
         const validFlags = vehicleFlags.filter(
           (f) =>
-            f.type !== 'stop' || (f.duration && f.duration >= minStopDuration)
+            f.type !== 'stop' || (f.durationMin && f.durationMin >= minStopDuration)
         );
 
         validFlags.forEach((flag, index) => {
           if (
-            flag.type === 'start' ||
+            flag.type === 'trip_start' ||
             flag.type === 'stop' ||
+            flag.type === 'trip_end' ||
+            flag.type === 'start' ||
             flag.type === 'end'
           ) {
             let closestPathIndex = 0;
@@ -291,7 +294,7 @@ export default function MultiInteractiveMap({
       const currentPos =
         path && path.length > 0
           ? path[path.length - 1]
-          : vehicle.tripData.routes[0]?.path[0];
+          : vehicle.tripData.path?.[0];
 
       if (!currentPos) return;
 
@@ -299,7 +302,7 @@ export default function MultiInteractiveMap({
 
       if (isFirstLoad) {
         const fullBounds = new window.google.maps.LatLngBounds();
-        vehicle.tripData.routes[0]?.path.forEach((p) => fullBounds.extend(p));
+        vehicle.tripData.path?.forEach((p) => fullBounds.extend(p));
         map.fitBounds(fullBounds, 60);
         setTimeout(() => {
           const z = map.getZoom();
@@ -322,7 +325,7 @@ export default function MultiInteractiveMap({
 
     if (showMarkers) {
       visibleVehicles.forEach((vehicle) => {
-        vehicle.tripData.routes[0]?.path.forEach((p) => {
+        vehicle.tripData.path?.forEach((p) => {
           bounds.extend({ lat: p.lat, lng: p.lng });
           hasPoints = true;
         });
@@ -336,10 +339,10 @@ export default function MultiInteractiveMap({
             lng: path[path.length - 1].lng,
           });
           hasPoints = true;
-        } else if (vehicle.tripData.routes[0]?.path.length > 0) {
+        } else if (vehicle.tripData.path?.length > 0) {
           bounds.extend({
-            lat: vehicle.tripData.routes[0].path[0].lat,
-            lng: vehicle.tripData.routes[0].path[0].lng,
+            lat: vehicle.tripData.path[0].lat,
+            lng: vehicle.tripData.path[0].lng,
           });
           hasPoints = true;
           usedFallback = true;
@@ -414,8 +417,8 @@ export default function MultiInteractiveMap({
     const isManualJump = timeDelta > 360 || timeDelta < 0;
 
     visibleVehicles.forEach((vehicle) => {
-      const fullPath = vehicle.tripData.routes[0]?.path || [];
-      const events = vehicle.tripData.events;
+      const fullPath = vehicle.tripData.path || [];
+      const events = vehicle.tripData.events || [];
 
       if (fullPath.length === 0 || events.length === 0) return;
 
@@ -463,7 +466,7 @@ export default function MultiInteractiveMap({
             else if (stop.type === 'end') message = 'Finalizó recorrido';
             else
               message = `Hizo una parada de ${formatDuration(
-                vehicle.tripData.flags[stop.markerIndex]?.duration || 0
+                vehicle.tripData.flags[stop.markerIndex]?.durationMin || 0
               )}`;
 
             addNotification({
@@ -673,7 +676,7 @@ export default function MultiInteractiveMap({
         vehicles.forEach((vehicle) => {
           const flags = vehicle.tripData.flags.filter(
             (f) =>
-              f.type !== 'stop' || (f.duration && f.duration >= minStopDuration)
+              f.type !== 'stop' || (f.durationMin && f.durationMin >= minStopDuration)
           );
           flags.forEach((flag) => {
             bounds.extend({ lat: flag.lat, lng: flag.lng });
@@ -682,7 +685,7 @@ export default function MultiInteractiveMap({
         });
       } else {
         vehicles.forEach((vehicle) => {
-          const fullPath = vehicle.tripData.routes[0]?.path;
+          const fullPath = vehicle.tripData.path;
           if (fullPath && fullPath.length > 0) {
             bounds.extend({ lat: fullPath[0].lat, lng: fullPath[0].lng });
             hasPoints = true;
@@ -802,7 +805,7 @@ export default function MultiInteractiveMap({
 
         {visibleVehicles.map((vehicle) => {
           const path = animatedPaths[vehicle.id];
-          const fullPath = vehicle.tripData.routes[0]?.path;
+          const fullPath = vehicle.tripData.path;
           if (!fullPath || fullPath.length === 0) return null;
 
           const currentPos =
@@ -907,7 +910,7 @@ export default function MultiInteractiveMap({
             const flags = vehicle.tripData.flags.filter(
               (f) =>
                 f.type !== 'stop' ||
-                (f.duration && f.duration >= minStopDuration)
+                (f.durationMin && f.durationMin >= minStopDuration)
             );
             return flags.map((flag, index) => {
               const markerId = `v-${vehicle.id}-m-${index}`;
@@ -998,7 +1001,7 @@ export default function MultiInteractiveMap({
                         {flag.type === 'stop' && (
                           <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
                             <strong>Duración:</strong>{' '}
-                            {formatDuration(flag.duration || 0)}
+                            {formatDuration(flag.durationMin || 0)}
                           </p>
                         )}
                         <p style={{ margin: '0 0 4px 0', fontSize: '12px' }}>
@@ -1067,18 +1070,6 @@ export default function MultiInteractiveMap({
         </div>
       )}
 
-      {/* Relog de simulacion */}
-      {vehicles.length > 0 && (
-        <div className="absolute top-4 right-[10px] w-[130px] min-[1350px]:w-[160px] z-10 bg-white/95 backdrop-blur-sm px-4 py-2 rounded-xl shadow-lg border border-gray-200 text-center">
-          <p className="text-[11px] uppercase font-bold text-[#00004F] tracking-wider mb-0.5">
-            Reloj Simulación
-          </p>
-          <p className="text-xl font-mono font-bold text-green-700">
-            {secondsToTime(currentTimeSeconds)}
-          </p>
-        </div>
-      )}
-
       {/* Notificaciones */}
       <div className="absolute top-4 left-[10px] z-20 flex flex-col gap-2 pointer-events-none">
         {notifications
@@ -1088,7 +1079,7 @@ export default function MultiInteractiveMap({
               // Notificación exclusiva de coincidencia total
               <div
                 key={notif.id}
-                className="pointer-events-auto bg-linear-to-l from-amber-50 to-amber-100 backdrop-blur-sm border-l-4 rounded-r-lg shadow-lg p-3 pr-8 relative transition-all duration-300 w-64"
+                className="pointer-events-auto bg-linear-to-l from-amber-50 to-amber-100 backdrop-blur-sm border-l-4 rounded-r-lg shadow-lg p-2 2xl:p-3 pr-6 2xl:pr-8 relative transition-all duration-300 w-56 2xl:w-64"
                 style={{
                   borderLeftColor: '#F54927',
                 }}
@@ -1101,15 +1092,15 @@ export default function MultiInteractiveMap({
                         color: '#F54927',
                       }}
                     />
-                    <span className="text-xs font-bold text-gray-900 truncate">
+                    <span className="text-[10px] 2xl:text-xs font-bold text-gray-900 truncate">
                       COINCIDENCIA
                     </span>
                   </div>
-                  <span className="text-[10px] text-gray-600 font-semibold">
+                  <span className="text-[9px] 2xl:text-[10px] text-gray-600 font-semibold">
                     {notif.time}
                   </span>
                 </div>
-                <p className="text-[11px] text-gray-800 font-medium leading-tight">
+                <p className="text-[10px] 2xl:text-[11px] text-gray-800 font-medium leading-tight">
                   {notif.message}
                 </p>
                 <button
@@ -1127,7 +1118,7 @@ export default function MultiInteractiveMap({
               // Notificación exclusiva para reseteo
               <div
                 key={notif.id}
-                className="pointer-events-auto bg-white/95 backdrop-blur-sm border-l-4 rounded-r-lg shadow-lg p-3 pr-8 relative transition-all duration-300 w-64"
+                className="pointer-events-auto bg-white/95 backdrop-blur-sm border-l-4 rounded-r-lg shadow-lg p-2 2xl:p-3 pr-6 2xl:pr-8 relative transition-all duration-300 w-56 2xl:w-64"
                 style={{
                   borderLeftColor: '#374151',
                 }}
@@ -1140,7 +1131,7 @@ export default function MultiInteractiveMap({
                         color: '#374151',
                       }}
                     />
-                    <p className="text-[11px] text-gray-800 font-medium leading-tight">
+                    <p className="text-[10px] 2xl:text-[11px] text-gray-800 font-medium leading-tight">
                       {notif.message}
                     </p>
                   </div>
@@ -1160,7 +1151,7 @@ export default function MultiInteractiveMap({
               // Notificación normal de parada
               <div
                 key={notif.id}
-                className="pointer-events-auto bg-white/95 backdrop-blur-sm border-l-4 rounded-r-lg shadow-lg p-3 pr-8 relative transition-all duration-300 w-64"
+                className="pointer-events-auto bg-white/95 backdrop-blur-sm border-l-4 rounded-r-lg shadow-lg p-2 2xl:p-3 pr-6 2xl:pr-8 relative transition-all duration-300 w-56 2xl:w-64"
                 style={{ borderLeftColor: notif.vehicleColor }}
               >
                 <div className="flex items-center justify-between mb-1">
@@ -1169,15 +1160,15 @@ export default function MultiInteractiveMap({
                       className="w-3.5 h-3.5 flex-shrink-0"
                       style={{ color: notif.vehicleColor }}
                     />
-                    <span className="text-xs font-bold text-gray-800 truncate">
+                    <span className="text-[10px] 2xl:text-xs font-bold text-gray-800 truncate">
                       {notif.vehicleName}
                     </span>
                   </div>
-                  <span className="text-[10px] text-gray-600 font-semibold">
+                  <span className="text-[9px] 2xl:text-[10px] text-gray-600 font-semibold">
                     {notif.time}
                   </span>
                 </div>
-                <p className="text-[11px] text-gray-600 font-medium leading-tight">
+                <p className="text-[10px] 2xl:text-[11px] text-gray-600 font-medium leading-tight">
                   {notif.message}
                 </p>
                 <button
@@ -1195,10 +1186,22 @@ export default function MultiInteractiveMap({
           )}
       </div>
 
+      {/* Relog de simulacion */}
+      {vehicles.length > 0 && (
+        <div className="absolute top-4 right-[10px] w-[130px] 2xl:w-[160px] z-10 bg-white/95 backdrop-blur-sm px-2 2xl:px-4 py-2 rounded-xl shadow-lg border border-gray-200 text-center">
+          <p className="text-[10px] 2xl:text-[11px] uppercase font-bold text-[#00004F] tracking-wider mb-0.5">
+            Reloj Simulación
+          </p>
+          <p className="text-sm 2xl:text-xl font-mono font-bold text-green-700">
+            {secondsToTime(currentTimeSeconds)}
+          </p>
+        </div>
+      )}
+
       {/* Vehiculos agregados */}
-      <div className="absolute top-[100px] min-[1350px]:top-[90px] right-[10px] w-[130px] min-[1350px]:w-[160px] z-10 bg-white/95 rounded-xl shadow-lg">
-        <div className="flex items-center px-3 py-2 border-b border-gray-300">
-          <h4 className="text-[11px] uppercase font-bold text-[#00004F] tracking-wider m-0">
+      <div className="absolute top-[80px] 2xl:top-[90px] right-[10px] w-[130px] 2xl:w-[160px] z-10 bg-white/95 rounded-xl shadow-lg">
+        <div className="flex items-center px-2 2xl:px-3 py-2 border-b border-gray-300">
+          <h4 className="text-[10px] 2xl:text-[11px] uppercase font-bold text-[#00004F] tracking-wider m-0">
             Vehículos
           </h4>
           <button
@@ -1216,11 +1219,11 @@ export default function MultiInteractiveMap({
         <div
           className={`transition-all duration-300 overflow-hidden ${isLegendCollapsed ? 'max-h-0 opacity-0' : 'max-h-[300px] opacity-100 overflow-y-auto'}`}
         >
-          <div className="p-3 flex flex-col gap-2">
+          <div className="p-2 2xl:p-3 flex flex-col gap-1.5 2xl:gap-2">
             {vehicles.map((v) => (
               <div
                 key={v.id}
-                className={`flex items-center gap-2 text-xs font-semibold text-gray-700 ${hiddenVehicleIds.has(v.id) ? 'opacity-40' : ''}`}
+                className={`flex items-center gap-2 text-[10px] 2xl:text-xs font-semibold text-gray-700 ${hiddenVehicleIds.has(v.id) ? 'opacity-40' : ''}`}
               >
                 <div
                   className="w-3.5 h-3.5 rounded-full shadow-sm"
@@ -1292,7 +1295,7 @@ export default function MultiInteractiveMap({
             onClick={() => handleSkip('backward')}
             disabled={isPlaying}
             title={`Retroceder ${skipMinutes} min`}
-            className={`flex flex-col items-center justify-center w-[52px] h-[52px] rounded-full shadow-lg border bg-white transition-all
+            className={`flex flex-col items-center justify-center w-[44px] 2xl:w-[52px] h-[44px] 2xl:h-[52px] rounded-full shadow-lg border bg-white transition-all
               ${isPlaying
                 ? 'opacity-30 cursor-not-allowed border-gray-200 text-gray-300'
                 : 'cursor-pointer border-gray-200 hover:bg-gray-100 text-gray-700 hover:text-gray-900 active:scale-95'
@@ -1318,7 +1321,7 @@ export default function MultiInteractiveMap({
 
             <button
               onClick={togglePlayPause}
-              className={`px-4 py-2.5 rounded-full text-xs font-bold flex items-center gap-2 transition-colors shadow-sm cursor-pointer 
+              className={`px-3 2xl:px-4 py-1.5 2xl:py-2.5 rounded-full text-[10px] 2xl:text-xs font-bold flex items-center gap-2 transition-colors shadow-sm cursor-pointer 
                 ${isPlaying
                   ? 'bg-orange-100 text-orange-700'
                   : isFinished
@@ -1353,7 +1356,7 @@ export default function MultiInteractiveMap({
 
             <button
               onClick={toggleSpeed}
-              className="px-3 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 hover:text-gray-900 rounded-full text-xs font-bold items-center transition-colors cursor-pointer justify-center"
+              className="px-2 2xl:px-3 py-1.5 2xl:py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 hover:text-gray-900 rounded-full text-[10px] 2xl:text-xs font-bold items-center transition-colors cursor-pointer justify-center"
               title="Cambiar velocidad"
             >
               x
@@ -1372,7 +1375,7 @@ export default function MultiInteractiveMap({
             onClick={() => handleSkip('forward')}
             disabled={isPlaying}
             title={`Adelantar ${skipMinutes} min`}
-            className={`flex flex-col items-center justify-center w-[52px] h-[52px] rounded-full shadow-lg border bg-white transition-all
+            className={`flex flex-col items-center justify-center w-[44px] 2xl:w-[52px] h-[44px] 2xl:h-[52px] rounded-full shadow-lg border bg-white transition-all
               ${isPlaying
                 ? 'opacity-30 cursor-not-allowed border-gray-200 text-gray-300'
                 : 'cursor-pointer border-gray-200 hover:bg-gray-100 text-gray-800 hover:text-gray-900 active:scale-95'
@@ -1389,8 +1392,7 @@ export default function MultiInteractiveMap({
       {/* Selector de duración de salto + Scrubber */}
       <div className="absolute top-5 min-[1350px]:bottom-2.5 min-[1350px]:top-auto left-1/2 transform -translate-x-1/2 z-10 flex flex-col items-center gap-2">
         <div
-          className="bg-white/95 border border-gray-200 rounded-2xl shadow-lg px-4 pt-2.5 pb-3 flex flex-col gap-2"
-          style={{ width: '340px' }}
+          className="bg-white/95 border border-gray-200 rounded-2xl shadow-lg px-2 2xl:px-4 pt-1.5 2xl:pt-2.5 pb-2 2xl:pb-3 flex flex-col gap-1.5 2xl:gap-2 w-[280px] 2xl:w-[340px]"
         >
           {/* Selector de salto */}
           <div className="flex items-center justify-between">
@@ -1428,7 +1430,7 @@ export default function MultiInteractiveMap({
                 background: `linear-gradient(to right, #10b981 ${((currentTimeSeconds - globalStartTime) / (globalEndTime - globalStartTime)) * 100}%, #e5e7eb ${((currentTimeSeconds - globalStartTime) / (globalEndTime - globalStartTime)) * 100}%)`,
               }}
             />
-            <div className="flex justify-between text-[13px] font-mono text-gray-500 font-semibold">
+            <div className="flex justify-between text-[11px] 2xl:text-[13px] font-mono text-gray-500 font-semibold">
               <span>{secondsToTime(globalStartTime)}</span>
               <span className="text-green-700 font-bold">
                 {secondsToTime(currentTimeSeconds)}
