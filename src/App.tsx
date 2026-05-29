@@ -7,7 +7,8 @@ import {
   ChevronDown,
   KeyRound,
   LogOut,
-  LineChart,
+  ChartNoAxesCombined,
+  Layers,
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -23,6 +24,9 @@ const VehicleTracker = lazy(
 );
 const BehaviorAnalytics = lazy(
   () => import('./pages/BehaviorAnalytics/BehaviorAnalytics')
+);
+const MultipleVehicleTracker = lazy(
+  () => import('./pages/MultipleVehicleTracker/MultipleVehicleTracker')
 );
 
 function PageLoader() {
@@ -50,7 +54,8 @@ export default function App() {
 
   const tabs = [
     { id: 'tracker', label: 'Visualizador de Rutas', icon: Map, path: '/tracker' },
-    { id: 'analytics', label: 'Patrón de Conducta', icon: LineChart, path: '/analytics' },
+    { id: 'multi', label: 'Visualizador Múltiple', icon: Layers, path: '/multi' },
+    { id: 'analytics', label: 'Patrón de Conducta', icon: ChartNoAxesCombined, path: '/analytics' },
   ] as const;
 
   useEffect(() => {
@@ -153,9 +158,8 @@ export default function App() {
                         </AnimatePresence>
 
                         <span
-                          className={`relative z-10 flex items-center gap-2 font-medium transition-colors ${
-                            isActive ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'
-                          }`}
+                          className={`relative z-10 flex items-center gap-2 font-medium transition-colors ${isActive ? 'text-blue-600' : 'text-gray-600 hover:text-gray-800'
+                            }`}
                         >
                           <Icon className="w-4 h-4" />
                           <span className="hidden sm:inline">{tab.label}</span>
@@ -172,11 +176,10 @@ export default function App() {
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className={`flex items-center cursor-pointer justify-between gap-2 px-3 py-1.5 rounded-full border transition-all ${
-                    isUserMenuOpen
-                      ? 'bg-blue-50 border-blue-300 text-blue-700 ring-2 ring-blue-100'
-                      : 'bg-white border-gray-300 text-gray-700 hover:bg-slate-100'
-                  }`}
+                  className={`flex items-center cursor-pointer justify-between gap-2 px-3 py-1.5 rounded-full border transition-all ${isUserMenuOpen
+                    ? 'bg-blue-50 border-blue-300 text-blue-700 ring-2 ring-blue-100'
+                    : 'bg-white border-gray-300 text-gray-700 hover:bg-slate-100'
+                    }`}
                 >
                   <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 shadow-sm">
                     <User className="w-4 h-4" />
@@ -275,6 +278,7 @@ export default function App() {
                 <Routes location={location} key={location.pathname}>
                   <Route path="/" element={<Navigate to="/tracker" replace />} />
                   <Route path="/tracker" element={<VehicleTracker />} />
+                  <Route path="/multi" element={<MultipleVehicleTracker />} />
                   <Route path="/analytics" element={<BehaviorAnalytics />} />
                   <Route path="*" element={<Navigate to="/tracker" replace />} />
                 </Routes>

@@ -69,6 +69,9 @@ export default function RouteDatePicker({
       );
     }
 
+    const activeBgClass = 'bg-blue-600';
+    const activeDotClass = 'bg-blue-300';
+
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const totalRutas = datesMap.get(dateStr);
@@ -81,14 +84,14 @@ export default function RouteDatePicker({
           disabled={disabled || !isAvailable}
           onClick={() => !disabled && isAvailable && onSelectDate(dateStr)}
           className={`relative flex items-center justify-center w-7 h-7 2xl:w-8 2xl:h-8 text-[11px] 2xl:text-[12px] transition-all duration-200 rounded-md
-            ${isSelected ? 'bg-blue-600 text-white font-semibold shadow-sm' : ''}
+            ${isSelected ? `${activeBgClass} text-white font-semibold shadow-sm` : ''}
             ${!isSelected && isAvailable ? 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200 shadow-sm' : ''}
             ${!isAvailable || disabled ? 'text-gray-300 cursor-not-allowed' : 'cursor-pointer'}
           `}
         >
           {day}
           {isAvailable && !isSelected && (
-            <span className="absolute bottom-1 w-1 h-1 bg-blue-300 rounded-full"></span>
+            <span className={`absolute bottom-1 w-1 h-1 rounded-full ${activeDotClass}`}></span>
           )}
         </button>
       );

@@ -106,11 +106,10 @@ export default function DailyParadasTable({ paradas }: DailyParadasTableProps) {
               className="grid grid-cols-[100px_190px_1fr_170px_130px] 2xl:grid-cols-[120px_210px_1fr_210px_150px] gap-2 2xl:gap-4 px-4 py-3 hover:bg-gray-50/80 transition-colors items-center group"
             >
               <div
-                className={`text-[11px] 2xl:text-[12px] font-bold text-gray-700${
-                  isBoundary
+                className={`text-[11px] 2xl:text-[12px] font-bold text-gray-700${isBoundary
                     ? 'font-bold text-gray-900'
                     : 'font-semibold text-gray-600'
-                }`}
+                  }`}
               >
                 {parada.hora}
               </div>
@@ -119,23 +118,21 @@ export default function DailyParadasTable({ paradas }: DailyParadasTableProps) {
                   <Icon className={`w-3.5 h-3.5 ${color}`} />
                 </div>
                 <span
-                  className={`text-[12px] 2xl:text-[13px] ${
-                    isBoundary
+                  className={`text-[12px] 2xl:text-[13px] ${isBoundary
                       ? 'font-bold text-gray-900'
                       : 'font-semibold text-gray-600'
-                  }`}
+                    }`}
                 >
                   {toTitleCase(parada.tipo)}
                 </span>
               </div>
               <div
-                className={`text-[12px] 2xl:text-[13px] truncate ${
-                  isBoundary
+                className={`text-[12px] 2xl:text-[13px] truncate ${isBoundary
                     ? 'font-bold text-gray-900'
                     : isClient
                       ? 'font-semibold text-blue-700'
                       : 'font-semibold text-gray-600'
-                }`}
+                  }`}
               >
                 {displayDescription}
               </div>
@@ -153,11 +150,10 @@ export default function DailyParadasTable({ paradas }: DailyParadasTableProps) {
                   <span className="text-gray-400 font-bold">-</span>
                 ) : (
                   <span
-                    className={`inline-flex items-center px-2 py-1 rounded-md text-[9px] 2xl:text-[10px] font-black uppercase ${
-                      isExtra
+                    className={`inline-flex items-center px-2 py-1 rounded-md text-[9px] 2xl:text-[10px] font-black uppercase ${isExtra
                         ? 'bg-orange-100 text-orange-700'
                         : 'bg-blue-100 text-blue-700'
-                    }`}
+                      }`}
                   >
                     {categoriaStr}
                   </span>

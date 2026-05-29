@@ -92,21 +92,19 @@ export default function TimeBlockCalendar({
         <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-lg">
           <button
             onClick={() => setIsFullDay(false)}
-            className={`px-3 py-1 text-[10px] 2xl:text-[11px] font-bold rounded-md transition-all ${
-              !isFullDay
+            className={`px-3 py-1 text-[10px] 2xl:text-[11px] font-bold rounded-md transition-all ${!isFullDay
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
           >
             Horario Laboral
           </button>
           <button
             onClick={() => setIsFullDay(true)}
-            className={`px-3 py-1 text-[10px] 2xl:text-[11px] font-bold rounded-md transition-all ${
-              isFullDay
+            className={`px-3 py-1 text-[10px] 2xl:text-[11px] font-bold rounded-md transition-all ${isFullDay
                 ? 'bg-white text-gray-900 shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
-            }`}
+              }`}
           >
             Día Completo
           </button>
@@ -247,8 +245,8 @@ export default function TimeBlockCalendar({
                             onMouseLeave={handleMouseLeave}
                             className={`absolute left-1 right-1 border-l-2 px-1 py-0.5 text-[9px] overflow-hidden leading-tight z-10 shadow-sm 
                               transition-all hover:scale-[1.02] hover:z-20 cursor-default ${getBlockColor(
-                                parada.tipo
-                              )}`}
+                              parada.tipo
+                            )}`}
                             style={{
                               top: `${top}%`,
                               height: `${Math.max(height, 2)}%`,
