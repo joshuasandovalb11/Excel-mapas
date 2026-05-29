@@ -1,7 +1,8 @@
-import { BarChart3, Minus, Plus, RotateCcw } from 'lucide-react';
+import { ChartNoAxesCombined, RotateCcw } from 'lucide-react';
 import type { Vendor } from '../../../types/behavior.types';
 import VendorSelector from './VendorSelector';
 import AnalyticsDateRange from './AnalyticsDateRange';
+import GlobalFilters from '../../../components/GlobalFilters';
 
 interface AnalyticsSidebarProps {
   sidebarCollapsed: boolean;
@@ -38,7 +39,7 @@ export default function AnalyticsSidebar({
         {!sidebarCollapsed && (
           <div className="flex items-center gap-2 2xl:gap-2.5">
             <div className="p-1 2xl:p-1.5 bg-blue-600 rounded-md shadow-sm">
-              <BarChart3 className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 text-white" />
+              <ChartNoAxesCombined className="w-3.5 h-3.5 2xl:w-4 2xl:h-4 text-white" />
             </div>
             <h1 className="text-[13px] 2xl:text-[15px] font-semibold tracking-tight text-gray-900">
               Patrón de Conducta
@@ -118,44 +119,10 @@ export default function AnalyticsSidebar({
                 <h3 className="text-[10px] 2xl:text-[11px] font-bold text-gray-500 uppercase tracking-wider">
                   Algoritmo de Detección
                 </h3>
-                <div>
-                  <div className="flex justify-between items-center mb-1.5 2xl:mb-2">
-                    <span className="text-[11px] 2xl:text-[12px] font-medium text-gray-700">
-                      Parada Mínima
-                    </span>
-                    <span className="text-[10px] 2xl:text-[12px] font-semibold text-gray-900 bg-gray-100 px-1.5 2xl:px-2 py-0.5 rounded border border-gray-200">
-                      {minStopDuration} min
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 2xl:gap-3">
-                    <button
-                      onClick={() =>
-                        updateParams({ minStopDuration: String(Math.max(1, minStopDuration - 1)) })
-                      }
-                      className="p-1 bg-white border border-gray-200 rounded shadow-sm text-gray-500 hover:text-black hover:border-gray-300 transition-all"
-                    >
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    <input
-                      type="range"
-                      min={1}
-                      max={60}
-                      value={minStopDuration}
-                      onChange={(e) =>
-                        updateParams({ minStopDuration: e.target.value })
-                      }
-                      className="flex-1 h-1 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
-                    />
-                    <button
-                      onClick={() =>
-                        updateParams({ minStopDuration: String(Math.min(60, minStopDuration + 1)) })
-                      }
-                      className="p-1 bg-white border border-gray-200 rounded shadow-sm text-gray-500 hover:text-black hover:border-gray-300 transition-all"
-                    >
-                      <Plus className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
+                <GlobalFilters
+                  minStopDuration={minStopDuration}
+                  onDurationChange={(val) => updateParams({ minStopDuration: val })}
+                />
               </div>
             </div>
           </div>
@@ -167,7 +134,7 @@ export default function AnalyticsSidebar({
             className="p-2 2xl:p-3 py-16 2xl:py-20 bg-blue-50 text-blue-600 hover:text-white hover:bg-blue-600 rounded-lg transition-colors group"
             title="Expandir panel"
           >
-            <BarChart3 className="w-5 h-5 2xl:w-6 2xl:h-6 group-hover:scale-110 transition-transform animate-bounce" />
+            <ChartNoAxesCombined className="w-5 h-5 2xl:w-6 2xl:h-6 group-hover:scale-110 transition-transform animate-bounce" />
           </button>
         </div>
       )}
