@@ -134,6 +134,87 @@ app.get('/api/visualizador/rutas', async (req, res) => {
 });
 
 /**
+ * Puente: GET /api/visualizador/rutas/batch
+ * Obtiene detalle de múltiples rutas
+ * Query params: ids, incluirClientes, minStopDuration
+ */
+app.get('/api/visualizador/rutas/batch', async (req, res) => {
+  try {
+    const { ids, incluirClientes, minStopDuration } = req.query;
+    const queryParams = new URLSearchParams();
+
+    if (ids) queryParams.append('ids', ids);
+    if (incluirClientes) queryParams.append('incluirClientes', incluirClientes);
+    if (minStopDuration) queryParams.append('minStopDuration', minStopDuration);
+
+    const url = `${SQL_API_URL}/visualizador/rutas/batch${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    console.log(`[Puente] Solicitando detalle batch de rutas a: ${url}`);
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`El servidor SQL respondió con error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error en GET /api/visualizador/rutas/batch:', error.message);
+    res.status(500).json({
+      error: 'No se pudo obtener el detalle batch de rutas.',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * Puente: POST /api/visualizador/rutas/excel/batch
+ * Sube múltiples archivos Excel y los procesa en el backend
+ */
+app.post('/api/visualizador/rutas/excel/batch', upload.array('archivosExcel', 10), async (req, res) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: 'No se recibieron archivos' });
+    }
+
+    const { incluirClientes, minStopDuration } = req.query;
+    const queryParams = new URLSearchParams();
+
+    if (incluirClientes) queryParams.append('incluirClientes', incluirClientes);
+    if (minStopDuration) queryParams.append('minStopDuration', minStopDuration);
+
+    const url = `${SQL_API_URL}/visualizador/rutas/excel/batch${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    console.log(`[Puente] Traduciendo y enviando batch Excel a: ${url}`);
+
+    const formData = new FormData();
+
+    // Itera sobre los archivos y adjúntalos al formData
+    for (const file of req.files) {
+      const blob = new Blob([file.buffer], { type: file.mimetype });
+      formData.append('archivosExcel', blob, file.originalname);
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`El servidor SQL respondió con error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error en POST /api/visualizador/rutas/excel/batch:', error.message);
+    res.status(500).json({
+      error: 'No se pudo procesar el batch de archivos Excel.',
+      details: error.message,
+    });
+  }
+});
+
+/**
  * Puente: GET /api/visualizador/rutas/:id_ruta
  * Obtiene detalle de una ruta específica
  * Query params: incluirClientes, minStopDuration

@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Database,
 } from 'lucide-react';
-import { usePersistentState } from '../hooks/usePersistentState';
+
 import { useClients } from '../context/ClientContext';
 import {
   type Client,
@@ -45,13 +45,10 @@ interface RoutesViewState {
 }
 
 export default function Routes() {
-  const [state, setState] = usePersistentState<RoutesViewState>(
-    'routes_view_state_v3',
-    {
-      selectedVendor: null,
-      error: null,
-    }
-  );
+  const [state, setState] = useState<RoutesViewState>({
+    selectedVendor: null,
+    error: null,
+  });
 
   const { masterClients, loading: isLoading, refreshClients } = useClients();
 
@@ -76,7 +73,7 @@ export default function Routes() {
       toastTimerRef.current = window.setTimeout(() => {
         setIsToastVisible(false);
         setTimeout(() => {
-          setState((prevState) => ({ ...prevState, error: null }));
+          setState((prevState: RoutesViewState) => ({ ...prevState, error: null }));
         }, 500);
       }, 5000);
     } else {
@@ -91,7 +88,7 @@ export default function Routes() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setIsToastVisible(false);
     setTimeout(() => {
-      setState((prevState) => ({ ...prevState, error: null }));
+      setState((prevState: RoutesViewState) => ({ ...prevState, error: null }));
     }, 500);
   };
 

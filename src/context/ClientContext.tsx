@@ -8,7 +8,6 @@ import {
   useCallback,
   type ReactNode,
 } from 'react';
-import { useIndexedDBState } from '../hooks/useIndexedDBState';
 import { fetchClientsFromSQL } from '../services/clientService';
 import type { Client } from '../utils/tripUtils';
 
@@ -24,21 +23,36 @@ type CachedClients = {
   fetchedAt: number;
 } | null;
 
-type CachedClientsValue = CachedClients | Client[];
-
 const CLIENTS_CACHE_KEY = 'vt_sql_clients_v1';
 const CLIENTS_TTL_MS = 12 * 60 * 60 * 1000;
 
 const ClientContext = createContext<ClientContextType | undefined>(undefined);
 
 export const ClientProvider = ({ children }: { children: ReactNode }) => {
-  const [cachedClients, setCachedClients, cacheLoaded] =
-    useIndexedDBState<CachedClientsValue>(CLIENTS_CACHE_KEY, null);
   const [masterClients, setMasterClients] = useState<Client[] | null>(null);
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+
+  const getCachedClients = (): CachedClients => {
+    try {
+      const item = localStorage.getItem(CLIENTS_CACHE_KEY);
+      if (item) {
+        return JSON.parse(item);
+      }
+    } catch (err) {
+      console.warn('Error reading clients from localStorage', err);
+    }
+    return null;
+  };
+
+  const setCachedClients = (cache: CachedClients) => {
+    try {
+      localStorage.setItem(CLIENTS_CACHE_KEY, JSON.stringify(cache));
+    } catch (err) {
+      console.warn('Error writing clients to localStorage', err);
+    }
+  };
 
   const isCacheValid = useCallback((cache: CachedClients): boolean => {
     if (!cache) return false;
@@ -48,12 +62,10 @@ export const ClientProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshClients = useCallback(
     async (force = false) => {
-      if (
-        !force &&
-        cachedClients &&
-        !Array.isArray(cachedClients) &&
-        isCacheValid(cachedClients)
-      ) {
+      const cache = getCachedClients();
+      
+      if (!force && cache && isCacheValid(cache)) {
+        setMasterClients(cache.data);
         return;
       }
 
@@ -74,36 +86,20 @@ export const ClientProvider = ({ children }: { children: ReactNode }) => {
         setLoading(false);
       }
     },
-    [cachedClients, isCacheValid, setCachedClients]
+    [isCacheValid]
   );
 
   useEffect(() => {
-    if (!cacheLoaded) return;
-
-    if (cachedClients && !Array.isArray(cachedClients)) {
-      if (isCacheValid(cachedClients)) {
-        setMasterClients(cachedClients.data);
-        return;
-      }
-    } else if (Array.isArray(cachedClients)) {
-      setMasterClients(cachedClients);
-      setCachedClients({ data: cachedClients, fetchedAt: 0 });
-      return;
-    } else if (cachedClients) {
-      setCachedClients(null);
-    }
-    setMasterClients(null);
-  }, [cacheLoaded, cachedClients, isCacheValid, setCachedClients]);
-
-  useEffect(() => {
-    if (!isInitialized && cacheLoaded) {
-      const timer = setTimeout(() => {
+    if (!isInitialized) {
+      const cache = getCachedClients();
+      if (cache && isCacheValid(cache)) {
+        setMasterClients(cache.data);
+      } else {
         refreshClients();
-        setIsInitialized(true);
-      }, 100);
-      return () => clearTimeout(timer);
+      }
+      setIsInitialized(true);
     }
-  }, [cacheLoaded, isInitialized, refreshClients]);
+  }, [isInitialized, isCacheValid, refreshClients]);
 
   return (
     <ClientContext.Provider

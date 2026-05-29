@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import * as XLSX from 'xlsx';
 import { useCallback, useState } from 'react';
 
 // INTERFACES Y TIPOS
@@ -112,103 +111,6 @@ export function useCopyToClipboard(): [
   return [copied, copy];
 }
 
-// FUNCIÓN PARA EXTRAER INFORMACIÓN DEL VEHÍCULO
-export const parseVehicleInfo = (
-  worksheet: XLSX.WorkSheet,
-  fileName: string
-): VehicleInfo => {
-  const info: VehicleInfo = {
-    descripcion: 'No encontrado',
-    vehiculo: 'No encontrado',
-    placa: 'No encontrada',
-    fecha: 'No encontrada',
-  };
-
-  const data: any[][] = XLSX.utils.sheet_to_json(worksheet, {
-    header: 1,
-    defval: '',
-  });
-  const rowsToSearch = data.slice(0, 20);
-  const dateRegex = /\d{4}-\d{2}-\d{2}/;
-
-  for (const row of rowsToSearch) {
-    if (!Array.isArray(row)) continue;
-
-    for (let i = 0; i < row.length; i++) {
-      const currentCellText = String(row[i] || '')
-        .trim()
-        .toLowerCase();
-      if (!currentCellText) continue;
-
-      const findNextValue = () => {
-        for (let j = i + 1; j < row.length; j++) {
-          const nextValue = String(row[j] || '').trim();
-          if (nextValue) return nextValue;
-        }
-        return null;
-      };
-
-      let value: string | null = null;
-
-      if (currentCellText.includes('descripción de vehículo')) {
-        value = findNextValue();
-        if (value) info.descripcion = toTitleCase(value);
-      } else if (currentCellText.includes('tipo de vehículo')) {
-        value = findNextValue();
-        if (value) info.vehiculo = toTitleCase(value);
-      } else if (currentCellText.includes('vehículo placa')) {
-        value = findNextValue();
-        if (value) info.placa = value.toUpperCase();
-      } else if (currentCellText.includes('período')) {
-        value = findNextValue();
-        if (value) {
-          info.fecha = value.split('..')[0].trim().split(' ')[0];
-        }
-      } else if (
-        currentCellText.includes('período') ||
-        currentCellText.includes('periodo')
-      ) {
-        const sameCellMatch = currentCellText.match(dateRegex);
-
-        if (sameCellMatch) {
-          info.fecha = sameCellMatch[0];
-        } else {
-          value = findNextValue();
-          if (value) {
-            const nextCellMatch = value.match(dateRegex);
-            if (nextCellMatch) {
-              info.fecha = nextCellMatch[0];
-            } else {
-              info.fecha = value.split('..')[0].trim().split(' ')[0];
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (info.fecha === 'No encontrada' || !dateRegex.test(info.fecha)) {
-    console.log('Fecha no encontrada en encabezados, buscando en datos...');
-
-    for (const row of data) {
-      if (Array.isArray(row) && row.length > 0) {
-        const firstCol = String(row[0] || '');
-        const match = firstCol.match(dateRegex);
-        if (match) {
-          info.fecha = match[0];
-          console.log(`Fecha recuperada de los datos: ${info.fecha}`);
-          break;
-        }
-      }
-    }
-  }
-
-  if (info.placa === 'No encontrada') {
-    info.placa = fileName.split('.')[0]?.toUpperCase() || 'No encontrada';
-  }
-
-  return info;
-};
 
 export const formatName = (name?: string | null): string => {
   if (!name || name.trim() === '') return '';

@@ -51,7 +51,6 @@
     "tailwindcss": "^4.1.11",
     "util": "^0.12.5",
     "vite-plugin-node-polyfills": "^0.24.0",
-    "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
   },
   "devDependencies": {

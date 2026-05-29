@@ -179,3 +179,93 @@ export async function uploadExcelRoute(
     throw appError;
   }
 }
+
+/**
+ * Obtiene el detalle de múltiples rutas (Batch)
+ * @param ids - Arreglo de IDs de rutas
+ * @param minStopDuration - Duración mínima en minutos
+ * @returns Promise con arreglo de rutas procesadas
+ */
+export async function fetchRoutesBatch(
+  ids: number[],
+  minStopDuration?: number,
+  signal?: AbortSignal
+): Promise<ProcessedTripV1[]> {
+  try {
+    const params = new URLSearchParams();
+    if (ids && ids.length > 0) {
+      params.append('ids', ids.join(','));
+    }
+    if (minStopDuration !== undefined) {
+      params.append('minStopDuration', minStopDuration.toString());
+    }
+
+    const url = `${API_BASE_URL}/batch${params.toString() ? '?' + params.toString() : ''}`;
+
+    const response = await fetchWithTimeout(url, {
+      method: 'GET',
+      signal,
+      timeoutMs: 45000,
+      retries: 2,
+      backoffMs: 300,
+    });
+
+    const data: ProcessedTripV1[] = await response.json();
+    return data;
+  } catch (error) {
+    const appError = await toAppError(error, {
+      title: 'No se pudieron cargar las rutas',
+      message: 'No fue posible obtener el detalle batch de las rutas solicitadas.',
+      action: 'Intenta nuevamente en unos segundos.',
+    });
+    console.error('❌ fetchRoutesBatch:', appError);
+    throw appError;
+  }
+}
+
+/**
+ * Sube múltiples archivos Excel para procesamiento de ruta (Batch)
+ * @param files - Arreglo de archivos Excel
+ * @param minStopDuration - Duración mínima en minutos
+ * @returns Promise con arreglo de rutas procesadas
+ */
+export async function uploadExcelBatch(
+  files: File[],
+  minStopDuration?: number,
+  signal?: AbortSignal
+): Promise<ProcessedTripV1[]> {
+  try {
+    const params = new URLSearchParams();
+    if (minStopDuration !== undefined) {
+      params.append('minStopDuration', minStopDuration.toString());
+    }
+
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('archivosExcel', file);
+    });
+
+    const url = `${API_BASE_URL}/excel/batch${params.toString() ? '?' + params.toString() : ''}`;
+
+    const response = await fetchWithTimeout(url, {
+      method: 'POST',
+      body: formData,
+      signal,
+      timeoutMs: 90000, // Dar más tiempo para múltiples archivos
+      retries: 1,
+      backoffMs: 500,
+    });
+
+    const data: ProcessedTripV1[] = await response.json();
+    return data;
+  } catch (error) {
+    const appError = await toAppError(error, {
+      title: 'No se pudieron procesar los archivos',
+      message: 'No fue posible procesar el batch de archivos Excel.',
+      action: 'Verifica los archivos e intenta nuevamente.',
+    });
+    console.error('❌ uploadExcelBatch:', appError);
+    throw appError;
+  }
+}
+
