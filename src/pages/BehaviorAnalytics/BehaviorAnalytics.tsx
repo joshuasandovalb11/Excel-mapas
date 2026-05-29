@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   Loader2,
-  BarChart3,
   LayoutGrid,
   Table as TableIcon,
 } from 'lucide-react';
@@ -14,6 +13,7 @@ import DateCarousel from './components/DateCarousel';
 import DailyParadasTable from './components/DailyParadasTable';
 import TimeBlockCalendar from './components/TimeBlockCalendar';
 import ErrorState from '../../components/ErrorState';
+import EmptyState from '../../components/EmptyState';
 import { useVendorsCatalog } from './hooks/useVendorsCatalog';
 import { useBehaviorData } from './hooks/useBehaviorData';
 import { fetchAvailableDates } from '../../services/apiRutas';
@@ -169,32 +169,11 @@ export default function BehaviorAnalytics() {
               isRetrying={isFetching}
             />
           ) : analyticsData && analyticsData.globalSummary === null ? (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-fadeIn">
-                <div className="text-gray-400 mb-4 bg-gray-100 p-4 rounded-full">
-                  <svg
-                    className="w-12 h-12"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={1}
-                      d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-                    />
-                  </svg>
-                </div>
-                <h3 className="text-lg 2xl:text-xl font-bold text-gray-900">
-                  Sin actividad
-                </h3>
-                <p className="text-sm 2xl:text-base text-gray-500 mt-2 max-w-sm">
-                  El vendedor seleccionado no tiene rutas registradas en este
-                  rango de fechas.
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              title="Sin actividad"
+              message="El vendedor seleccionado no tiene rutas registradas en este rango de fechas."
+              icon="Chart"
+            />
           ) : analyticsData ? (
             <>
               <KPIGrid summary={analyticsData.globalSummary} />
@@ -248,20 +227,11 @@ export default function BehaviorAnalytics() {
               </div>
             </>
           ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <div className="flex flex-col items-center justify-center text-center">
-                <div className="w-16 h-16 bg-white border-2 border-gray-200 rounded-2xl flex items-center justify-center mb-6 shadow-sm transform">
-                  <BarChart3 className="w-7 h-7 text-gray-400" />
-                </div>
-                <h2 className="text-[16px] 2xl:text-xl font-bold text-gray-800 mb-2">
-                  Ajuste los filtros para comenzar
-                </h2>
-                <p className="text-[13px] 2xl:text-base text-gray-500 max-w-md">
-                  Seleccione un vendedor y un rango de fechas en el panel
-                  lateral para visualizar el patrón de conducta.
-                </p>
-              </div>
-            </div>
+            <EmptyState
+              title="Ajuste los filtros para comenzar"
+              message="Seleccione un vendedor y un rango de fechas en el panel lateral para visualizar el patrón de conducta."
+              icon="Chart"
+            />
           )}
         </div>
       </main>

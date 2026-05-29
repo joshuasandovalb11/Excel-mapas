@@ -5,8 +5,8 @@ import { useRouteTracker } from '../../hooks/useRouteTracker';
 import { downloadExcelReport } from '../../utils/reportUtils';
 import VehicleTrackerHeader from './components/Header';
 import VehicleTrackerSidebar from './components/Sidebar';
-import VehicleTrackerEmptyState from './components/EmptyState';
-import VehicleTrackerErrorState from '../../components/ErrorState';
+import EmptyState from '../../components/EmptyState';
+import ErrorState from '../../components/ErrorState';
 import { useVehicleClients } from './hooks/useVehicleClients';
 import { useVehicleStats } from './hooks/useVehicleStats';
 import { useMapExport } from './hooks/useMapExport';
@@ -192,7 +192,7 @@ export default function VehicleTracker() {
 
         <div className="flex-1 overflow-hidden bg-gray-50 relative">
           {errors.routeDetail && !loading.routeDetail ? (
-            <VehicleTrackerErrorState
+            <ErrorState
               error={errors.routeDetail}
               onRetry={retryDetail}
               isRetrying={loading.routeDetail}
@@ -240,7 +240,7 @@ export default function VehicleTracker() {
               />
             </div>
           ) : (
-            <VehicleTrackerEmptyState />
+            <EmptyState />
           )}
 
           {(loading.routeDetail || loading.excel) && (
