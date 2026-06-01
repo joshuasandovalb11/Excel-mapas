@@ -1,4 +1,4 @@
-import { Map as MapIcon, Layers, ChartNoAxesCombined } from 'lucide-react';
+import { Map as MapIcon, Layers, ChartNoAxesCombined, Users } from 'lucide-react';
 
 interface EmptyStateProps {
   title?: string;
@@ -18,6 +18,8 @@ export default function EmptyState({
     emptyIcon = <ChartNoAxesCombined className={`w-7 h-7 text-blue-500`} />
   } else if (icon === 'Layers') {
     emptyIcon = <Layers className={`w-7 h-7 text-blue-500`} />
+  } else if (icon === 'Users') {
+    emptyIcon = <Users className={`w-7 h-7 text-blue-500`} />
   } else {
     emptyIcon = <MapIcon className={`w-7 h-7 text-blue-500`} />
   }

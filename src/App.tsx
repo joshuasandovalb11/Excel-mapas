@@ -9,6 +9,7 @@ import {
   LogOut,
   ChartNoAxesCombined,
   Layers,
+  Users,
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -27,6 +28,9 @@ const BehaviorAnalytics = lazy(
 );
 const MultipleVehicleTracker = lazy(
   () => import('./pages/MultipleVehicleTracker/MultipleVehicleTracker')
+);
+const VendorRoutes = lazy(
+  () => import('./pages/VendorRoutes/VendorRoutes')
 );
 
 function PageLoader() {
@@ -56,6 +60,7 @@ export default function App() {
     { id: 'tracker', label: 'Visualizador de Rutas', icon: Map, path: '/tracker' },
     { id: 'multi', label: 'Visualizador Múltiple', icon: Layers, path: '/multi' },
     { id: 'analytics', label: 'Patrón de Conducta', icon: ChartNoAxesCombined, path: '/analytics' },
+    { id: 'clientes', label: 'Mapa de Clientes', icon: Users, path: '/clientes' },
   ] as const;
 
   useEffect(() => {
@@ -280,6 +285,7 @@ export default function App() {
                   <Route path="/tracker" element={<VehicleTracker />} />
                   <Route path="/multi" element={<MultipleVehicleTracker />} />
                   <Route path="/analytics" element={<BehaviorAnalytics />} />
+                  <Route path="/clientes" element={<VendorRoutes />} />
                   <Route path="*" element={<Navigate to="/tracker" replace />} />
                 </Routes>
               </motion.div>
