@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchVendedoresCatalog } from '../../../services/apiBehavior';
+import { fetchVendedoresCatalog } from '../services/apiBehavior';
 
 /**
  * Hook para obtener el catálogo de vendedores.

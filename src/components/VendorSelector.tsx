@@ -1,8 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useMemo } from 'react';
 import { Search, User } from 'lucide-react';
-import { formatName } from '../../../utils/tripUtils';
-import type { Vendor } from '../../../types/behavior.types';
+import { formatName } from '../utils/tripUtils';
+import type { Vendor } from '../types/behavior.types';
 
 interface VendorSelectorProps {
   vendors: Vendor[];
@@ -71,19 +70,17 @@ export default function VendorSelector({
                     key={vendorId}
                     onClick={() => onChange(vendorId)}
                     className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-left transition-all duration-200 group
-                      ${
-                        isSelected
-                          ? 'bg-blue-50 border border-blue-200 shadow-sm'
-                          : 'bg-white border border-transparent hover:bg-gray-50'
+                      ${isSelected
+                        ? 'bg-blue-50 border border-blue-200 shadow-sm'
+                        : 'bg-white border border-transparent hover:bg-gray-50'
                       }
                     `}
                   >
                     <div
                       className={`flex-shrink-0 w-5 h-5 2xl:w-6 2xl:h-6 rounded-full flex items-center justify-center transition-colors
-                        ${
-                          isSelected
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200 group-hover:text-gray-600'
+                        ${isSelected
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200 group-hover:text-gray-600'
                         }
                       `}
                     >

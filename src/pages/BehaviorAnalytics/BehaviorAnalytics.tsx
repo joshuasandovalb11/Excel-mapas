@@ -14,7 +14,7 @@ import DailyParadasTable from './components/DailyParadasTable';
 import TimeBlockCalendar from './components/TimeBlockCalendar';
 import ErrorState from '../../components/ErrorState';
 import EmptyState from '../../components/EmptyState';
-import { useVendorsCatalog } from './hooks/useVendorsCatalog';
+import { useVendorsCatalog } from '../../hooks/useVendorsCatalog';
 import { useBehaviorData } from './hooks/useBehaviorData';
 import { fetchAvailableDates } from '../../services/apiRutas';
 import type { FetchBehaviorParams } from '../../services/apiBehavior';

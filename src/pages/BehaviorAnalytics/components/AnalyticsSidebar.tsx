@@ -1,6 +1,6 @@
 import { ChartNoAxesCombined, RotateCcw } from 'lucide-react';
 import type { Vendor } from '../../../types/behavior.types';
-import VendorSelector from './VendorSelector';
+import VendorSelector from '../../../components/VendorSelector';
 import AnalyticsDateRange from './AnalyticsDateRange';
 import GlobalFilters from '../../../components/GlobalFilters';
 
