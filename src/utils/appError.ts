@@ -4,7 +4,8 @@ export type AppErrorCode =
   | 'ABORTED'
   | 'HTTP_ERROR'
   | 'PARSE_ERROR'
-  | 'UNKNOWN';
+  | 'UNKNOWN'
+  | 'DB_ERROR';
 
 export type AppError = {
   title: string;
