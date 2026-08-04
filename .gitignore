@@ -25,3 +25,6 @@ dist-ssr
 
 # Ignorar variables de entorno locales
 .env
+
+# CLI and local tool configs
+.antigravitycli/
