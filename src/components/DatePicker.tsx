@@ -19,17 +19,33 @@ export default function RouteDatePicker({
   disabled = false,
 }: RouteDatePickerProps) {
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    if (selectedDate) return new Date(`${selectedDate}T12:00:00Z`);
-    if (availableDates.length > 0)
-      return new Date(`${availableDates[0].fecha}T12:00:00Z`);
+    if (selectedDate && selectedDate !== 'undefined' && selectedDate !== 'null') {
+      const d = new Date(`${selectedDate}T12:00:00Z`);
+      if (!isNaN(d.getTime())) return d;
+    }
+    if (availableDates.length > 0 && availableDates[0]?.fecha) {
+      const d = new Date(`${availableDates[0].fecha}T12:00:00Z`);
+      if (!isNaN(d.getTime())) return d;
+    }
     return new Date();
   });
 
   useEffect(() => {
-    if (selectedDate) {
-      setCurrentMonth(new Date(`${selectedDate}T12:00:00Z`));
+    if (selectedDate && selectedDate !== 'undefined' && selectedDate !== 'null') {
+      const d = new Date(`${selectedDate}T12:00:00Z`);
+      if (!isNaN(d.getTime())) {
+        setCurrentMonth(d);
+        return;
+      }
     }
-  }, [selectedDate]);
+    
+    if (availableDates.length > 0 && availableDates[0]?.fecha) {
+      const d = new Date(`${availableDates[0].fecha}T12:00:00Z`);
+      if (!isNaN(d.getTime())) {
+        setCurrentMonth(d);
+      }
+    }
+  }, [selectedDate, availableDates]);
 
   const datesMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -62,6 +78,10 @@ export default function RouteDatePicker({
   ];
 
   const renderDays = () => {
+    if (isNaN(year) || isNaN(month) || isNaN(daysInMonth) || isNaN(firstDayOfMonth)) {
+      return null;
+    }
+
     const days = [];
     for (let i = 0; i < firstDayOfMonth; i++) {
       days.push(

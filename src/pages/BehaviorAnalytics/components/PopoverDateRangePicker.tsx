@@ -26,8 +26,14 @@ export default function PopoverDateRangePicker({
   const [hoveredDate, setHoveredDate] = useState<string | null>(null);
 
   const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    if (startDate) return new Date(`${startDate}T12:00:00Z`);
-    if (availableDates.length > 0) return new Date(`${availableDates[0].fecha}T12:00:00Z`);
+    if (startDate && startDate !== 'undefined' && startDate !== 'null') {
+      const d = new Date(`${startDate}T12:00:00Z`);
+      if (!isNaN(d.getTime())) return d;
+    }
+    if (availableDates.length > 0 && availableDates[0]?.fecha) {
+      const d = new Date(`${availableDates[0].fecha}T12:00:00Z`);
+      if (!isNaN(d.getTime())) return d;
+    }
     return new Date();
   });
 
@@ -35,8 +41,9 @@ export default function PopoverDateRangePicker({
     if (isOpen) {
       setTempStartDate(startDate || null);
       setTempEndDate(endDate || null);
-      if (startDate) {
-        setCurrentMonth(new Date(`${startDate}T12:00:00Z`));
+      if (startDate && startDate !== 'undefined' && startDate !== 'null') {
+        const d = new Date(`${startDate}T12:00:00Z`);
+        if (!isNaN(d.getTime())) setCurrentMonth(d);
       }
     }
   }, [isOpen, startDate, endDate]);
@@ -92,6 +99,10 @@ export default function PopoverDateRangePicker({
   };
 
   const renderDays = () => {
+    if (isNaN(year) || isNaN(month) || isNaN(daysInMonth) || isNaN(firstDayOfMonth)) {
+      return null;
+    }
+
     const days = [];
     for (let i = 0; i < firstDayOfMonth; i++) {
       days.push(<div key={`empty-${i}`} className="w-7 h-7 2xl:w-8 2xl:h-8"></div>);
