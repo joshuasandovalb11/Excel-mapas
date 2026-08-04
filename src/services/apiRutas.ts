@@ -11,19 +11,23 @@ import type {
 import { fetchWithTimeout } from './httpClient';
 import { toAppError } from '../utils/appError';
 
-const API_BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:3000/api/visualizador/rutas'
-  : '/api/visualizador/rutas';
+const getApiBaseUrl = (sourceType: 'camiones' | 'celulares' = 'camiones') => {
+  const basePath = sourceType === 'celulares' ? '/rutas-moviles' : '/rutas';
+  const apiUrl = import.meta.env.VITE_SQL_API_URL || 'http://localhost:3000/api/visualizador';
+  return `${apiUrl}${basePath}`;
+};
 
 /**
  * Obtiene las fechas disponibles de rutas
  * @returns Promise con lista de fechas disponibles
  */
 export async function fetchAvailableDates(
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sourceType: 'camiones' | 'celulares' = 'camiones'
 ): Promise<FechaDisponible[]> {
   try {
-    const response = await fetchWithTimeout(`${API_BASE_URL}/fechas`, {
+    const baseUrl = getApiBaseUrl(sourceType);
+    const response = await fetchWithTimeout(`${baseUrl}/fechas`, {
       method: 'GET',
       signal,
       timeoutMs: 15000,
@@ -55,7 +59,8 @@ export async function fetchRoutesSummary(
   fecha: string,
   vendedor?: string,
   limite?: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sourceType: 'camiones' | 'celulares' = 'camiones'
 ): Promise<RutasResumenResponse> {
   try {
     const params = new URLSearchParams();
@@ -63,7 +68,8 @@ export async function fetchRoutesSummary(
     if (vendedor) params.append('vendedor', vendedor);
     if (limite) params.append('limite', limite.toString());
 
-    const url = `${API_BASE_URL}?${params.toString()}`;
+    const baseUrl = getApiBaseUrl(sourceType);
+    const url = `${baseUrl}?${params.toString()}`;
 
     const response = await fetchWithTimeout(url, {
       method: 'GET',
@@ -97,7 +103,8 @@ export async function fetchRouteDetail(
   idRuta: number,
   minStopDuration?: number,
   incluirClientes?: boolean,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sourceType: 'camiones' | 'celulares' = 'camiones'
 ): Promise<ProcessedTripV1> {
   try {
     const params = new URLSearchParams();
@@ -108,7 +115,8 @@ export async function fetchRouteDetail(
       params.append('incluirClientes', incluirClientes.toString());
     }
 
-    const url = `${API_BASE_URL}/${idRuta}${params.toString() ? '?' + params.toString() : ''}`;
+    const baseUrl = getApiBaseUrl(sourceType);
+    const url = `${baseUrl}/${idRuta}${params.toString() ? '?' + params.toString() : ''}`;
 
     const response = await fetchWithTimeout(url, {
       method: 'GET',
@@ -156,7 +164,8 @@ export async function uploadExcelRoute(
     const formData = new FormData();
     formData.append('file', file);
 
-    const url = `${API_BASE_URL}/excel${params.toString() ? '?' + params.toString() : ''}`;
+    const baseUrl = getApiBaseUrl('camiones'); // Excel siempre usa base de camiones por ahora
+    const url = `${baseUrl}/excel${params.toString() ? '?' + params.toString() : ''}`;
 
     const response = await fetchWithTimeout(url, {
       method: 'POST',
@@ -189,7 +198,8 @@ export async function uploadExcelRoute(
 export async function fetchRoutesBatch(
   ids: number[],
   minStopDuration?: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  sourceType: 'camiones' | 'celulares' = 'camiones'
 ): Promise<ProcessedTripV1[]> {
   try {
     const params = new URLSearchParams();
@@ -200,7 +210,8 @@ export async function fetchRoutesBatch(
       params.append('minStopDuration', minStopDuration.toString());
     }
 
-    const url = `${API_BASE_URL}/batch${params.toString() ? '?' + params.toString() : ''}`;
+    const baseUrl = getApiBaseUrl(sourceType);
+    const url = `${baseUrl}/batch${params.toString() ? '?' + params.toString() : ''}`;
 
     const response = await fetchWithTimeout(url, {
       method: 'GET',
@@ -245,7 +256,8 @@ export async function uploadExcelBatch(
       formData.append('archivosExcel', file);
     });
 
-    const url = `${API_BASE_URL}/excel/batch${params.toString() ? '?' + params.toString() : ''}`;
+    const baseUrl = getApiBaseUrl('camiones'); // Excel batch siempre usa base de camiones por ahora
+    const url = `${baseUrl}/excel/batch${params.toString() ? '?' + params.toString() : ''}`;
 
     const response = await fetchWithTimeout(url, {
       method: 'POST',
@@ -268,4 +280,46 @@ export async function uploadExcelBatch(
     throw appError;
   }
 }
+export interface CatalogDevice {
+  deviceId: string;
+  vendorName: string;
+  vehiculo: string;
+  isOnline: boolean;
+  lastLat: number | null;
+  lastLng: number | null;
+  lastSpeed: number;
+  lastUpdateTimestamp: string | number | null;
+  vendorId?: string;
+  nivel_bateria?: number;
+  battery?: number;
+  stoppedSince?: string | number;
+}
 
+/**
+ * Obtiene el catálogo inicial de dispositivos (estado en tiempo real)
+ */
+export async function fetchDispositivosEstado(
+  signal?: AbortSignal
+): Promise<CatalogDevice[]> {
+  try {
+    const baseUrl = getApiBaseUrl('celulares');
+    const response = await fetchWithTimeout(`${baseUrl}/dispositivos-estado`, {
+      method: 'GET',
+      signal,
+      timeoutMs: 15000,
+      retries: 2,
+      backoffMs: 250,
+    });
+
+    const data: CatalogDevice[] = await response.json();
+    return data;
+  } catch (error) {
+    const appError = await toAppError(error, {
+      title: 'Error al cargar dispositivos',
+      message: 'No fue posible cargar el catálogo inicial de dispositivos móviles.',
+      action: 'Intenta recargar la página.',
+    });
+    console.error('❌ fetchDispositivosEstado:', appError);
+    throw appError;
+  }
+}

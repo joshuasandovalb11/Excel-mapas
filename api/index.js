@@ -309,6 +309,164 @@ app.post(
 );
 
 /**
+ * Puente: GET /api/visualizador/rutas-moviles/fechas
+ * Obtiene las fechas disponibles de rutas móviles
+ */
+app.get('/api/visualizador/rutas-moviles/fechas', async (req, res) => {
+  try {
+    console.log(
+      `[Puente] Solicitando fechas de móviles a: ${SQL_API_URL}/visualizador/rutas-moviles/fechas`
+    );
+
+    const response = await fetch(`${SQL_API_URL}/visualizador/rutas-moviles/fechas`);
+
+    if (!response.ok) {
+      throw new Error(
+        `El servidor SQL respondió con error: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error(
+      '❌ Error en GET /api/visualizador/rutas-moviles/fechas:',
+      error.message
+    );
+    res.status(500).json({
+      error: 'No se pudo obtener las fechas disponibles de celulares.',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * Puente: GET /api/visualizador/rutas-moviles
+ * Obtiene resumen de rutas de móviles
+ */
+app.get('/api/visualizador/rutas-moviles', async (req, res) => {
+  try {
+    const { fecha, vendedor } = req.query;
+    const queryParams = new URLSearchParams();
+
+    if (fecha) queryParams.append('fecha', fecha);
+    if (vendedor) queryParams.append('vendedor', vendedor);
+
+    const url = `${SQL_API_URL}/visualizador/rutas-moviles${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    console.log(`[Puente] Solicitando rutas móviles a: ${url}`);
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(
+        `El servidor SQL respondió con error: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error en GET /api/visualizador/rutas-moviles:', error.message);
+    res.status(500).json({
+      error: 'No se pudieron obtener las rutas de celulares.',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * Puente: GET /api/visualizador/rutas-moviles/dispositivos-estado
+ * Obtiene el catálogo inicial de dispositivos para el Sidebar en Tiempo Real
+ */
+app.get('/api/visualizador/rutas-moviles/dispositivos-estado', async (req, res) => {
+  try {
+    const url = `${SQL_API_URL}/visualizador/rutas-moviles/dispositivos-estado`;
+    console.log(`[Puente] Solicitando estado de dispositivos a: ${url}`);
+
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Error SQL: ${response.status}`);
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error en GET dispositivos-estado:', error.message);
+    res.status(500).json({ error: 'No se pudo cargar el catálogo de dispositivos.' });
+  }
+});
+
+/**
+ * Puente: GET /api/visualizador/rutas-moviles/batch
+ * Obtiene detalle de múltiples rutas móviles
+ * Query params: ids, incluirClientes, minStopDuration
+ */
+app.get('/api/visualizador/rutas-moviles/batch', async (req, res) => {
+  try {
+    const { ids, incluirClientes, minStopDuration } = req.query;
+    const queryParams = new URLSearchParams();
+
+    if (ids) queryParams.append('ids', ids);
+    if (incluirClientes) queryParams.append('incluirClientes', incluirClientes);
+    if (minStopDuration) queryParams.append('minStopDuration', minStopDuration);
+
+    const url = `${SQL_API_URL}/visualizador/rutas-moviles/batch${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    console.log(`[Puente] Solicitando detalle batch de rutas móviles a: ${url}`);
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`El servidor SQL respondió con error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error('❌ Error en GET /api/visualizador/rutas-moviles/batch:', error.message);
+    res.status(500).json({
+      error: 'No se pudo obtener el detalle batch de rutas móviles.',
+      details: error.message,
+    });
+  }
+});
+
+/**
+ * Puente: GET /api/visualizador/rutas-moviles/:id_ruta_movil
+ * Obtiene detalle de una ruta móvil
+ */
+app.get('/api/visualizador/rutas-moviles/:id_ruta_movil', async (req, res) => {
+  try {
+    const { id_ruta_movil } = req.params;
+    const { incluirClientes, minStopDuration } = req.query;
+    const queryParams = new URLSearchParams();
+
+    if (incluirClientes) queryParams.append('incluirClientes', incluirClientes);
+    if (minStopDuration) queryParams.append('minStopDuration', minStopDuration);
+
+    const url = `${SQL_API_URL}/visualizador/rutas-moviles/${id_ruta_movil}${queryParams.toString() ? '?' + queryParams.toString() : ''}`;
+    console.log(`[Puente] Solicitando detalle de ruta móvil a: ${url}`);
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(
+        `El servidor SQL respondió con error: ${response.status}`
+      );
+    }
+
+    const data = await response.json();
+    res.status(200).json(data);
+  } catch (error) {
+    console.error(
+      '❌ Error en GET /api/visualizador/rutas-moviles/:id_ruta_movil:',
+      error.message
+    );
+    res.status(500).json({
+      error: 'No se pudo obtener el detalle de la ruta del celular.',
+      details: error.message,
+    });
+  }
+});
+
+/**
  * Puente: GET /api/vendedores
  * Obtiene el catálogo de vendedores
  */
