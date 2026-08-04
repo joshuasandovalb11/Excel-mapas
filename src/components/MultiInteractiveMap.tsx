@@ -19,7 +19,6 @@ import {
   useCopyToClipboard,
   isWorkingHours,
 } from '../utils/tripUtils';
-import type { ProcessedTripV1 } from '../types/route.types';
 import { type MultiVehicleData } from '../pages/MultipleVehicleTracker/MultipleVehicleTracker';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
@@ -27,6 +26,7 @@ import {
   faRoad,
   faTriangleExclamation,
   faCar,
+  faPersonWalking,
 } from '@fortawesome/free-solid-svg-icons';
 import {
   ChevronUp,
@@ -52,6 +52,7 @@ interface MultiInteractiveMapProps {
   minStopDuration: number;
   clientData: Client[] | null;
   googleMapsApiKey: string;
+  sourceType?: 'camiones' | 'celulares';
 }
 
 const containerStyle = { width: '100%', height: '100%' };
@@ -61,6 +62,10 @@ const mapOptions = {
   gestureHandling: 'greedy' as const,
   fullscreenControl: false,
 };
+
+const CAR_SVG = 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z';
+const PERSON_SVG = 'M12 2c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2zm9 7h-6v13h-2v-6h-2v6H9V9H3V7h18v2z';
+
 
 // Tiempo a segundos
 const timeToSeconds = (timeStr: string): number => {
@@ -141,7 +146,14 @@ export default function MultiInteractiveMap({
   vehicles,
   minStopDuration,
   googleMapsApiKey,
+  sourceType = 'camiones',
 }: MultiInteractiveMapProps) {
+  const isMobile = sourceType === 'celulares';
+  const faIcon = isMobile ? faPersonWalking : faCar;
+  const mapSvgIcon = isMobile ? PERSON_SVG : CAR_SVG;
+  const mapSvgScale = isMobile ? 1.4 : 1.2;
+  const deviceTypeLabel = isMobile ? 'Celular' : 'Vehiculo';
+
   const [copiedText, copyToClipboard] = useCopyToClipboard();
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
@@ -817,12 +829,12 @@ export default function MultiInteractiveMap({
                 key={`car-${vehicle.id}`}
                 position={{ lat: currentPos.lat, lng: currentPos.lng }}
                 icon={{
-                  path: 'M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z',
+                  path: mapSvgIcon,
                   fillColor: vehicle.color,
                   fillOpacity: 2,
                   strokeColor: 'white',
                   strokeWeight: 0,
-                  scale: 1.2,
+                  scale: mapSvgScale,
                   anchor: new google.maps.Point(12, 12),
                 }}
                 zIndex={999}
@@ -858,10 +870,10 @@ export default function MultiInteractiveMap({
                       }}
                     >
                       <FontAwesomeIcon
-                        icon={faCar}
+                        icon={faIcon}
                         style={{ color: vehicle.color }}
                       />{' '}
-                      Vehiculo
+                      {deviceTypeLabel}
                     </h3>
                     <p
                       className="flex gap-2"
@@ -965,7 +977,7 @@ export default function MultiInteractiveMap({
                             gap: '6px',
                           }}
                         >
-                          <FontAwesomeIcon icon={faCar} />{' '}
+                          <FontAwesomeIcon icon={faIcon} />{' '}
                           {vehicle.vehicleInfo.descripcion || vehicle.fileName}
                         </div>
 

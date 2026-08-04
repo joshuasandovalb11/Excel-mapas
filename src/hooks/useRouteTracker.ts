@@ -41,6 +41,7 @@ interface UseRouteTrackerParams {
   vendedor: string;
   idRuta: number | null;
   minStopDuration: number;
+  sourceType?: 'camiones' | 'celulares';
 }
 
 interface UseRouteTrackerReturn {
@@ -70,14 +71,15 @@ export function useRouteTracker({
   vendedor,
   idRuta,
   minStopDuration,
+  sourceType = 'camiones',
 }: UseRouteTrackerParams): UseRouteTrackerReturn {
   // Estado efímero único para retener el binario del Excel procesado
   const [excelTripData, setExcelTripData] = useState<ProcessedTripV1 | null>(null);
 
   // 1. Available Dates
   const datesQuery = useQuery({
-    queryKey: ['availableDates'],
-    queryFn: ({ signal }) => fetchAvailableDates(signal),
+    queryKey: ['availableDates', sourceType],
+    queryFn: ({ signal }) => fetchAvailableDates(signal, sourceType),
     enabled: mode === 'database',
     staleTime: 5 * 60 * 1000,
     gcTime: 2 * 60 * 60 * 1000,
@@ -85,9 +87,9 @@ export function useRouteTracker({
 
   // 2. Routes Summary
   const routesSummaryQuery = useQuery({
-    queryKey: ['routesSummary', fecha, vendedor || null],
+    queryKey: ['routesSummary', fecha, vendedor || null, sourceType],
     queryFn: ({ signal }) =>
-      fetchRoutesSummary(fecha, vendedor || undefined, undefined, signal),
+      fetchRoutesSummary(fecha, vendedor || undefined, undefined, signal, sourceType),
     enabled: mode === 'database' && !!fecha,
     staleTime: 2 * 60 * 1000,
     gcTime: 20 * 60 * 1000,
@@ -95,9 +97,9 @@ export function useRouteTracker({
 
   // 3. Route Detail
   const routeDetailQuery = useQuery({
-    queryKey: ['routeDetail', idRuta, minStopDuration],
+    queryKey: ['routeDetail', idRuta, minStopDuration, sourceType],
     queryFn: ({ signal }) =>
-      fetchRouteDetail(idRuta!, minStopDuration, true, signal),
+      fetchRouteDetail(idRuta!, minStopDuration, true, signal, sourceType),
     enabled: mode === 'database' && !!idRuta,
     staleTime: 5 * 60 * 1000,
     gcTime: 30 * 60 * 1000,

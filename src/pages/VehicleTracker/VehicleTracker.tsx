@@ -24,6 +24,7 @@ export default function VehicleTracker() {
     clientRadius: '50',
     selectionMode: 'vendor',
     selectionValue: '',
+    sourceType: 'camiones',
   });
 
   const mode = params.mode as 'database' | 'excel';
@@ -48,6 +49,7 @@ export default function VehicleTracker() {
     vendedor,
     idRuta,
     minStopDuration,
+    sourceType: (params.sourceType as 'camiones' | 'celulares') || 'camiones',
   });
 
   const {

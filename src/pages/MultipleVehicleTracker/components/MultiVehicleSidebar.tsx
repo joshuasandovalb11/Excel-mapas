@@ -5,6 +5,8 @@ import {
   RotateCcw,
   Database,
   Layers,
+  Truck,
+  Smartphone,
 } from 'lucide-react';
 import RouteDatePicker from '../../../components/DatePicker';
 import RouteSelector from '../../../components/RouteSelector';
@@ -12,6 +14,7 @@ import GlobalFilters from '../../../components/GlobalFilters';
 import ErrorState from '../../../components/ErrorState';
 import type { FechaDisponible, RutaResumen } from '../../../types/route.types';
 import LoadingLayer from '../../../components/LoadingLayer';
+import type { AppError } from '../../../utils/appError';
 
 interface MultiVehicleSidebarProps {
   params: Record<string, string>;
@@ -26,10 +29,10 @@ interface MultiVehicleSidebarProps {
     excel: boolean;
   };
   errors: {
-    dates: any;
-    summary: any;
-    detail: any;
-    excel: any;
+    dates: AppError | null;
+    summary: AppError | null;
+    detail: AppError | null;
+    excel: AppError | null;
   };
   processMultipleExcels: (files: File[]) => void;
   sidebarCollapsed: boolean;
@@ -196,15 +199,40 @@ export default function MultiVehicleSidebar({
                 </button>
               </div>
 
+              {mode === 'database' && (
+                <div className="px-3 2xl:px-4 pt-1 2xl:pt-2 bg-[#FAFAFA]">
+                  <div className="flex bg-gray-200/60 p-0.5 rounded-lg border border-gray-200/50 shadow-inner">
+                    <button
+                      onClick={() => updateParams({ sourceType: 'camiones', rutas: '' })}
+                      className={`flex-1 py-1 2xl:py-1.5 text-[11px] 2xl:text-[12px] font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${(params.sourceType || 'camiones') === 'camiones'
+                        ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/50'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                        }`}
+                    >
+                      <Truck className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
+                      Vehiculos
+                    </button>
+                    <button
+                      onClick={() => updateParams({ sourceType: 'celulares', rutas: '' })}
+                      className={`flex-1 py-1 2xl:py-1.5 text-[11px] 2xl:text-[12px] font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${params.sourceType === 'celulares'
+                        ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/50'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                        }`}
+                    >
+                      <Smartphone className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
+                      Celulares
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FAFAFA]">
                 <div className="p-3 2xl:p-4 space-y-4 2xl:space-y-6">
                   {mode === 'database' && (
                     <div className="space-y-3 2xl:space-y-4 animate-fadeIn">
                       <div className="relative">
                         {showDatesError ? (
-                          <div className="h-[200px] 2xl:h-[220px]">
-                            <ErrorState error={errors.dates} />
-                          </div>
+                          <ErrorState error={errors.dates!} />
                         ) : (
                           <>
                             <div className="flex items-center gap-1.5 mb-2 2xl:mb-2.5">
@@ -242,7 +270,7 @@ export default function MultiVehicleSidebar({
                           </div>
                         ) : showRoutesError ? (
                           <div className="h-[180px] 2xl:h-[200px]">
-                            <ErrorState error={errors.summary} />
+                            <ErrorState error={errors.summary!} />
                           </div>
                         ) : (
                           <RouteSelector
@@ -271,7 +299,7 @@ export default function MultiVehicleSidebar({
                         {errors.excel ? (
                           <div className="h-[140px] 2xl:h-[160px]">
                             <ErrorState
-                              error={errors.excel}
+                              error={errors.excel!}
                               onRetry={() => fileInputRef.current?.click()}
                             />
                             <input

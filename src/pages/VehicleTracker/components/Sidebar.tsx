@@ -6,6 +6,7 @@ import {
   Map as MapIcon,
   Truck,
   Database,
+  Smartphone,
 } from 'lucide-react';
 import RouteDatePicker from '../../../components/DatePicker';
 import RouteSelector from '../../../components/RouteSelector';
@@ -13,6 +14,7 @@ import GlobalFilters from '../../../components/GlobalFilters';
 import type { FechaDisponible, RutaResumen } from '../../../types/route.types';
 import LoadingLayer from '../../../components/LoadingLayer';
 import type { AppError } from '../../../utils/appError';
+import ErrorState from '../../../components/ErrorState';
 
 interface SidebarProps {
   sidebarCollapsed: boolean;
@@ -179,20 +181,40 @@ export default function VehicleTrackerSidebar({
                 </button>
               </div>
 
+              {mode === 'database' && (
+                <div className="px-3 2xl:px-4 pt-1 2xl:pt-2 bg-[#FAFAFA]">
+                  <div className="flex bg-gray-200/60 p-0.5 rounded-lg border border-gray-200/50 shadow-inner">
+                    <button
+                      onClick={() => updateParams({ sourceType: 'camiones', idRuta: '' })}
+                      className={`flex-1 py-1 2xl:py-1.5 text-[11px] 2xl:text-[12px] font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${(params.sourceType || 'camiones') === 'camiones'
+                        ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/50'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                        }`}
+                    >
+                      <Truck className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
+                      Vehiculos
+                    </button>
+                    <button
+                      onClick={() => updateParams({ sourceType: 'celulares', idRuta: '' })}
+                      className={`flex-1 py-1 2xl:py-1.5 text-[11px] 2xl:text-[12px] font-semibold rounded-md transition-all flex items-center justify-center gap-1.5 ${params.sourceType === 'celulares'
+                        ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200/50'
+                        : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'
+                        }`}
+                    >
+                      <Smartphone className="w-3.5 h-3.5 2xl:w-4 2xl:h-4" />
+                      Celulares
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto custom-scrollbar bg-[#FAFAFA]">
                 <div className="p-3 2xl:p-4 space-y-4 2xl:space-y-6">
                   {mode === 'database' && (
                     <div className="space-y-3 2xl:space-y-4 animate-fadeIn">
                       <div className="relative">
                         {showDatesError ? (
-                          <div className="h-[200px] 2xl:h-[220px] flex flex-col items-center justify-center text-center bg-red-50 border border-red-200 rounded-lg px-3 2xl:px-4">
-                            <p className="text-[11px] 2xl:text-[12px] font-semibold text-red-700">
-                              No se pudieron cargar las fechas.
-                            </p>
-                            <p className="text-[10px] 2xl:text-[11px] text-red-600 mt-1">
-                              {errors.dates?.message || errors.dates?.title}
-                            </p>
-                          </div>
+                          <ErrorState error={errors.dates!} />
                         ) : (
                           <>
                             <div className="flex items-center gap-1.5 mb-2 2xl:mb-2.5">
@@ -225,11 +247,7 @@ export default function VehicleTrackerSidebar({
                         {showDatesError ? (
                           <div className="h-[180px] 2xl:h-[200px] flex flex-col items-center justify-center text-center bg-gray-50 border border-gray-200 rounded-lg px-3 2xl:px-4">
                             <p className="text-[11px] 2xl:text-[12px] font-semibold text-gray-700">
-                              Las rutas estarán disponibles cuando se carguen
-                              las fechas.
-                            </p>
-                            <p className="text-[10px] 2xl:text-[11px] text-gray-500 mt-1">
-                              Reintenta la carga de fechas para continuar.
+                              Las rutas estarán disponibles cuando se carguen las fechas.
                             </p>
                           </div>
                         ) : showRoutesError ? (

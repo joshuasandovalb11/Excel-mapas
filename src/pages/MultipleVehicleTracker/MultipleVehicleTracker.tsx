@@ -42,6 +42,7 @@ export default function MultipleVehicleTracker() {
     rutas: '',
     minStopDuration: '5',
     clientRadius: '50',
+    sourceType: 'camiones',
   });
 
   const routeIds = params.rutas
@@ -62,6 +63,7 @@ export default function MultipleVehicleTracker() {
     fecha: params.fecha,
     routeIds,
     minStopDuration,
+    sourceType: (params.sourceType as 'camiones' | 'celulares') || 'camiones',
   });
 
   const handleClearAll = () => {
@@ -163,6 +165,7 @@ export default function MultipleVehicleTracker() {
                 minStopDuration={minStopDuration}
                 clientData={masterClients || []}
                 googleMapsApiKey={googleMapsApiKey}
+                sourceType={params.sourceType as 'camiones' | 'celulares'}
               />
             </div>
           ) : (
