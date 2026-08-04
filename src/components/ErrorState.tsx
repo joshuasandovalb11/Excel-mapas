@@ -15,15 +15,15 @@ export default function ErrorState({
 
   return (
     <div className="w-full h-full flex items-center justify-center bg-gray-50 animate-fadeIn">
-      <div className="text-center px-4">
-        <h3 className="text-gray-900 font-bold text-[16px] tracking-tight">
+      <div className="h-[200px] 2xl:h-[220px] bg-red-50 border border-red-200 rounded-lg px-3 2xl:px-4 flex flex-col items-center justify-center text-center">
+        <h3 className="text-red-700 font-semibold text-[12px] 2xl:text-[13px] tracking-tight">
           {error.title}
         </h3>
-        <p className="text-red-600 text-[13px] font-medium mt-1.5 max-w-md mx-auto leading-relaxed">
+        <p className="text-red-600 text-[11px] 2xl:text-[12px] mt-1.5 max-w-md mx-auto leading-relaxed">
           {error.message}
         </p>
         {error.action && (
-          <p className="text-gray-500 text-[12px] mt-1 max-w-md mx-auto leading-relaxed">
+          <p className="text-gray-500 text-[11px] 2xl:text-[11px] mt-1 max-w-md mx-auto leading-relaxed">
             {error.action}
           </p>
         )}

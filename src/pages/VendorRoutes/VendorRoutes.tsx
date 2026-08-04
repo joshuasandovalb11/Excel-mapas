@@ -58,8 +58,6 @@ export default function Routes() {
     libraries: GOOGLE_MAPS_LIBRARIES,
   });
 
-
-
   const { regularClients, closestSpecialClient } = useMemo(() => {
     if (!masterClients || !selectedVendor) {
       return { regularClients: [], closestSpecialClient: null };
@@ -170,17 +168,6 @@ export default function Routes() {
             )}
           </div>
         </div>
-
-        {/* <div>
-          <button
-            onClick={downloadMap}
-            disabled={!selectedVendor || (regularClients.length === 0 && !closestSpecialClient)}
-            className="flex items-center justify-center px-4 py-1.5 bg-blue-600 text-white text-sm font-semibold rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed shadow-sm"
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Descargar Mapa
-          </button>
-        </div> */}
       </header>
 
       {/* ÁREA PRINCIPAL */}
