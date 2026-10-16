@@ -402,7 +402,7 @@ export const generateMapHTML = (
           <p class="iw-text"><strong>Hora:</strong> \${flag.time}</p>
           \${clientHtml}
           <div class="coords-hover" onclick="copyCoords(this, '\${coords}')">\${coords}</div>
-          <a href="https://maps.google.com/?q=$\${flag.lat},\${flag.lng}" target="_blank" class="gm-link">Ver en Google Maps</a>
+          <a href="https://maps.google.com/?q=\${flag.lat},\${flag.lng}" target="_blank" class="gm-link">Ver en Google Maps</a>
         </div>\`;
 
       const iw = new google.maps.InfoWindow({ content, pixelOffset: new google.maps.Size(0, -40) });

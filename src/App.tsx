@@ -10,7 +10,7 @@ import {
   ChartNoAxesCombined,
   Layers,
   Users,
-  Radio,
+  // Radio,
 } from 'lucide-react';
 import { useAuth } from './context/AuthContext';
 import Login from './pages/Login';
@@ -33,9 +33,9 @@ const MultipleVehicleTracker = lazy(
 const VendorRoutes = lazy(
   () => import('./pages/VendorRoutes/VendorRoutes')
 );
-const RealTimeTracker = lazy(
-  () => import('./pages/RealTimeTracker/RealTimeTracker')
-);
+// const RealTimeTracker = lazy(
+//   () => import('./pages/RealTimeTracker/RealTimeTracker')
+// );
 
 function PageLoader() {
   return (
@@ -65,7 +65,7 @@ export default function App() {
     { id: 'multi', label: 'Visualizador Múltiple', icon: Layers, path: '/multi' },
     { id: 'analytics', label: 'Patrón de Conducta', icon: ChartNoAxesCombined, path: '/analytics' },
     { id: 'clientes', label: 'Mapa de Clientes', icon: Users, path: '/clientes' },
-    { id: 'realtime', label: 'Tiempo Real', icon: Radio, path: '/realtime' },
+    // { id: 'realtime', label: 'Tiempo Real', icon: Radio, path: '/realtime' },
   ] as const;
 
   useEffect(() => {
@@ -291,7 +291,7 @@ export default function App() {
                   <Route path="/multi" element={<MultipleVehicleTracker />} />
                   <Route path="/analytics" element={<BehaviorAnalytics />} />
                   <Route path="/clientes" element={<VendorRoutes />} />
-                  <Route path="/realtime" element={<RealTimeTracker />} />
+                  {/* <Route path="/realtime" element={<RealTimeTracker />} /> */}
                   <Route path="*" element={<Navigate to="/tracker" replace />} />
                 </Routes>
               </motion.div>
