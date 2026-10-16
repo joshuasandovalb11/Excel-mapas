@@ -13,7 +13,9 @@ import { toAppError } from '../utils/appError';
 
 const getApiBaseUrl = (sourceType: 'camiones' | 'celulares' = 'camiones') => {
   const basePath = sourceType === 'celulares' ? '/rutas-moviles' : '/rutas';
-  const apiUrl = import.meta.env.VITE_SQL_API_URL || 'http://localhost:3000/api/visualizador';
+  const apiUrl =
+    import.meta.env.VITE_SQL_API_URL ||
+    (import.meta.env.DEV ? 'http://localhost:3000/api/visualizador' : '/api/visualizador');
   return `${apiUrl}${basePath}`;
 };
 
